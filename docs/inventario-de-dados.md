@@ -17,7 +17,7 @@ Ninguém "usa" este app no sentido de ter uma conta, um login ou um perfil.
 | `chaveAparelho` | Chave de autenticação revogável | Ativo do negócio | `SharedPreferences` local + header `X-Aparelho-Id` | Autenticação sem usuário/senha (veto formal) |
 | `execucaoId`, `janelaId`, `itemProgramacaoId`, `criativoId` | Identificadores opacos de exibição de anúncio | Nenhuma pessoa — são identificadores de conteúdo publicitário e de janela de tempo | SQLite local (fila) + enviados ao servidor | Comprovante de que um anúncio passou, para cobrança do anunciante |
 | `iniciadoEm`, `terminadoEm` | Timestamp de início/fim de uma exibição | Não é dado de pessoa — é dado operacional do aparelho | SQLite local + enviado ao servidor | Auditoria da exibição (nunca decide crédito, seção 6.2) |
-| PIN do painel | 4 dígitos, configuração do aparelho | Não identifica pessoa — é segredo operacional compartilhado por quem opera aquela tela | `SharedPreferences` local, nunca enviado à rede | Proteger o painel de manutenção contra acesso casual |
+| PIN do painel | 4 a 6 dígitos, configuração do aparelho | Não identifica pessoa — é segredo operacional compartilhado por quem opera aquela tela | `SharedPreferences` local, nunca enviado à rede | Proteger o painel de manutenção contra acesso casual |
 
 Nenhuma dessas linhas identifica uma pessoa física, isolada ou em
 combinação com outro dado que o app tenha acesso. `dispositivoId` e

@@ -13,7 +13,7 @@ não há URL nem tela no sentido de página — "tela" aqui é estado visual do
 - **Operador de manutenção** (funcionário do comércio ou técnico do
   Mostraí) — abre o painel para checar se a tela está funcionando ou para
   trocar a margem de overscan. Sabe usar um controle remoto de TV; não
-  necessariamente sabe o que é um PIN de 4 dígitos até alguém explicar.
+  necessariamente sabe o que é um PIN até alguém explicar.
 - **Backend `sancompany/mostrai`** — não é papel humano, mas é quem manda:
   decide playlist, janela, e o que conta como comprovante. O app nunca age
   sem ele (ou sem a última resposta dele em cache).
@@ -32,7 +32,8 @@ não há interação nenhuma prevista para o espectador.
 
 **Operador de manutenção:**
 1. Aperta OK/CENTER 3 vezes em até 3 segundos no controle remoto.
-2. Digita o PIN de 4 dígitos na grade numérica na tela (D-pad).
+2. Digita o PIN (4 a 6 dígitos, conforme configurado) na grade numérica na
+   tela (D-pad).
 3. PIN certo → vê tela e chave configuradas, modo de contrato, origem da
    última playlist, erro do aparelho (se houver), fila de proof-of-play
    (pendentes/perdas).
@@ -164,6 +165,23 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   vê: o operador, no diálogo de permissão do próprio Android (não é tela
   deste app). `ConfigExterna.procurarEAplicar`,
   `PlayerActivity.pedirPermissaoOuAplicarConfigExterna`.
+
+- **RN-12 — Rotação de tela só aceita {0, 90, 180, 270}.** Compensa um
+  painel montado fisicamente de lado (comum em sinalização digital em
+  espaço estreito) — o Android não sabe disso sozinho, o app gira o próprio
+  conteúdo em runtime. Qualquer valor fora desse conjunto, vindo de
+  qualquer um dos três caminhos de provisionamento, vira 0 — nunca gira a
+  esmo. Quem vê: o espectador (player) e o operador (painel), ambos
+  compensados juntos, mesma configuração. `ConfigAparelho.rotacaoTela`,
+  `RotacaoTela.aplicar`.
+
+- **RN-13 — PIN do painel só aceita 4 a 6 dígitos numéricos.** É esse
+  tamanho que dita quantas teclas o painel espera antes de comparar — um
+  PIN fora desse formato, vindo de qualquer provisionamento, nunca poderia
+  ser digitado de volta e trancaria o painel de manutenção para sempre.
+  Violada: o valor é ignorado, mantém o PIN anterior (o provisório de
+  fábrica, se ainda não houver nenhum) — nunca lança exceção nem trava o
+  app. `ConfigAparelho.pinPainel`.
 
 ## 6. Textos que o sistema diz
 

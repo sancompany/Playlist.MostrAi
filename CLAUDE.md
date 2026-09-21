@@ -76,8 +76,26 @@ Fechadas:
 - Provisionamento sem `adb` — dois caminhos a mais, pedidos pelo dono: build
   embutido (`-PconfigDispositivo`) e arquivo externo (`mostrai-config.json`
   no pendrive, lido em runtime com permissão de armazenamento pedida só
-  quando necessário). 47 → 52 testes (`ConfigExternaTest`, 5 casos) ·
+  quando necessário). 47 → 53 testes (`ConfigExternaTest`, 5 casos) ·
   evidência: build local verde, a confirmar no CI.
+- Retorno de campo (vídeo do dono, 21/09/2026), pontos 1/2/4/5 — 4 correções:
+  (1/4) a TV está montada fisicamente de lado; o Android não sabe disso
+  sozinho, então o app compensa em runtime girando o próprio conteúdo
+  (`RotacaoTela`, par raiz/rotor, compartilhado entre `PlayerActivity` e
+  `PainelActivity`), configurável (0/90/180/270) nos três caminhos de
+  provisionamento — a direção certa (90 ou 270) só o dono confirma no
+  aparelho real. `PlayerView` trocado de `SurfaceView` para `TextureView`
+  (necessário para a rotação, e suspeito de também resolver o vídeo bugado).
+  (2) tela institucional trocada de cor chapada por degradê radial. (5) PIN
+  do painel deixa de ser fixo em 4 dígitos, aceita de 4 a 6 — validado no
+  setter de `ConfigAparelho.pinPainel` (mesma guarda de `rotacaoTela`/
+  `margemVmin`: um PIN fora do formato nunca é gravado, porque travaria o
+  painel de manutenção para sempre sem nenhuma sequência digitável capaz de
+  bater com ele). Ponto 3 (ícone/arte de marca) é do dono. Ponto 6
+  (atualização OTA pelo site) ainda sem proposta — decisão arquitetural
+  maior, pendente. 53 → 62 testes (`ConfigAparelhoTest`, rotação e PIN;
+  `rotacaoTela` em `ConfigExternaTest`) · evidência: build + testes locais
+  verdes, a confirmar no CI.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem

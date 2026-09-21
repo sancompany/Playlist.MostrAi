@@ -2,6 +2,7 @@ package br.com.mostrai.player.config
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import br.com.mostrai.player.BuildConfig
 
 /**
@@ -39,20 +40,27 @@ class ConfigAparelho(context: Context) {
         set(valor) = prefs.edit().putFloat(CHAVE_MARGEM, valor.coerceIn(0f, 10f)).apply()
 
     /**
-     * PIN do painel de manutenção, 4 a 6 dígitos numéricos — é esse tamanho
-     * que dita quantas teclas o painel espera antes de comparar
-     * ([PainelActivity.tamanhoPin]). Um valor fora desse formato nunca é
-     * gravado: sem essa guarda, um PIN provisionado errado (por qualquer um
-     * dos três caminhos) trancaria o painel pra sempre — nenhuma sequência
-     * digitável bateria com ele. Valor inválido é ignorado, mantém o que já
-     * estava (o provisório de fábrica, se ainda não houver nenhum).
+     * PIN do painel de manutenção, de [TAMANHO_PIN_MINIMO] a [TAMANHO_PIN_MAXIMO]
+     * dígitos numéricos — é esse tamanho que dita quantas teclas o painel
+     * espera antes de comparar ([PainelActivity.tamanhoPin]). Um valor fora
+     * desse formato nunca é gravado: sem essa guarda, um PIN provisionado
+     * errado (por qualquer um dos três caminhos) trancaria o painel pra
+     * sempre — nenhuma sequência digitável bateria com ele. Valor inválido é
+     * ignorado (mantém o que já estava, o provisório de fábrica se ainda não
+     * houver nenhum) e loga um aviso, nunca lança exceção — provisionamento
+     * não pode derrubar o app.
      */
     var pinPainel: String
         get() = prefs.getString(CHAVE_PIN, PIN_PROVISORIO) ?: PIN_PROVISORIO
         set(valor) {
-            if (valor.length in TAMANHO_PIN_MINIMO..TAMANHO_PIN_MAXIMO && valor.all(Char::isDigit)) {
-                prefs.edit().putString(CHAVE_PIN, valor).apply()
+            if (!ehPinValido(valor)) {
+                Log.w(
+                    TAG,
+                    "PIN ignorado: precisa ter de $TAMANHO_PIN_MINIMO a $TAMANHO_PIN_MAXIMO dígitos numéricos",
+                )
+                return
             }
+            prefs.edit().putString(CHAVE_PIN, valor).apply()
         }
 
     /**
@@ -113,6 +121,7 @@ class ConfigAparelho(context: Context) {
         private const val CHAVE_MARGEM = "margem_vmin"
         private const val CHAVE_PIN = "pin_painel"
         private const val CHAVE_ROTACAO = "rotacao_tela"
+        private const val TAG = "ConfigAparelho"
 
         /** Trocado no primeiro provisionamento. Não é segredo, é valor inicial. */
         const val PIN_PROVISORIO = "0000"
@@ -121,5 +130,9 @@ class ConfigAparelho(context: Context) {
         const val TAMANHO_PIN_MAXIMO = 6
 
         val ROTACOES_VALIDAS = setOf(0, 90, 180, 270)
+
+        /** Só dígitos, entre [TAMANHO_PIN_MINIMO] e [TAMANHO_PIN_MAXIMO] deles. */
+        fun ehPinValido(pin: String): Boolean =
+            pin.length in TAMANHO_PIN_MINIMO..TAMANHO_PIN_MAXIMO && pin.all { it.isDigit() }
     }
 }

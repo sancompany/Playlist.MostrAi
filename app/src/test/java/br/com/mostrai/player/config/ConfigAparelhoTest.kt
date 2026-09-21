@@ -2,6 +2,8 @@ package br.com.mostrai.player.config
 
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,6 +15,12 @@ import org.robolectric.annotation.Config
  * lado (sinalização digital em espaço estreito) — testa que só o conjunto
  * fechado {0, 90, 180, 270} é aceito, nunca gira a esmo com um valor
  * inesperado.
+ *
+ * `pinPainel` só pode ser o que o teclado de
+ * [br.com.mostrai.player.ui.PainelActivity] consegue digitar de volta: 4 a
+ * 6 dígitos numéricos. Um PIN fora disso, vindo de qualquer provisionamento
+ * (build embutido, `adb`, `mostrai-config.json`), trancaria o painel para
+ * sempre — por isso o valor inválido é ignorado, não gravado.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26])
@@ -76,5 +84,26 @@ class ConfigAparelhoTest {
     fun `pin nao numerico e ignorado, nunca tranca o painel`() {
         config.pinPainel = "12ab"
         assertEquals("0000", config.pinPainel)
+
+        config.pinPainel = "12-4"
+        assertEquals("0000", config.pinPainel)
+    }
+
+    @Test
+    fun `pin invalido nao sobrescreve um pin valido ja gravado`() {
+        config.pinPainel = "9876"
+        config.pinPainel = "abcde"
+        assertEquals("9876", config.pinPainel)
+    }
+
+    @Test
+    fun `ehPinValido cobre os casos`() {
+        assertTrue(ConfigAparelho.ehPinValido("0000"))
+        assertTrue(ConfigAparelho.ehPinValido("13579"))
+        assertTrue(ConfigAparelho.ehPinValido("024680"))
+        assertFalse(ConfigAparelho.ehPinValido(""))
+        assertFalse(ConfigAparelho.ehPinValido("123"))
+        assertFalse(ConfigAparelho.ehPinValido("1234567"))
+        assertFalse(ConfigAparelho.ehPinValido("12a4"))
     }
 }

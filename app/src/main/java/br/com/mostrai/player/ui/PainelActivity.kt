@@ -166,5 +166,4 @@ class PainelActivity : AppCompatActivity() {
         }
         return super.onKeyDown(keyCode, event)
     }
-
 }

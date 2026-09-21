@@ -141,6 +141,13 @@ O PIN inicial é `0000` e o painel avisa enquanto ele não for trocado. Não é 
 segredo versionado, é valor de fábrica. Como o PIN universal convive com o PIN
 por tela do admin é decisão em aberto.
 
+**De 4 a 6 dígitos numéricos** — é o que o teclado do painel consegue digitar
+de volta (o próprio tamanho do PIN configurado dita quantas teclas o painel
+espera). Um `pin` fora dessa faixa, em qualquer um dos três caminhos de
+provisionamento abaixo, é **ignorado** (mantém o PIN anterior) em vez de
+gravado — evita travar o painel de manutenção com um PIN que nunca poderia
+ser digitado na TV.
+
 ## Compilar
 
 Precisa de JDK 17+ e do Android SDK (platform 35, build-tools 35.0.1).
@@ -173,9 +180,17 @@ primeiro boot.
      "chaveAparelho": "chave-revogavel-emitida-no-admin",
      "baseUrl": "https://exemplo.com/api",
      "pin": "4821",
-     "margemVmin": 2.5
+     "margemVmin": 2.5,
+     "rotacaoTela": 0
    }
    ```
+
+   `rotacaoTela` compensa uma TV montada fisicamente de lado (comum em
+   sinalização digital em espaço estreito) — só `0`, `90`, `180` ou `270`;
+   qualquer outro valor é ignorado e vira `0`. Se a tela está montada
+   virada, é preciso testar no aparelho real qual dos dois sentidos (`90`
+   ou `270`) corrige a imagem — não dá pra saber isso só olhando o
+   cadastro.
 
 2. Compile passando o arquivo:
 
@@ -196,7 +211,7 @@ primeiro boot.
    sobe funcionando.
 
 Sem `-PconfigDispositivo`, o build volta a ser exatamente o de sempre (os
-cinco campos ficam vazios, nada muda) — é seguro rodar `./gradlew
+seis campos ficam vazios, nada muda) — é seguro rodar `./gradlew
 assembleDebug` normalmente a qualquer momento.
 
 **O que isso não resolve**: o provisionamento verdadeiramente "sem
@@ -223,7 +238,8 @@ tela — sem recompilar nada.
      "chaveAparelho": "chave-revogavel-emitida-no-admin",
      "baseUrl": "https://exemplo.com/api",
      "pin": "4821",
-     "margemVmin": 2.5
+     "margemVmin": 2.5,
+     "rotacaoTela": 0
    }
    ```
 
@@ -260,7 +276,9 @@ adb shell am start -n br.com.mostrai.player/.PlayerActivity \
   -e dispositivoId "<id-da-tela>" \
   -e chaveAparelho "<chave-revogavel>" \
   -e baseUrl "https://<servidor>" \
-  -e pin "<pin>"
+  -e pin "<pin>" \
+  --ef margemVmin <margem-em-vmin> \
+  --ei rotacaoTela <0|90|180|270>
 ```
 
 ## Contrato com o backend
