@@ -42,18 +42,33 @@ para durar anos → rigor médio (ver `docs/specs/`, Fase 1).
 
 ## Estado na esteira
 
-Estação atual: **5 — Construção**, aberta em 21/09/2026.
+Estação atual: **5 — Construção**, aberta em 21/09/2026, **fechada exceto
+por um item que só o dono verifica**.
 
 Fechadas:
 - 1 Escopo — spec e CONSTRAINTS registrados · evidência: commit `e9a1e94`
 - 2 Fronteiras — classificação acima, projeto confirmado, sem consumo de estrutura San & Co. · evidência: esta seção
-- 3 Fundação — repositório, árvore, segredos fora do código, CLAUDE.md, RUNBOOK.md, CI · evidência: commits desta sessão, PR [#1](https://github.com/sancompany/Playlist.MostrAi/pull/1)
-- 4 Contratos — `docs/funcional.md`, `docs/inventario-de-dados.md`, contrato de API (já consumido do backend, seção 6 do prompt original) · evidência: commits desta sessão
+- 3 Fundação — repositório, árvore, segredos fora do código, CLAUDE.md, RUNBOOK.md, **CI verde num push real** · evidência: [run 35611480514](https://github.com/sancompany/Playlist.MostrAi/actions/runs/35611480514), `conclusion: success`
+- 4 Contratos — `docs/funcional.md`, `docs/inventario-de-dados.md`, contrato de API (já consumido do backend, seção 6 do prompt original) · evidência: commit `fe0b995`
 
-Falta para fechar a 5: cache de mídia (bloco 4 do MVP) construído e testado;
-"a versão inicial no ar" — que para um app sideloaded significa instalado e
-rodando num aparelho real, verificação que só o dono pode fazer (esta sessão
-não tem hardware Android TV nem emulador viável — ver `CONSTRAINTS.md`).
+5 Construção — quase fechada:
+- Escopo da v1 (blocos 1–5 do MVP: boot, playlist em laço, proof-of-play,
+  cache de mídia, painel de PIN) implementado · evidência: commits `66cef80`
+  a `4e56f94`
+- Checklist de fechamento: como o tipo do projeto não é nenhum dos quatro de
+  `construir` (`CONSTRAINTS.md`, exceção de classificação), o "o que fecha"
+  é o mapa de blocos do MVP acima, não `desenvolvimento-web.md`
+- Teste no caminho crítico — 39 testes (`PosicaoNaPlaylistTest`,
+  `PlaylistJsonTest`, `PlayedJsonTest`, `ChaveCacheTest`, `ProofOfPlayDbTest`,
+  `FilaProofOfPlayTest`) · evidência: CI verde, [run 35612446101](https://github.com/sancompany/Playlist.MostrAi/actions/runs/35612446101)
+- Ciclo de revisão (skill `revisar`) — 3 ciclos, 3 achados corrigidos (dois
+  de correção alta em `PlayerActivity`/`CacheMidia`, um de correção média em
+  `PainelActivity`), terceiro ciclo limpo · evidência: commit `4e56f94`
+- Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
+- **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
+  significa instalado e rodando num aparelho real; esta sessão não tem
+  hardware Android TV nem emulador viável (`CONSTRAINTS.md`). Único item que
+  falta para fechar a estação 5 por completo.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.

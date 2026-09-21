@@ -7,6 +7,9 @@ anúncio realmente passou.
 Projeto separado do backend (`sancompany/mostrai`). Este repositório não altera
 o backend.
 
+Projeto da San & Co. — segue a esteira do plugin `san-co` (skill `leis`).
+Estado atual, decisões e pendências vivem em `CLAUDE.md`, não neste README.
+
 ## Alvo
 
 | | |
@@ -57,7 +60,7 @@ atrapalhariam este caso de uso.
    app não improvisa com o índice salvo: espera sincronizar ou cai na tela
    institucional.
 
-## Estado atual — fatia 2
+## Estado atual — MVP completo, fatias 1 a 3
 
 O que já está no APK:
 
@@ -100,10 +103,31 @@ O que já está no APK:
 - Painel de manutenção agora mostra o modo de contrato, a origem da última
   playlist (servidor/cache/institucional), erro do aparelho, e o estado da
   fila de proof-of-play (pendentes e perdas).
-- Teste unitário da regra de reposicionamento (`PosicaoNaPlaylistTest`) —
-  `./gradlew testDebugUnitTest`.
+**Fatia 3 — cache de mídia**
 
-O que ainda **não** está: cache local de mídia (item 4 do MVP, próxima fatia).
+- Cache local por `criativoId` (bloco 4 do MVP): a imutabilidade
+  `criativoId → url` do contrato novo permite usar o `criativoId` como chave
+  sem revalidar nada; em modo degradado cai para hash da própria URL.
+- Pré-aquecimento sequencial a cada playlist nova — baixa o que falta em
+  segundo plano, sem atrasar a reprodução em andamento nem saturar a
+  internet de um comércio pequeno.
+- Teto de tamanho simples (1GB, descarte do mais antigo) — sem LRU
+  sofisticado na v1.
+- Download que falha nunca bloqueia a exibição: cai para tocar direto da
+  URL remota.
+
+**Testes e revisão**
+
+39 testes automatizados (`./gradlew testDebugUnitTest`), cobrindo as duas
+formas do contrato, a regra de reposicionamento, o cache e — com
+Robolectric, SQLite real, sem emulador — o ciclo de vida completo da fila
+de proof-of-play. CI (`.github/workflows/ci.yml`) roda build + testes a
+cada push e pull request.
+
+Todos os blocos do MVP (seção 3 do escopo original) estão implementados. O
+que falta para o projeto avançar na esteira san-co é a verificação em
+hardware real (`docs/pendencias.md`, "Só o dono faz") — esta sessão não tem
+acesso a um aparelho Android TV nem a um emulador viável.
 
 ### Gesto do painel
 
