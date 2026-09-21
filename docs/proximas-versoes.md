@@ -42,6 +42,31 @@ Ideias para depois. Entrada aqui não autoriza construir nada.
 - **Quando vale a pena**: se a métrica de "cache miss" (a criar) mostrar
   descarte de criativo que volta a ser pedido em menos de 24h.
 
+## `margemVmin` configurada pelo admin, não pelo arquivo local
+
+- **O quê**: a margem de overscan deixa de vir só do provisionamento local
+  (build embutido, `mostrai-config.json` ou `adb`) e passa a poder ser
+  ajustada pelo dono direto no painel admin do backend, por tela — o app
+  buscaria esse valor do servidor (provavelmente junto do cadastro da tela
+  ou da resposta de `/playlist`) em vez de depender de alguém editar um
+  JSON local.
+- **Por quê**: quem ajusta a margem na prática é o dono, olhando a imagem
+  real na TV — hoje isso significa reeditar um arquivo e reinstalar/reiniciar
+  o app; pelo admin, é um campo que se ajusta remotamente, sem tocar no
+  aparelho de novo.
+- **De onde veio**: pedido do dono, 21/09/2026 — decisão explícita de que
+  `margemVmin` deve ser configurada pelo próprio site admin.
+- **O que toca**: precisa de suporte do backend primeiro — um campo em
+  algum contrato (`sancompany/mostrai`, outra sessão) que o app ainda não
+  consome. Do lado deste app: `ConfigAparelho.margemVmin` passaria a ter
+  uma origem remota (buscada e cacheada, como a playlist), além ou no lugar
+  da local; `PlayerActivity.aplicarMargemOverscan` já reage a qualquer
+  mudança no valor, não precisa de reescrita.
+- **Quando vale a pena**: quando o contrato do backend definir onde esse
+  campo mora. Até lá, o campo `margemVmin` continua existindo nos arquivos
+  de provisionamento local (`dispositivos/*.json`, `mostrai-config.json`) —
+  é o único caminho disponível por enquanto.
+
 ## Atualização remota (OTA)
 
 Já está em `README.md`, "Em aberto", item 2 — mantido lá porque é decisão
