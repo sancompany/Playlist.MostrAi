@@ -32,6 +32,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -43,4 +49,15 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
+    // Testes unitários rodam no JVM puro, sem o Android real: o android.jar de
+    // teste "stuba" org.json.* para lançar exceção em vez de parsear de
+    // verdade. A dependência real do json.org, mesmo pacote, substitui o
+    // stub no classpath de teste — sem precisar de Robolectric só para isso.
+    testImplementation(libs.org.json)
+    // Robolectric: só para o que precisa de verdade da máquina do Android
+    // (SQLite, SharedPreferences) — a fila durável de proof-of-play é o
+    // coração do projeto, e testá-la contra um SQLite de mentira não provaria
+    // nada. Roda no JVM puro, sem emulador nem dispositivo.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

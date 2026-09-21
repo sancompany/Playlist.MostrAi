@@ -15,7 +15,9 @@ import java.io.IOException
  * `/player/:dispositivoId/heartbeat`); o contrato novo (seção 6) muda o
  * formato do corpo, não o caminho.
  */
-class MostraiApi(
+// open: FilaProofOfPlayTest cria um dublê que sobrescreve enviarLote/enviarLegado
+// para testar a lógica de fila sem rede de verdade — não é extensão de produto.
+open class MostraiApi(
     private val config: ConfigAparelho,
     private val http: HttpCliente = HttpCliente(),
 ) {
@@ -52,7 +54,7 @@ class MostraiApi(
         data class Transitorio(val motivo: String) : RespostaPlayed()
     }
 
-    fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
+    open fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
         val base = config.baseUrl ?: return RespostaPlayed.Transitorio("sem baseUrl configurada")
         val dispositivoId = config.dispositivoId ?: return RespostaPlayed.Transitorio("sem dispositivoId")
         return try {
@@ -71,7 +73,7 @@ class MostraiApi(
         }
     }
 
-    fun enviarLegado(anuncianteId: String): RespostaPlayed {
+    open fun enviarLegado(anuncianteId: String): RespostaPlayed {
         val base = config.baseUrl ?: return RespostaPlayed.Transitorio("sem baseUrl configurada")
         val dispositivoId = config.dispositivoId ?: return RespostaPlayed.Transitorio("sem dispositivoId")
         return try {
