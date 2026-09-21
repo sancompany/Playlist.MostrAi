@@ -102,6 +102,15 @@ Fechadas:
   dígitos (não 4-6, como uma leitura anterior do pedido original tinha
   entendido) — revertido de volta ao que a outra sessão concorrente já
   tinha implementado (`TAMANHO_PIN = 4`), com o aviso via `Log.w` mantido.
+- Assets de marca do dono (21/09/2026) — ícone/banner real (substitui o
+  placeholder gerado), vídeo de abertura (`res/raw/video_abertura.mp4`,
+  player próprio, só no boot do processo, nunca ao voltar do painel), e
+  três artes institucionais fixas (não provisionado, erro ao carregar,
+  carregando) que substituem o degradê programático nesses três casos —
+  o degradê continua valendo só para o item institucional que o próprio
+  backend manda ("sem programação para esta hora", RN-14, decisão do
+  dono: isso é conteúdo da playlist, não uma arte fixa do app).
+  `TelaInstitucional`, `EstadoInstitucional` (novo), `PlayerActivity`.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem

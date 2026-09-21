@@ -25,12 +25,6 @@
   lado — topo/base/esquerda/direita), não um único número igual nos 4. Ver
   `docs/proximas-versoes.md`, "`margemVmin` configurada pelo admin, não pelo
   arquivo local", para o que isso exige dos dois lados.
-- **Assets de marca a receber do dono** (21/09/2026): vídeo de abertura do
-  app (splash), ícone do app (launcher), e uma imagem institucional para o
-  estado de erro/sem programação (substitui o degradê radial provisório de
-  `TelaInstitucional`). Nenhum ainda chegou — quando chegarem, entram como
-  recurso do APK (`res/drawable`, `res/raw` ou `res/mipmap`, conforme o
-  caso); não precisam de mudança de contrato com o backend.
 - **Vídeo de fundo vem do site, não do app** — decisão do dono, 21/09/2026:
   ao contrário dos assets de marca acima (que são locais, embutidos no
   APK), o vídeo de fundo deve ser servido pelo próprio backend/admin, não

@@ -38,6 +38,7 @@ import br.com.mostrai.player.playlist.PosicaoNaPlaylist
 import br.com.mostrai.player.playlist.RelogioJanela
 import br.com.mostrai.player.playlist.ReposicionamentoPlaylist
 import br.com.mostrai.player.proof.FilaProofOfPlay
+import br.com.mostrai.player.ui.EstadoInstitucional
 import br.com.mostrai.player.ui.GestoPainel
 import br.com.mostrai.player.ui.PainelActivity
 import br.com.mostrai.player.ui.RotacaoTela
@@ -78,6 +79,10 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var rotor: FrameLayout
 
     private var player: ExoPlayer? = null
+
+    /** Player à parte do vídeo de abertura — ver [tocarIntroducao]. */
+    private var introPlayer: ExoPlayer? = null
+
     private val handler = Handler(Looper.getMainLooper())
 
     private var playlist: Playlist = Playlist.somenteInstitucional()
@@ -97,6 +102,12 @@ class PlayerActivity : AppCompatActivity() {
      * ExoPlayer com o item errado.
      */
     private var geracaoReproducao = 0
+
+    /** Origem da última busca de playlist — decide se a institucional mostra erro. */
+    private var ultimaOrigemFetch: PlaylistRepositorio.Origem = PlaylistRepositorio.Origem.INSTITUCIONAL
+
+    /** Cobre só a primeira vez, depois do vídeo de abertura — retomar do painel não mostra de novo. */
+    private var primeiraCargaFeita = false
 
     private val gestoPainel = GestoPainel { abrirPainel() }
 
@@ -226,6 +237,65 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (introJaTocou) iniciarCicloNormal() else tocarIntroducao()
+    }
+
+    /**
+     * Vídeo de abertura da marca — só no processo recém-iniciado (o app é o
+     * único que roda na tela, então isto é o "boot" visível). Num player
+     * próprio, separado de [player]: o listener normal (`concluirExibicao`,
+     * fila de proof-of-play) não pode reagir ao `STATE_ENDED` do vídeo de
+     * abertura, que não é exibição de anunciante nenhuma.
+     */
+    private fun tocarIntroducao() {
+        introJaTocou = true
+        institucional.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+
+        val intro = ExoPlayer.Builder(this).build().also { introPlayer = it }
+        intro.volume = 0f
+        intro.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) encerrarIntroducao()
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.w(TAG, "falha ao tocar o vídeo de abertura", error)
+                encerrarIntroducao()
+            }
+        })
+        playerView.player = intro
+        intro.setMediaItem(MediaItem.fromUri(Uri.parse("android.resource://$packageName/${R.raw.video_abertura}")))
+        intro.prepare()
+        intro.playWhenReady = true
+    }
+
+    /**
+     * Chamado tanto pelo fim natural do vídeo (`STATE_ENDED`/erro) quanto
+     * por [onStop] se o aparelho for parado no meio da introdução — nos dois
+     * casos, libera o player à parte e segue pro ciclo normal (que recria
+     * tudo do zero via [criarPlayer]).
+     */
+    private fun encerrarIntroducao() {
+        if (playerView.player === introPlayer) playerView.player = null
+        introPlayer?.release()
+        introPlayer = null
+        iniciarCicloNormal()
+    }
+
+    private fun iniciarCicloNormal() {
+        if (!primeiraCargaFeita) {
+            primeiraCargaFeita = true
+            // Só faz sentido "carregando" se há o que carregar — sem
+            // provisionamento a institucional já vai direto pro estado
+            // certo (NAO_PROVISIONADO) assim que a primeira busca falhar.
+            if (config.provisionado) {
+                institucional.estado = EstadoInstitucional.CARREGANDO
+                institucional.visibility = View.VISIBLE
+                playerView.visibility = View.GONE
+            }
+        }
+
         criarPlayer()
 
         atualizarPlaylist(forcarReposicionamento = true)
@@ -248,6 +318,12 @@ class PlayerActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
         runCatching { conectividade().unregisterNetworkCallback(callbackConectividade) }
         liberarPlayer()
+        // Só libera — nunca chama encerrarIntroducao()/iniciarCicloNormal()
+        // aqui, que iniciaria um ciclo novo de trabalho (rede, handlers)
+        // bem no momento em que a Activity está parando.
+        if (playerView.player === introPlayer) playerView.player = null
+        introPlayer?.release()
+        introPlayer = null
     }
 
     private fun conectividade() =
@@ -311,6 +387,7 @@ class PlayerActivity : AppCompatActivity() {
         EstadoRede.ultimaOrigem = resultado.origem.name
         EstadoRede.ultimoErroAparelho = resultado.erroAparelho
         EstadoRede.ultimaFalhaTransitoria = resultado.falhaTransitoria
+        ultimaOrigemFetch = resultado.origem
     }
 
     /**
@@ -431,17 +508,34 @@ class PlayerActivity : AppCompatActivity() {
     private fun mostrarInstitucional(item: ItemPlaylist) {
         playerView.visibility = View.GONE
         player?.stop()
-        institucional.legenda = legendaInstitucional()
+
+        val estado = estadoInstitucional()
+        institucional.estado = estado
+        // Legenda só é desenhada no estado PADRAO — os outros três têm texto
+        // embutido na própria arte (ver TelaInstitucional).
+        if (estado == EstadoInstitucional.PADRAO) {
+            institucional.legenda = getString(R.string.institucional_sem_programacao)
+        }
         institucional.visibility = View.VISIBLE
 
         val duracao = if (item.duracaoSegundos > 0) item.duracaoSegundos else 10
         handler.postDelayed(avancarPorTempo, duracao * 1000L)
     }
 
-    private fun legendaInstitucional(): String = getString(
-        if (config.provisionado) R.string.institucional_sem_programacao
-        else R.string.institucional_sem_provisionamento
-    )
+    /**
+     * Três estados são do aparelho, nunca do backend: sem provisionamento
+     * (config local incompleta), erro de carregamento (nem servidor nem
+     * cache — [PlaylistRepositorio.Origem.INSTITUCIONAL]) ou carregando
+     * (tratado à parte, em [iniciarCicloNormal]). Qualquer outra coisa é o
+     * item institucional que o próprio backend manda quando não há
+     * programação pra aquela hora — isso é conteúdo da playlist, não
+     * decisão local (PADRAO, com a legenda desenhada em runtime).
+     */
+    private fun estadoInstitucional(): EstadoInstitucional = when {
+        !config.provisionado -> EstadoInstitucional.NAO_PROVISIONADO
+        ultimaOrigemFetch == PlaylistRepositorio.Origem.INSTITUCIONAL -> EstadoInstitucional.ERRO_CARREGAR
+        else -> EstadoInstitucional.PADRAO
+    }
 
     /** Chamado apenas no STATE_ENDED: é aqui que a exibição vira comprovante. */
     private fun concluirExibicao() {
@@ -503,6 +597,13 @@ class PlayerActivity : AppCompatActivity() {
 
     private companion object {
         const val TAG = "MostraiPlayer"
+
+        /**
+         * Sobrevive a recriação da Activity (não a reinício do processo) —
+         * o vídeo de abertura só faz sentido no boot de verdade, nunca ao
+         * voltar do painel de manutenção.
+         */
+        var introJaTocou = false
 
         const val EXTRA_DISPOSITIVO = "dispositivoId"
         const val EXTRA_CHAVE = "chaveAparelho"

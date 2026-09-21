@@ -53,14 +53,25 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
 ## 4. Estados de cada tela
 
 **Player:**
+- Abertura: no boot do processo (nunca ao voltar do painel), toca o vídeo
+  de marca uma vez, mudo, num player próprio separado do player normal —
+  não é exibição de anunciante, não entra na fila de proof-of-play.
+  `PlayerActivity.tocarIntroducao`.
 - Vazio (playlist sem itens): não se aplica — `Playlist.somenteInstitucional()`
   garante que sempre há pelo menos um item institucional.
-- Carregando: enquanto a primeira playlist não chega, mostra o item
-  institucional (com legenda "aparelho ainda não provisionado" ou
-  "sem programação para esta hora", conforme o caso).
-- Erro (rede caiu, aparelho sem chave, servidor rejeitou): cai para a
-  playlist em cache; sem cache, cai para a tela institucional — nunca tela
-  preta, nunca crash visível.
+- Carregando: depois do vídeo de abertura, enquanto a primeira playlist não
+  chega, mostra a arte "Atualizando conteúdo…" — só se o aparelho já está
+  provisionado (sem provisionamento, já mostra direto o estado abaixo).
+- Aparelho não provisionado: arte "Aparelho não conectado" — configuração
+  local (`ConfigAparelho.provisionado`) incompleta, não depende de rede.
+- Erro ao carregar (rede caiu, aparelho sem chave, servidor rejeitou, **e**
+  não há cache pra cair): arte "Não foi possível carregar a programação".
+  Com cache disponível, usa o cache normalmente, sem mostrar erro nenhum —
+  nunca tela preta, nunca crash visível.
+- Sem programação para esta hora: item institucional que o próprio backend
+  manda (sem `url`) — desenhado em runtime (degradê + legenda), não é arte
+  fixa; não é uma decisão deste app, é conteúdo da playlist
+  (`docs/pendencias.md`).
 - Sucesso: vídeo tocando, tela cheia.
 - Sem permissão: não se aplica — não há controle de acesso na tela do
   player, é sempre visível (é uma TV pública).
@@ -182,13 +193,26 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   fábrica, se ainda não houver nenhum) — nunca lança exceção nem trava o
   app. `ConfigAparelho.pinPainel`.
 
+- **RN-14 — Institucional de decisão local nunca usa o desenho do PADRAO,
+  e vice-versa.** As três artes fixas (não provisionado, erro ao carregar,
+  carregando) só aparecem por uma condição do próprio aparelho
+  (`ConfigAparelho.provisionado`, `PlaylistRepositorio.Origem`) — nunca
+  porque o backend mandou um item institucional. O item institucional que
+  vem do backend (sem `url`, "sem programação para esta hora") sempre usa
+  o desenho em runtime (degradê + legenda), nunca uma das três artes fixas.
+  Violada: não se aplica — é decisão pura em
+  `PlayerActivity.estadoInstitucional`, os dois casos não se sobrepõem.
+  `TelaInstitucional`, `EstadoInstitucional`.
+
 ## 6. Textos que o sistema diz
 
 | Texto | Onde | Arquivo |
 |---|---|---|
-| "Mostraí" (marca, institucional) | Tela institucional | `TelaInstitucional.kt` |
-| "Aparelho ainda não provisionado" | Institucional, antes do 1º provisionamento | `strings.xml` |
-| "Sem programação para esta hora" | Institucional, provisionado mas sem itens | `strings.xml` |
+| "Mostraí" (marca, institucional) | Tela institucional, estado PADRAO | `TelaInstitucional.kt` |
+| "Sem programação para esta hora" | Institucional PADRAO, provisionado mas sem itens | `strings.xml` |
+| "Aparelho não conectado / configure o aparelho corretamente" | Institucional, antes do 1º provisionamento — texto embutido na arte | `drawable-nodpi/institucional_nao_provisionado.png` |
+| "Não foi possível carregar a programação" | Institucional, erro de carregamento sem cache — texto embutido na arte | `drawable-nodpi/institucional_erro.png` |
+| "Atualizando conteúdo…" | Institucional, carregando a primeira playlist — texto embutido na arte | `drawable-nodpi/institucional_carregando.png` |
 | "Painel de manutenção" | Título do painel | `strings.xml` |
 | "PIN incorreto" | Erro de PIN | `strings.xml` |
 | "Pressione VOLTAR para sair" | Dica no painel | `strings.xml` |
