@@ -106,4 +106,28 @@ class ConfigAparelhoTest {
         assertFalse(ConfigAparelho.ehPinValido("12345"))
         assertFalse(ConfigAparelho.ehPinValido("12a4"))
     }
+
+    @Test
+    fun `sem configurar, os 4 lados da margem sao zero`() {
+        assertEquals(MargensOverscan(), config.margensOverscan)
+    }
+
+    @Test
+    fun `cada lado da margem e independente dos outros`() {
+        config.margemVminTopo = 2.5f
+        config.margemVminBase = 1f
+        config.margemVminEsquerda = 3f
+        config.margemVminDireita = 0.5f
+
+        assertEquals(MargensOverscan(topo = 2.5f, base = 1f, esquerda = 3f, direita = 0.5f), config.margensOverscan)
+    }
+
+    @Test
+    fun `margem de cada lado e limitada entre 0 e 10`() {
+        config.margemVminTopo = -5f
+        assertEquals(0f, config.margemVminTopo)
+
+        config.margemVminTopo = 50f
+        assertEquals(10f, config.margemVminTopo)
+    }
 }

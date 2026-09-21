@@ -179,7 +179,10 @@ primeiro boot.
      "chaveAparelho": "chave-revogavel-emitida-no-admin",
      "baseUrl": "https://exemplo.com/api",
      "pin": "4821",
-     "margemVmin": 2.5,
+     "margemVminTopo": 2.5,
+     "margemVminBase": 2.5,
+     "margemVminEsquerda": 2.5,
+     "margemVminDireita": 2.5,
      "rotacaoTela": 0
    }
    ```
@@ -190,6 +193,11 @@ primeiro boot.
    virada, é preciso testar no aparelho real qual dos dois sentidos (`90`
    ou `270`) corrige a imagem — não dá pra saber isso só olhando o
    cadastro.
+
+   `margemVmin*` são 4 valores independentes, um por lado — a folga de
+   overscan varia por lado, não só por tela. Sempre em termos visuais (o
+   que você vê olhando pra tela já montada): "topo" é sempre o topo como
+   você enxerga, mesmo numa tela com `rotacaoTela` diferente de `0`.
 
 2. Compile passando o arquivo:
 
@@ -210,7 +218,7 @@ primeiro boot.
    sobe funcionando.
 
 Sem `-PconfigDispositivo`, o build volta a ser exatamente o de sempre (os
-seis campos ficam vazios, nada muda) — é seguro rodar `./gradlew
+nove campos ficam vazios, nada muda) — é seguro rodar `./gradlew
 assembleDebug` normalmente a qualquer momento.
 
 **O que isso não resolve**: o provisionamento verdadeiramente "sem
@@ -237,7 +245,10 @@ tela — sem recompilar nada.
      "chaveAparelho": "chave-revogavel-emitida-no-admin",
      "baseUrl": "https://exemplo.com/api",
      "pin": "4821",
-     "margemVmin": 2.5,
+     "margemVminTopo": 2.5,
+     "margemVminBase": 2.5,
+     "margemVminEsquerda": 2.5,
+     "margemVminDireita": 2.5,
      "rotacaoTela": 0
    }
    ```
@@ -276,7 +287,10 @@ adb shell am start -n br.com.mostrai.player/.PlayerActivity \
   -e chaveAparelho "<chave-revogavel>" \
   -e baseUrl "https://<servidor>" \
   -e pin "<pin>" \
-  --ef margemVmin <margem-em-vmin> \
+  --ef margemVminTopo <margem-em-vmin> \
+  --ef margemVminBase <margem-em-vmin> \
+  --ef margemVminEsquerda <margem-em-vmin> \
+  --ef margemVminDireita <margem-em-vmin> \
   --ei rotacaoTela <0|90|180|270>
 ```
 

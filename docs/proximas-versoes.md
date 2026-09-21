@@ -63,18 +63,22 @@ Ideias para depois. Entrada aqui não autoriza construir nada.
   ideia registrada do lado do backend, com o histórico completo, em
   `sancompany/mostrai`, `docs/proximas-versoes.md`, seção "Margem e
   orientação por tela configuráveis no admin, não só na URL".
-- **O que toca**: precisa de suporte do backend primeiro — 4 campos (um por
-  lado) em algum contrato (`sancompany/mostrai`, outra sessão) que o app
-  ainda não consome. Do lado deste app: `ConfigAparelho.margemVmin` (hoje um
-  `Float` único) precisaria virar 4 valores com origem remota (buscados e
-  cacheados, como a playlist), além ou no lugar dos locais;
-  `PlayerActivity.aplicarMargemOverscan()` hoje chama
-  `raiz.setPadding(px, px, px, px)` com o mesmo valor nos 4 lados — passaria
-  a receber 4 valores distintos, um por parâmetro do `setPadding`.
+- **O que toca**: **lado deste app já pronto (21/09/2026)** —
+  `ConfigAparelho.margemVmin` virou 4 propriedades independentes
+  (`margemVminTopo/Base/Esquerda/Direita`, expostas juntas como
+  `margensOverscan`), já lidas dos três caminhos de provisionamento locais
+  e já aplicadas corretamente por `RotacaoTela.aplicar` (que passou a
+  colocar o padding em `rotor`, não em `raiz` — só assim uma margem
+  assimétrica sobrevive a uma tela com `rotacaoTela` de 90°/270°, ver
+  `RotacaoTela.kt`). Falta só o contrato do backend: 4 campos por tela
+  (`sancompany/mostrai`, outra sessão), e o app buscar/cachear esses
+  valores (provavelmente junto do cadastro da tela ou da resposta de
+  `/playlist`, como a playlist já faz) em vez de/além dos locais.
 - **Quando vale a pena**: quando o contrato do backend definir onde esses 4
-  campos moram. Até lá, o campo `margemVmin` continua existindo, como valor
-  único, nos arquivos de provisionamento local (`dispositivos/*.json`,
-  `mostrai-config.json`) — é o único caminho disponível por enquanto.
+  campos moram — a única peça que falta agora. Até lá, os 4 campos
+  continuam vindo só dos arquivos de provisionamento local
+  (`dispositivos/*.json`, `mostrai-config.json`) — é o único caminho
+  disponível por enquanto.
 
 ## Atualização remota (OTA)
 

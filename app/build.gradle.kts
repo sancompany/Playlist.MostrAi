@@ -8,7 +8,7 @@ plugins {
 /**
  * Configuração de um aparelho específico, embutida no build via
  * `-PconfigDispositivo=<arquivo>.json` (ver README, "Gerar um APK já
- * configurado por tela"). Sem essa propriedade, os cinco campos ficam
+ * configurado por tela"). Sem essa propriedade, os oito campos ficam
  * vazios e o app se comporta exatamente como antes: precisa de
  * provisionamento por adb ou tela.
  *
@@ -21,7 +21,10 @@ data class ConfigEmbutidaDoDispositivo(
     val chaveAparelho: String = "",
     val baseUrl: String = "",
     val pin: String = "",
-    val margemVmin: String = "",
+    val margemVminTopo: String = "",
+    val margemVminBase: String = "",
+    val margemVminEsquerda: String = "",
+    val margemVminDireita: String = "",
     val rotacaoTela: String = "",
 )
 
@@ -37,7 +40,10 @@ fun lerConfigDispositivo(): ConfigEmbutidaDoDispositivo {
         chaveAparelho = json["chaveAparelho"] as? String ?: "",
         baseUrl = json["baseUrl"] as? String ?: "",
         pin = json["pin"] as? String ?: "",
-        margemVmin = json["margemVmin"]?.toString() ?: "",
+        margemVminTopo = json["margemVminTopo"]?.toString() ?: "",
+        margemVminBase = json["margemVminBase"]?.toString() ?: "",
+        margemVminEsquerda = json["margemVminEsquerda"]?.toString() ?: "",
+        margemVminDireita = json["margemVminDireita"]?.toString() ?: "",
         rotacaoTela = json["rotacaoTela"]?.toString() ?: "",
     )
 }
@@ -63,7 +69,14 @@ android {
         buildConfigField("String", "CHAVE_APARELHO_EMBUTIDA", paraLiteralJava(configDispositivo.chaveAparelho))
         buildConfigField("String", "BASE_URL_EMBUTIDA", paraLiteralJava(configDispositivo.baseUrl))
         buildConfigField("String", "PIN_EMBUTIDO", paraLiteralJava(configDispositivo.pin))
-        buildConfigField("String", "MARGEM_VMIN_EMBUTIDA", paraLiteralJava(configDispositivo.margemVmin))
+        buildConfigField("String", "MARGEM_VMIN_TOPO_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminTopo))
+        buildConfigField("String", "MARGEM_VMIN_BASE_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminBase))
+        buildConfigField(
+            "String", "MARGEM_VMIN_ESQUERDA_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminEsquerda),
+        )
+        buildConfigField(
+            "String", "MARGEM_VMIN_DIREITA_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminDireita),
+        )
         buildConfigField("String", "ROTACAO_TELA_EMBUTIDA", paraLiteralJava(configDispositivo.rotacaoTela))
     }
 

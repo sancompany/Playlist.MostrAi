@@ -204,6 +204,27 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   `PlayerActivity.estadoInstitucional`, os dois casos não se sobrepõem.
   `TelaInstitucional`, `EstadoInstitucional`.
 
+- **RN-15 — Só a presença de `url` decide se um item toca vídeo, nunca a
+  flag `institucional`.** Um item com `institucional: true` **e** `url`
+  preenchida toca essa `url` normalmente — é o caminho pensado para um
+  futuro vídeo de fundo institucional servido pelo backend
+  (`PARA-O-BACKEND.md`). Sem `url` (o único caso que existe hoje), cai na
+  tela institucional local, institucional ou não — proteção contra item
+  malformado, não um caminho normal. Violada: não se aplica, é uma
+  condição única (`item.url.isNullOrBlank()`) sem ramo especial pra
+  `institucional`. `PlayerActivity.tocarItemAtual`.
+
+- **RN-16 — Margem de overscan é assimétrica (4 lados independentes) e
+  sempre em termos visuais.** `margemVminTopo/Base/Esquerda/Direita`
+  descrevem o que o operador vê olhando pra tela já montada — nunca a
+  borda física do painel. Isso importa porque o padding é aplicado em
+  `rotor` (que já representa o quadro visual, depois de compensada
+  `rotacaoTela`), não em `raiz`: aplicar em `raiz` não sobrevive a uma
+  rotação de 90°/270°, que troca largura por altura antes do padding
+  "chegar" no lado visual certo. Violada: não se aplica — é a única forma
+  de aplicar que `RotacaoTela.aplicar` implementa.
+  `ConfigAparelho.margensOverscan`, `RotacaoTela.aplicar`.
+
 ## 6. Textos que o sistema diz
 
 | Texto | Onde | Arquivo |

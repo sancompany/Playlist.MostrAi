@@ -42,32 +42,49 @@ backend" — aqui só o resumo de quem lê rápido:
 
 ## O que este app precisa do backend (pendente, do lado de lá)
 
+O lado deste app está pronto pros dois itens abaixo — o app já sabe
+consumir o que falta assim que existir. Não é "vamos ter que atualizar o
+player depois" — é só o backend expor o campo.
+
 ### 1. `margemVmin` configurável pelo admin, por lado (não 1 valor por tela)
 
-Hoje `margemVmin` (compensação de overscan) só existe nos três caminhos de
-provisionamento **locais** deste app (build embutido, `mostrai-config.json`
-no pendrive, extras de `adb`) — um `Float` único, mesma margem nos 4 lados.
+**Lado do app pronto (21/09/2026).** `margemVmin` deixou de ser um valor
+único e agora são 4 campos independentes —
+`ConfigAparelho.margemVminTopo/Base/Esquerda/Direita`, sempre em termos
+**visuais** (o que o operador vê olhando pra tela já montada — o app já
+resolve a conversão pra rotação física da tela sozinho, o backend não
+precisa saber disso). Hoje esses 4 valores só vêm dos três caminhos de
+provisionamento **locais** (build embutido, `mostrai-config.json`, extras
+de `adb`) — os mesmos 4 nomes de campo (`margemVminTopo`, `margemVminBase`,
+`margemVminEsquerda`, `margemVminDireita`), como float.
 
-Decisão do dono, reafirmada: isso devia vir do próprio site admin, e como
-**4 valores independentes** (topo/base/esquerda/direita), porque a folga de
-overscan varia por lado, não só por tela. Sem um campo do backend pra isso,
-o app não tem como buscar. Detalhe do que muda dos dois lados em
-`docs/proximas-versoes.md`, seção "`margemVmin` configurada pelo admin, não
-pelo arquivo local".
+O que falta é só do lado do backend: um campo (ou 4) no cadastro da tela
+que o admin edite, e uma forma do app buscar esse valor (mais natural:
+junto da resposta de `/playlist`, ou do cadastro do dispositivo). Quando
+esse campo existir, é só decidir a precedência com os caminhos locais
+(sugestão: backend sobrescreve local, mesmo padrão que os outros campos já
+seguem) — não precisa de mudança nenhuma na forma como o app já entende
+"4 valores por lado, em vmin, em termos visuais". Detalhe em
+`docs/proximas-versoes.md`, seção "`margemVmin` configurada pelo admin,
+não pelo arquivo local".
 
 ### 2. Vídeo de fundo institucional servido pelo backend, não embutido no app
 
-Decisão do dono: o vídeo de fundo que toca quando não há programação pra
-aquela hora deve vir do próprio backend/admin, não ser um asset fixo dentro
-do APK. Hoje o item institucional que o backend manda (`institucional:
-true`) **nunca tem `url`** — é assim que o app sabe que é pra desenhar a
-peça institucional local em vez de tocar mídia. Pra isso mudar, o backend
-precisaria expor essa mídia de algum jeito — o caminho mais natural é o
-próprio item institucional passar a vir com uma `url` preenchida quando o
-admin configurar um vídeo de fundo, e sem `url` continuar caindo no
-desenho local (degradê + legenda) como fallback. Ainda **não há contrato**
-para isso — registrado como direção em `docs/pendencias.md`, não como
-trabalho pronto pra puxar.
+**Lado do app pronto (21/09/2026).** O app agora decide se toca vídeo ou
+desenha a tela institucional local **só pela presença de `url`** no item
+da playlist — não mais pela flag `institucional`. Ou seja: um item com
+`institucional: true` **e** uma `url` preenchida já toca essa `url`
+normalmente hoje, sem precisar de outra versão do app. Sem `url` (o caso
+de hoje), continua caindo no desenho local (degradê + legenda) como
+fallback — nada mudou nesse caso.
+
+O que falta é só do lado do backend: quando o admin configurar um vídeo de
+fundo pra uma tela, o item institucional que `/playlist` manda pra ela
+precisa vir com essa `url` preenchida (e `contabiliza: false`, já que
+vídeo de fundo institucional não é anúncio pago — mesma regra que já vale
+pra qualquer item institucional, RN-03 em `docs/funcional.md`). Não há
+contrato pra esse campo ainda — o app está pronto, falta o backend decidir
+e expor.
 
 ## O que NÃO é pedido ao backend (pra não confundir)
 

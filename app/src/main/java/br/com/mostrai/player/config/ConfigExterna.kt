@@ -28,7 +28,10 @@ object ConfigExterna {
         val chaveAparelho: String? = null,
         val baseUrl: String? = null,
         val pin: String? = null,
-        val margemVmin: Float? = null,
+        val margemVminTopo: Float? = null,
+        val margemVminBase: Float? = null,
+        val margemVminEsquerda: Float? = null,
+        val margemVminDireita: Float? = null,
         val rotacaoTela: Int? = null,
     )
 
@@ -40,15 +43,10 @@ object ConfigExterna {
             chaveAparelho = json.optString("chaveAparelho").ifBlank { null },
             baseUrl = json.optString("baseUrl").ifBlank { null },
             pin = json.optString("pin").ifBlank { null },
-            margemVmin = if (json.has("margemVmin") && !json.isNull("margemVmin")) {
-                // optDouble devolve NaN se o valor não for numérico (ex.: uma
-                // string) — nunca propaga isso pra frente: NaN sobrevive a
-                // coerceIn() sem ser pego (NaN < x e NaN > x são sempre
-                // falsos) e vira padding silenciosamente zerado lá na frente.
-                json.optDouble("margemVmin").toFloat().takeUnless { it.isNaN() }
-            } else {
-                null
-            },
+            margemVminTopo = json.margemVmin("margemVminTopo"),
+            margemVminBase = json.margemVmin("margemVminBase"),
+            margemVminEsquerda = json.margemVmin("margemVminEsquerda"),
+            margemVminDireita = json.margemVmin("margemVminDireita"),
             // Só 0/90/180/270 — qualquer outra coisa (string, número fora do
             // conjunto) vira null aqui, e ConfigAparelho.rotacaoTela também
             // barra de novo na escrita. Duas guardas, mesma regra.
@@ -59,6 +57,17 @@ object ConfigExterna {
             },
         )
     }.getOrNull()
+
+    private fun JSONObject.margemVmin(chave: String): Float? =
+        if (has(chave) && !isNull(chave)) {
+            // optDouble devolve NaN se o valor não for numérico (ex.: uma
+            // string) — nunca propaga isso pra frente: NaN sobrevive a
+            // coerceIn() sem ser pego (NaN < x e NaN > x são sempre
+            // falsos) e vira padding silenciosamente zerado lá na frente.
+            optDouble(chave).toFloat().takeUnless { it.isNaN() }
+        } else {
+            null
+        }
 
     fun procurarEAplicar(context: Context, config: ConfigAparelho) {
         if (config.provisionado) return
@@ -115,7 +124,10 @@ object ConfigExterna {
         dados.chaveAparelho?.let { config.chaveAparelho = it }
         dados.baseUrl?.let { config.baseUrl = it }
         dados.pin?.let { config.pinPainel = it }
-        dados.margemVmin?.let { config.margemVmin = it }
+        dados.margemVminTopo?.let { config.margemVminTopo = it }
+        dados.margemVminBase?.let { config.margemVminBase = it }
+        dados.margemVminEsquerda?.let { config.margemVminEsquerda = it }
+        dados.margemVminDireita?.let { config.margemVminDireita = it }
         dados.rotacaoTela?.let { config.rotacaoTela = it }
     }
 

@@ -15,7 +15,10 @@ class ConfigExternaTest {
                 "chaveAparelho": "chave-abc",
                 "baseUrl": "https://exemplo.com/api",
                 "pin": "1357",
-                "margemVmin": 2.5,
+                "margemVminTopo": 2.5,
+                "margemVminBase": 1.5,
+                "margemVminEsquerda": 3,
+                "margemVminDireita": 0.5,
                 "rotacaoTela": 90
             }
             """.trimIndent()
@@ -25,7 +28,10 @@ class ConfigExternaTest {
         assertEquals("chave-abc", dados?.chaveAparelho)
         assertEquals("https://exemplo.com/api", dados?.baseUrl)
         assertEquals("1357", dados?.pin)
-        assertEquals(2.5f, dados?.margemVmin)
+        assertEquals(2.5f, dados?.margemVminTopo)
+        assertEquals(1.5f, dados?.margemVminBase)
+        assertEquals(3f, dados?.margemVminEsquerda)
+        assertEquals(0.5f, dados?.margemVminDireita)
         assertEquals(90, dados?.rotacaoTela)
     }
 
@@ -37,7 +43,10 @@ class ConfigExternaTest {
         assertNull(dados?.chaveAparelho)
         assertNull(dados?.baseUrl)
         assertNull(dados?.pin)
-        assertNull(dados?.margemVmin)
+        assertNull(dados?.margemVminTopo)
+        assertNull(dados?.margemVminBase)
+        assertNull(dados?.margemVminEsquerda)
+        assertNull(dados?.margemVminDireita)
     }
 
     @Test
@@ -56,8 +65,8 @@ class ConfigExternaTest {
 
     @Test
     fun `margemVmin nao numerico vira nulo, nunca NaN`() {
-        val dados = ConfigExterna.parse("""{"margemVmin": "isto nao e numero"}""")
-        assertNull(dados?.margemVmin)
+        val dados = ConfigExterna.parse("""{"margemVminTopo": "isto nao e numero"}""")
+        assertNull(dados?.margemVminTopo)
     }
 
     @Test

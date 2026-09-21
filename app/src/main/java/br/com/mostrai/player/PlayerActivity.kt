@@ -225,8 +225,17 @@ class PlayerActivity : AppCompatActivity() {
         extras.getString(EXTRA_CHAVE)?.let { config.chaveAparelho = it }
         extras.getString(EXTRA_BASE_URL)?.let { config.baseUrl = it }
         extras.getString(EXTRA_PIN)?.let { config.pinPainel = it }
-        if (extras.containsKey(EXTRA_MARGEM)) {
-            config.margemVmin = extras.getFloat(EXTRA_MARGEM, config.margemVmin)
+        if (extras.containsKey(EXTRA_MARGEM_TOPO)) {
+            config.margemVminTopo = extras.getFloat(EXTRA_MARGEM_TOPO, config.margemVminTopo)
+        }
+        if (extras.containsKey(EXTRA_MARGEM_BASE)) {
+            config.margemVminBase = extras.getFloat(EXTRA_MARGEM_BASE, config.margemVminBase)
+        }
+        if (extras.containsKey(EXTRA_MARGEM_ESQUERDA)) {
+            config.margemVminEsquerda = extras.getFloat(EXTRA_MARGEM_ESQUERDA, config.margemVminEsquerda)
+        }
+        if (extras.containsKey(EXTRA_MARGEM_DIREITA)) {
+            config.margemVminDireita = extras.getFloat(EXTRA_MARGEM_DIREITA, config.margemVminDireita)
         }
         if (extras.containsKey(EXTRA_ROTACAO)) {
             config.rotacaoTela = extras.getInt(EXTRA_ROTACAO, config.rotacaoTela)
@@ -463,7 +472,12 @@ class PlayerActivity : AppCompatActivity() {
             playlist.itens.firstOrNull()
         } ?: return
 
-        if (item.institucional || item.url.isNullOrBlank()) {
+        // Só a url decide, não a flag institucional: um item institucional
+        // com url (vídeo de fundo servido pelo backend, ainda sem contrato
+        // — PARA-O-BACKEND.md) toca normalmente, sem esperar outra versão
+        // deste app. Sem url — o caso de hoje — cai na tela institucional
+        // local, institucional ou não (proteção contra dado incompleto).
+        if (item.url.isNullOrBlank()) {
             execucaoAtualId = null
             mostrarInstitucional(item)
         } else {
@@ -564,7 +578,7 @@ class PlayerActivity : AppCompatActivity() {
      * `PainelActivity` em [RotacaoTela] (mesmo padrão raiz/rotor nas duas).
      */
     private fun aplicarRotacaoEMargem() {
-        raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margemVmin, config.rotacaoTela) }
+        raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margensOverscan, config.rotacaoTela) }
     }
 
     @Suppress("DEPRECATION")
@@ -609,7 +623,10 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_CHAVE = "chaveAparelho"
         const val EXTRA_BASE_URL = "baseUrl"
         const val EXTRA_PIN = "pin"
-        const val EXTRA_MARGEM = "margemVmin"
+        const val EXTRA_MARGEM_TOPO = "margemVminTopo"
+        const val EXTRA_MARGEM_BASE = "margemVminBase"
+        const val EXTRA_MARGEM_ESQUERDA = "margemVminEsquerda"
+        const val EXTRA_MARGEM_DIREITA = "margemVminDireita"
         const val EXTRA_ROTACAO = "rotacaoTela"
 
         const val INTERVALO_POLL_MS = 15 * 60_000L

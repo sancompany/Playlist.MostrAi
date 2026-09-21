@@ -25,19 +25,22 @@
   só existe build debug (assinatura de teste).
 - **Pedir ao backend um campo para `margemVmin` por tela, e por lado** (contrato
   de `sancompany/mostrai`, outra sessão) — decisão do dono, 21/09/2026, **reafirmada
-  no mesmo dia**: `margemVmin` deve ser configurável pelo próprio site admin, não só
-  pelos arquivos de provisionamento local, e como 4 valores independentes (um por
-  lado — topo/base/esquerda/direita), não um único número igual nos 4. Ver
-  `docs/proximas-versoes.md`, "`margemVmin` configurada pelo admin, não pelo
-  arquivo local", para o que isso exige dos dois lados.
+  no mesmo dia**. **Lado do app já pronto (21/09/2026)**: `margemVmin` virou
+  4 campos independentes (`margemVminTopo/Base/Esquerda/Direita`), já
+  funcionando nos três caminhos de provisionamento locais — falta só o
+  backend expor esses 4 valores por tela, resumido em `PARA-O-BACKEND.md`.
+  Ver `docs/proximas-versoes.md`, "`margemVmin` configurada pelo admin, não
+  pelo arquivo local", para o que isso ainda exige do lado do backend.
 - **Vídeo de fundo vem do site, não do app** — decisão do dono, 21/09/2026:
   ao contrário dos assets de marca acima (que são locais, embutidos no
   APK), o vídeo de fundo deve ser servido pelo próprio backend/admin, não
-  hardcoded no aplicativo. Ainda não há contrato para isso — depende de o
-  backend (`sancompany/mostrai`, outra sessão) expor essa mídia (provavelmente
-  como um item institucional com `url`, já que hoje o item institucional é
-  o único caminho sem `url` — ver `docs/funcional.md`, RN-03). Registrado
-  aqui como direção, não como trabalho pronto para começar.
+  hardcoded no aplicativo. **Lado do app já pronto (21/09/2026)**: o app
+  agora decide tocar vídeo ou desenhar a tela institucional local só pela
+  presença de `url` no item — um item institucional com `url` preenchida
+  já toca normalmente, hoje, sem precisar de outra versão do app. Falta só
+  o backend (`sancompany/mostrai`, outra sessão) preencher essa `url`
+  quando o admin configurar um vídeo de fundo — resumido em
+  `PARA-O-BACKEND.md`.
 
 ## Trabalho desta versão
 

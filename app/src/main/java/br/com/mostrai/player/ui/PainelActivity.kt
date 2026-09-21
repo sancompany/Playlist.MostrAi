@@ -57,7 +57,7 @@ class PainelActivity : AppCompatActivity() {
         // Mesma compensação de rotação do player (RotacaoTela) — sem isso o
         // painel apareceria de lado no mesmo aparelho que o player já
         // compensa.
-        raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margemVmin, config.rotacaoTela) }
+        raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margensOverscan, config.rotacaoTela) }
     }
 
     private fun tamanhoPin(): Int = ConfigAparelho.TAMANHO_PIN
@@ -118,7 +118,10 @@ class PainelActivity : AppCompatActivity() {
             appendLine("Chave ............. ${resumirChave(config.chaveAparelho)}")
             appendLine("Servidor .......... ${config.baseUrl ?: "—"}")
             appendLine("Provisionado ...... ${if (config.provisionado) "sim" else "não"}")
-            appendLine("Margem (vmin) ..... ${config.margemVmin}")
+            appendLine(
+                "Margem (vmin) ..... topo ${config.margemVminTopo} · base ${config.margemVminBase} · " +
+                    "esq ${config.margemVminEsquerda} · dir ${config.margemVminDireita}",
+            )
             appendLine("Rotação da tela .... ${config.rotacaoTela}°")
             appendLine("Atraso da virada .. ${config.atrasoViradaSegundos()}s")
             appendLine()
