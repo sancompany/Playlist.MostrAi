@@ -145,6 +145,16 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   prompt original) em que um item que sai da elegibilidade desloca o índice
   de quem ficou. `PlayerActivity.atualizarPlaylist`.
 
+- **RN-10 — Configuração embutida no build só se aplica se o aparelho ainda
+  não estiver provisionado.** `-PconfigDispositivo=<arquivo>.json` (README,
+  "Gerar um APK já configurado por tela") nunca sobrescreve um
+  provisionamento já existente — nem o de uma instalação anterior, nem o
+  que o provisionamento de bancada por `adb` aplicar depois (esse último
+  sempre sobrescreve, é o caminho de depuração). Quem vê: ninguém
+  diretamente — é o que faz o app subir sozinho no primeiro boot quando o
+  APK já veio configurado, sem tela de erro nem intervenção.
+  `ConfigAparelho.aplicarConfiguracaoEmbutidaSeNecessaria`.
+
 ## 6. Textos que o sistema diz
 
 | Texto | Onde | Arquivo |

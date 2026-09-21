@@ -1,0 +1,7 @@
+{
+  "dispositivoId": "id-da-tela-no-cadastro-do-admin",
+  "chaveAparelho": "chave-revogavel-emitida-no-admin",
+  "baseUrl": "https://exemplo.com/api",
+  "pin": "4821",
+  "margemVmin": 2.5
+}

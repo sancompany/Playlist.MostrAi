@@ -153,12 +153,68 @@ echo "sdk.dir=/caminho/para/android-sdk" > local.properties
 O APK sai em `app/build/outputs/apk/debug/app-debug.apk`, assinado com a chave
 de debug — suficiente para sideload de teste.
 
-## Instalar e provisionar em bancada
+## Gerar um APK já configurado por tela
+
+Quando você já sabe, antes de gravar o pendrive, qual `dispositivoId` e
+`chaveAparelho` vão para qual TV, não precisa de `adb` depois de instalar: dá
+para embutir a configuração no próprio APK e ele se provisiona sozinho no
+primeiro boot.
+
+1. Copie `dispositivos/exemplo.json.example` para `dispositivos/<nome-da-tela>.json`
+   e preencha com os dados reais daquela tela (vêm do cadastro no admin do
+   Mostraí). Esses arquivos **nunca são versionados** — `.gitignore` já
+   cobre `dispositivos/*.json` (só o `.example` fica no Git). A chave
+   continua sendo revogável no admin se algum dia esse APK vazar; não é
+   diferente do risco de qualquer aparelho perdido.
+
+   ```json
+   {
+     "dispositivoId": "id-da-tela-no-cadastro-do-admin",
+     "chaveAparelho": "chave-revogavel-emitida-no-admin",
+     "baseUrl": "https://exemplo.com/api",
+     "pin": "4821",
+     "margemVmin": 2.5
+   }
+   ```
+
+2. Compile passando o arquivo:
+
+   ```sh
+   ./gradlew assembleDebug -PconfigDispositivo=dispositivos/loja-centro.json
+   ```
+
+3. **Renomeie o APK antes de compilar o próximo**, porque a saída tem sempre
+   o mesmo nome:
+
+   ```sh
+   cp app/build/outputs/apk/debug/app-debug.apk mostrai-loja-centro.apk
+   ```
+
+4. Repita os passos 1–3 para cada tela. No fim você tem um `.apk` por
+   aparelho, cada um pronto para instalar por pendrive sem nenhum passo de
+   `adb` depois — o app lê a configuração embutida no primeiro boot e já
+   sobe funcionando.
+
+Sem `-PconfigDispositivo`, o build volta a ser exatamente o de sempre (os
+cinco campos ficam vazios, nada muda) — é seguro rodar `./gradlew
+assembleDebug` normalmente a qualquer momento.
+
+**O que isso não resolve**: o provisionamento verdadeiramente "sem
+intervenção nenhuma no campo" (item 4 em "Em aberto") continua em aberto —
+este caminho pede que alguém decida, num computador, qual tela é qual antes
+de gravar o pendrive. Para quem já opera assim (uma pessoa prepara os APKs,
+outra só troca o pendrive na loja), resolve completamente.
+
+## Instalar e provisionar em bancada (sem configuração embutida)
+
+Se preferir instalar o APK genérico e configurar depois (por exemplo, para
+testar rápido sem preparar um arquivo por tela):
 
 ```sh
 adb install -r app-debug.apk
 
-# PROVISÓRIO: só para bancada. O provisionamento de campo é decisão em aberto.
+# PROVISÓRIO: só para bancada. Sempre sobrescreve, mesmo por cima de uma
+# configuração já embutida no build — é o caminho de depuração.
 adb shell am start -n br.com.mostrai.player/.PlayerActivity \
   -e dispositivoId "<id-da-tela>" \
   -e chaveAparelho "<chave-revogavel>" \
@@ -187,7 +243,11 @@ Duas garantias que este app depende do backend manter:
 1. Ciclo de vida quando o Android mata o app mesmo assim.
 2. Atualização remota (OTA) em Android TV 8 sideloaded.
 3. PIN universal × PIN por tela do admin.
-4. Provisionamento no primeiro boot, sem teclado e sem usuário/senha.
+4. Provisionamento **de campo** — sem ninguém decidir de antemão qual APK vai
+   para qual tela (ex.: escanear um QR code no primeiro boot). "Gerar um APK
+   já configurado por tela" (seção acima) resolveu o caso em que alguém já
+   sabe essa relação antes de gravar o pendrive; o caso genérico — tela
+   chega sem ninguém ter decidido nada ainda — continua em aberto.
 
 Retomada de índice depois de reinício (item que era o nº 1 desta lista) foi
 fechada com o GPT em 21/09/2026 — ver decisão 5 acima.
