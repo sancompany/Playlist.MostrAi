@@ -76,8 +76,15 @@ Fechadas:
 - Provisionamento sem `adb` — dois caminhos a mais, pedidos pelo dono: build
   embutido (`-PconfigDispositivo`) e arquivo externo (`mostrai-config.json`
   no pendrive, lido em runtime com permissão de armazenamento pedida só
-  quando necessário). 47 → 52 testes (`ConfigExternaTest`, 5 casos) ·
+  quando necessário). 47 → 53 testes (`ConfigExternaTest`, 5 casos) ·
   evidência: build local verde, a confirmar no CI.
+- Validação de PIN — pedido do dono, 21/09/2026: nenhum dos três caminhos de
+  provisionamento validava o formato do PIN antes de gravar; um PIN fora de
+  4 dígitos numéricos (o único formato que o teclado do painel consegue
+  digitar de volta) travaria o painel de manutenção para sempre. Centralizado
+  no setter de `ConfigAparelho.pinPainel` — valor inválido é ignorado, mantém
+  o anterior. 53 → 59 testes (`ConfigAparelhoTest`, 6 casos, Robolectric) ·
+  evidência: build + testes locais verdes.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem
