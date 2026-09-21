@@ -12,6 +12,9 @@ import androidx.core.content.ContextCompat
 import br.com.mostrai.player.BuildConfig
 import br.com.mostrai.player.R
 import br.com.mostrai.player.config.ConfigAparelho
+import br.com.mostrai.player.network.EstadoRede
+import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.proof.FilaProofOfPlay
 
 /**
  * Painel de manutenção acessível na própria TV, sem teclado.
@@ -88,6 +91,11 @@ class PainelActivity : AppCompatActivity() {
     private fun mostrarInformacoes() {
         grupoPin.visibility = View.GONE
         grupoInfo.visibility = View.VISIBLE
+
+        // Leitura rápida e local (contagem em SQLite + SharedPreferences); não
+        // dispara rede nenhuma, então não precisa de thread de fundo aqui.
+        val fila = FilaProofOfPlay(this, MostraiApi(config))
+
         findViewById<TextView>(R.id.info).text = buildString {
             appendLine("MOSTRAÍ PLAYER ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine()
@@ -97,6 +105,14 @@ class PainelActivity : AppCompatActivity() {
             appendLine("Provisionado ...... ${if (config.provisionado) "sim" else "não"}")
             appendLine("Margem (vmin) ..... ${config.margemVmin}")
             appendLine("Atraso da virada .. ${config.atrasoViradaSegundos()}s")
+            appendLine()
+            appendLine("Contrato do servidor  ${if (EstadoRede.contratoNovo) "novo" else "antigo (degradado)"}")
+            appendLine("Última playlist ..... ${EstadoRede.ultimaOrigem}")
+            EstadoRede.ultimoErroAparelho?.let { appendLine("Erro do aparelho .... HTTP $it") }
+            EstadoRede.ultimaFalhaTransitoria?.let { appendLine("Última falha de rede . $it") }
+            appendLine()
+            appendLine("Proof-of-play pendente  ${fila.pendentes()}")
+            appendLine("Eventos perdidos ...... ${fila.perdas()}")
             appendLine()
             if (config.pinPainel == ConfigAparelho.PIN_PROVISORIO) {
                 appendLine("ATENÇÃO: PIN ainda é o provisório de fábrica.")

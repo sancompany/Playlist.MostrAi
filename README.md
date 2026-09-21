@@ -44,10 +44,24 @@ atrapalhariam este caso de uso.
    `play()`, com deduplicação obrigatória no backend.
 4. **Identidade de janela e de item vêm do backend** (`janelaId`,
    `itemProgramacaoId`), nunca do relógio da TV.
+5. **Retomada por posição temporal, nunca por índice salvo** (item 7.1,
+   fechado com o GPT em 21/09/2026). Depois de um reinício, o app calcula
+   onde a programação deveria estar (`janelaInicio` + `servidorAgora` +
+   tempo monotônico local) em vez de continuar do último índice tocado — que
+   distorceria a distribuição da hora e favoreceria sistematicamente o
+   começo da lista, o mesmo bug do player web (seção 5). Um item pego no
+   meio é pulado inteiro: nunca há seek, porque uma exibição parcial não
+   pode virar comprovante. Tolerância de 500 ms na borda inicial para
+   diferenças pequenas de sincronização. Sem `servidorAgora` confiável (por
+   exemplo, logo após um reboot real, que reinicia o relógio monotônico), o
+   app não improvisa com o índice salvo: espera sincronizar ou cai na tela
+   institucional.
 
-## Estado atual — fatia 1
+## Estado atual — fatia 2
 
 O que já está no APK:
+
+**Fatia 1 — player**
 
 - Activity única em tela cheia, vídeo mudo, sem barra de sistema, com
   `FLAG_KEEP_SCREEN_ON`.
@@ -63,7 +77,33 @@ O que já está no APK:
 - Atraso determinístico de 0 a 29 s derivado da chave do aparelho, para as telas
   da rede não baterem no servidor no mesmo segundo na virada da hora.
 
-O que ainda **não** está: rede, cache de mídia e fila durável de proof-of-play.
+**Fatia 2 — rede e comprovante**
+
+- Cliente HTTP próprio (`HttpURLConnection`, sem dependência externa) que lê
+  `/playlist` nas duas formas do contrato (seção 6.6) e escolhe modo novo ou
+  degradado automaticamente.
+- Busca a playlist a cada 15 min, mais uma busca extra na virada da hora com
+  o atraso determinístico da chave do aparelho. Heartbeat a cada 5 min.
+- Última playlist recebida com sucesso fica em cache local — o app continua
+  tocando offline se a rede cair.
+- Retomada por posição temporal (decisão 5 acima), com reancoragem pelo
+  `itemProgramacaoId` — não pelo índice bruto do array — quando a playlist é
+  atualizada dentro da mesma janela.
+- **Fila durável de proof-of-play em SQLite** (sem Room: esquema pequeno,
+  `SQLiteOpenHelper` já entrega a durabilidade que a decisão 6.4 pede). A
+  linha nasce com o `execucaoId` antes do `play()`, só fica elegível para
+  envio quando ganha `terminadoEm` no `STATE_ENDED`, e só sai da fila nos três
+  casos fechados na seção 6.5 — nunca por timeout, `5xx` ou reinício do app.
+  Envio em lote de até 50, backoff exponencial com jitter (5s → 30min, teto,
+  nunca desistência), fila limitada a 5.000 linhas com contador de perda
+  visível no painel.
+- Painel de manutenção agora mostra o modo de contrato, a origem da última
+  playlist (servidor/cache/institucional), erro do aparelho, e o estado da
+  fila de proof-of-play (pendentes e perdas).
+- Teste unitário da regra de reposicionamento (`PosicaoNaPlaylistTest`) —
+  `./gradlew testDebugUnitTest`.
+
+O que ainda **não** está: cache local de mídia (item 4 do MVP, próxima fatia).
 
 ### Gesto do painel
 
@@ -120,8 +160,10 @@ Duas garantias que este app depende do backend manter:
 
 ## Em aberto
 
-1. Retomada de índice depois de reinício (último índice × posição temporal na hora).
-2. Ciclo de vida quando o Android mata o app mesmo assim.
-3. Atualização remota (OTA) em Android TV 8 sideloaded.
-4. PIN universal × PIN por tela do admin.
-5. Provisionamento no primeiro boot, sem teclado e sem usuário/senha.
+1. Ciclo de vida quando o Android mata o app mesmo assim.
+2. Atualização remota (OTA) em Android TV 8 sideloaded.
+3. PIN universal × PIN por tela do admin.
+4. Provisionamento no primeiro boot, sem teclado e sem usuário/senha.
+
+Retomada de índice depois de reinício (item que era o nº 1 desta lista) foi
+fechada com o GPT em 21/09/2026 — ver decisão 5 acima.

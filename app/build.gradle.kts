@@ -39,4 +39,8 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(libs.junit)
 }

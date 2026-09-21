@@ -1,7 +1,9 @@
 package br.com.mostrai.player
 
+import android.content.Context
 import android.content.Intent
-import android.os.Build
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -11,32 +13,49 @@ import android.view.View
 import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import br.com.mostrai.player.config.ConfigAparelho
+import br.com.mostrai.player.network.EstadoRede
+import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
+import br.com.mostrai.player.playlist.PlaylistRepositorio
+import br.com.mostrai.player.playlist.PosicaoNaPlaylist
+import br.com.mostrai.player.playlist.RelogioJanela
+import br.com.mostrai.player.proof.FilaProofOfPlay
 import br.com.mostrai.player.ui.GestoPainel
 import br.com.mostrai.player.ui.PainelActivity
 import br.com.mostrai.player.ui.TelaInstitucional
+import java.time.OffsetDateTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Tela única do player: vídeo em tela cheia, mudo, em laço.
+ * Tela única do player: vídeo em tela cheia, mudo, em laço, buscando a
+ * playlist do servidor.
  *
  * O ciclo avança item a item em vez de usar a fila do ExoPlayer, porque a
  * decisão fechada do projeto é que só a conclusão real conta — cada exibição
- * precisa terminar num STATE_ENDED próprio, observável.
+ * precisa terminar num STATE_ENDED próprio, observável, que é exatamente o
+ * gancho onde o comprovante de exibição entra.
  */
 @OptIn(UnstableApi::class)
 class PlayerActivity : AppCompatActivity() {
 
     private lateinit var config: ConfigAparelho
+    private lateinit var api: MostraiApi
+    private lateinit var repositorio: PlaylistRepositorio
+    private lateinit var fila: FilaProofOfPlay
+
     private lateinit var playerView: PlayerView
     private lateinit var institucional: TelaInstitucional
     private lateinit var raiz: View
@@ -45,17 +64,54 @@ class PlayerActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
 
     private var playlist: Playlist = Playlist.somenteInstitucional()
+    private var janelaIdAtual: String? = null
+    private var relogioJanela: RelogioJanela? = null
     private var indice = 0
+
+    /** execucaoId da exibição em andamento, ou null se o item não conta. */
+    private var execucaoAtualId: String? = null
 
     private val gestoPainel = GestoPainel { abrirPainel() }
 
     private val avancarPorTempo = Runnable { avancar() }
+
+    private val buscarPeriodicamente = object : Runnable {
+        override fun run() {
+            atualizarPlaylist(forcarReposicionamento = false)
+            handler.postDelayed(this, INTERVALO_POLL_MS)
+        }
+    }
+
+    private val heartbeatPeriodico = object : Runnable {
+        override fun run() {
+            lifecycleScope.launch(Dispatchers.IO) { api.heartbeat() }
+            handler.postDelayed(this, INTERVALO_HEARTBEAT_MS)
+        }
+    }
+
+    private val flushFilaPeriodico = object : Runnable {
+        override fun run() {
+            lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
+            handler.postDelayed(this, INTERVALO_FLUSH_MS)
+        }
+    }
+
+    /** Dispara a fila assim que a rede volta — não espera o próximo temporizador. */
+    private val callbackConectividade = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
 
         config = ConfigAparelho(this)
+        api = MostraiApi(config)
+        repositorio = PlaylistRepositorio(this, api)
+        fila = FilaProofOfPlay(this, api)
+
         raiz = findViewById(R.id.raiz)
         playerView = findViewById(R.id.player)
         institucional = findViewById(R.id.institucional)
@@ -94,7 +150,15 @@ class PlayerActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         criarPlayer()
-        tocarItemAtual()
+
+        atualizarPlaylist(forcarReposicionamento = true)
+        handler.postDelayed(buscarPeriodicamente, INTERVALO_POLL_MS)
+        handler.postDelayed(heartbeatPeriodico, INTERVALO_HEARTBEAT_MS)
+        handler.postDelayed(flushFilaPeriodico, INTERVALO_FLUSH_MS)
+        agendarViradaDeHora()
+
+        lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
+        conectividade().registerDefaultNetworkCallback(callbackConectividade)
     }
 
     override fun onResume() {
@@ -104,8 +168,109 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        handler.removeCallbacks(avancarPorTempo)
+        handler.removeCallbacksAndMessages(null)
+        runCatching { conectividade().unregisterNetworkCallback(callbackConectividade) }
         liberarPlayer()
+    }
+
+    private fun conectividade() =
+        getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    // --------------------------------------------------------------- playlist
+
+    /**
+     * Busca a playlist no servidor (ou cai para cache/institucional). Só
+     * reposiciona por tempo — nunca por índice salvo — quando é um começo
+     * frio ou a janela mudou (decisão fechada com o GPT, item 7.1). Numa
+     * atualização dentro da mesma janela, reancora pelo `itemProgramacaoId`
+     * do item em exibição, nunca pelo índice bruto do array: um item que sai
+     * da elegibilidade no meio da hora não pode deslocar quem ficou — é
+     * exatamente o bug do player web descrito na seção 5.
+     */
+    private fun atualizarPlaylist(forcarReposicionamento: Boolean) {
+        lifecycleScope.launch {
+            val resultado = withContext(Dispatchers.IO) { repositorio.buscar() }
+
+            val playlistAnterior = playlist
+            val idItemAtual = playlistAnterior.itens.getOrNull(indice)?.itemProgramacaoId
+            val trocouDeJanela = resultado.playlist.janelaId != janelaIdAtual
+
+            playlist = resultado.playlist
+            relogioJanela = resultado.relogio
+            janelaIdAtual = resultado.playlist.janelaId
+            atualizarEstadoRede(resultado)
+
+            if (playlist.itens.isEmpty()) {
+                indice = 0
+                return@launch
+            }
+
+            when {
+                forcarReposicionamento || trocouDeJanela -> {
+                    indice = calcularIndiceInicial()
+                    reiniciarItemAgora()
+                }
+                else -> {
+                    val novoIndice = idItemAtual
+                        ?.let { id -> playlist.itens.indexOfFirst { it.itemProgramacaoId == id } }
+                        ?: -1
+                    if (novoIndice >= 0) {
+                        indice = novoIndice
+                    } else {
+                        indice = calcularIndiceInicial()
+                        reiniciarItemAgora()
+                    }
+                }
+            }
+        }
+    }
+
+    /** Reentrada por posição temporal (item 7.1) — nunca por índice salvo. */
+    private fun calcularIndiceInicial(): Int {
+        val relogio = relogioJanela?.takeIf { it.valida() } ?: return 0
+        val inicioIso = playlist.janelaInicio ?: return 0
+        val inicioMs = runCatching { OffsetDateTime.parse(inicioIso).toInstant().toEpochMilli() }
+            .getOrNull() ?: return 0
+        val decorridoMs = relogio.agoraDoServidorMs() - inicioMs
+        return PosicaoNaPlaylist.calcular(playlist.itens, decorridoMs)
+    }
+
+    private fun reiniciarItemAgora() {
+        handler.removeCallbacks(avancarPorTempo)
+        player?.stop()
+        execucaoAtualId = null
+        tocarItemAtual()
+    }
+
+    private fun atualizarEstadoRede(resultado: PlaylistRepositorio.Resultado) {
+        EstadoRede.contratoNovo = !resultado.playlist.modoDegradado
+        EstadoRede.ultimaOrigem = resultado.origem.name
+        EstadoRede.ultimoErroAparelho = resultado.erroAparelho
+        EstadoRede.ultimaFalhaTransitoria = resultado.falhaTransitoria
+    }
+
+    /**
+     * Acorda na virada da hora com um atraso derivado da chave do aparelho
+     * (nunca do relógio, sempre o mesmo atraso) para as telas da rede não
+     * baterem juntas no servidor. Usa o relógio de parede só para decidir
+     * QUANDO acordar — nenhuma decisão de crédito depende disso; se o
+     * relógio da TV estiver errado, o próximo poll periódico corrige.
+     */
+    private fun agendarViradaDeHora() {
+        val agora = java.util.Calendar.getInstance()
+        val proximaHora = (agora.clone() as java.util.Calendar).apply {
+            add(java.util.Calendar.HOUR_OF_DAY, 1)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val atrasoJitterMs = config.atrasoViradaSegundos() * 1000L
+        val atrasoMs = (proximaHora.timeInMillis - agora.timeInMillis) + atrasoJitterMs
+
+        handler.postDelayed({
+            atualizarPlaylist(forcarReposicionamento = false)
+            agendarViradaDeHora()
+        }, atrasoMs.coerceAtLeast(1_000L))
     }
 
     // ---------------------------------------------------------------- player
@@ -121,7 +286,11 @@ class PlayerActivity : AppCompatActivity() {
 
                 override fun onPlayerError(error: PlaybackException) {
                     Log.w(TAG, "falha ao reproduzir item $indice", error)
-                    // Falha de reprodução NÃO é exibição: nada a comprovar, só segue.
+                    val id = execucaoAtualId
+                    execucaoAtualId = null
+                    // Falha de reprodução NÃO é exibição: a linha nunca teve
+                    // terminadoEm, não é uma alegação de exibição completa.
+                    if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
                     avancar()
                 }
             })
@@ -143,6 +312,7 @@ class PlayerActivity : AppCompatActivity() {
         } ?: return
 
         if (item.institucional || item.url.isNullOrBlank()) {
+            execucaoAtualId = null
             mostrarInstitucional(item)
         } else {
             mostrarVideo(item)
@@ -150,13 +320,21 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun mostrarVideo(item: ItemPlaylist) {
-        institucional.visibility = View.GONE
-        playerView.visibility = View.VISIBLE
+        val playlistDoItem = playlist
+        lifecycleScope.launch {
+            // A linha da fila nasce ANTES do play() (decisão 3, seção 4) — só
+            // toca depois que o execucaoId está persistido.
+            val id = withContext(Dispatchers.IO) { fila.registrarInicio(item, playlistDoItem) }
+            execucaoAtualId = id
 
-        val exo = player ?: return
-        exo.setMediaItem(MediaItem.fromUri(item.url!!))
-        exo.prepare()
-        exo.playWhenReady = true
+            institucional.visibility = View.GONE
+            playerView.visibility = View.VISIBLE
+
+            val exo = player ?: return@launch
+            exo.setMediaItem(MediaItem.fromUri(item.url!!))
+            exo.prepare()
+            exo.playWhenReady = true
+        }
     }
 
     private fun mostrarInstitucional(item: ItemPlaylist) {
@@ -176,7 +354,14 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Chamado apenas no STATE_ENDED: é aqui que a exibição vira comprovante. */
     private fun concluirExibicao() {
-        // TODO(fatia 2): registrar terminadoEm na fila durável de proof-of-play.
+        val id = execucaoAtualId
+        execucaoAtualId = null
+        if (id != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                fila.registrarFim(id)
+                fila.tentarEnviar()
+            }
+        }
         avancar()
     }
 
@@ -238,5 +423,9 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_BASE_URL = "baseUrl"
         const val EXTRA_PIN = "pin"
         const val EXTRA_MARGEM = "margemVmin"
+
+        const val INTERVALO_POLL_MS = 15 * 60_000L
+        const val INTERVALO_HEARTBEAT_MS = 5 * 60_000L
+        const val INTERVALO_FLUSH_MS = 60_000L
     }
 }
