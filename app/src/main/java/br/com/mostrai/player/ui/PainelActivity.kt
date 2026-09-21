@@ -1,0 +1,124 @@
+package br.com.mostrai.player.ui
+
+import android.os.Bundle
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.View
+import android.widget.GridLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import br.com.mostrai.player.BuildConfig
+import br.com.mostrai.player.R
+import br.com.mostrai.player.config.ConfigAparelho
+
+/**
+ * Painel de manutenção acessível na própria TV, sem teclado.
+ *
+ * O PIN é digitado numa grade navegável pelo D-pad do controle remoto, porque
+ * controle de Android TV normalmente não tem teclado numérico.
+ */
+class PainelActivity : AppCompatActivity() {
+
+    private lateinit var config: ConfigAparelho
+    private lateinit var display: TextView
+    private lateinit var erro: TextView
+    private lateinit var grupoPin: View
+    private lateinit var grupoInfo: ScrollView
+
+    private val digitado = StringBuilder()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_painel)
+
+        config = ConfigAparelho(this)
+        display = findViewById(R.id.display)
+        erro = findViewById(R.id.erroPin)
+        grupoPin = findViewById(R.id.grupoPin)
+        grupoInfo = findViewById(R.id.grupoInfo)
+
+        montarTeclado(findViewById(R.id.teclado))
+    }
+
+    private fun montarTeclado(grade: GridLayout) {
+        for (d in 0..9) {
+            val tecla = TextView(this).apply {
+                text = d.toString()
+                textSize = 26f
+                gravity = Gravity.CENTER
+                setTextColor(ContextCompat.getColorStateList(context, R.color.cor_tecla))
+                setBackgroundResource(R.drawable.fundo_tecla)
+                isFocusable = true
+                isFocusableInTouchMode = true
+                setOnClickListener { digitar(d) }
+            }
+            val params = GridLayout.LayoutParams().apply {
+                width = resources.getDimensionPixelSize(R.dimen.tecla)
+                height = resources.getDimensionPixelSize(R.dimen.tecla)
+                setMargins(6, 6, 6, 6)
+            }
+            grade.addView(tecla, params)
+            if (d == 0) tecla.requestFocus()
+        }
+    }
+
+    private fun digitar(d: Int) {
+        if (digitado.length >= TAMANHO_PIN) return
+        digitado.append(d)
+        display.text = mascara()
+        erro.visibility = View.INVISIBLE
+
+        if (digitado.length == TAMANHO_PIN) {
+            if (digitado.toString() == config.pinPainel) {
+                mostrarInformacoes()
+            } else {
+                digitado.setLength(0)
+                display.text = getString(R.string.painel_pin_vazio)
+                erro.text = getString(R.string.painel_pin_errado)
+                erro.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun mascara(): String =
+        (0 until TAMANHO_PIN).joinToString(" ") { if (it < digitado.length) "•" else "·" }
+
+    private fun mostrarInformacoes() {
+        grupoPin.visibility = View.GONE
+        grupoInfo.visibility = View.VISIBLE
+        findViewById<TextView>(R.id.info).text = buildString {
+            appendLine("MOSTRAÍ PLAYER ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine()
+            appendLine("Tela .............. ${config.dispositivoId ?: "—"}")
+            appendLine("Chave ............. ${resumirChave(config.chaveAparelho)}")
+            appendLine("Servidor .......... ${config.baseUrl ?: "—"}")
+            appendLine("Provisionado ...... ${if (config.provisionado) "sim" else "não"}")
+            appendLine("Margem (vmin) ..... ${config.margemVmin}")
+            appendLine("Atraso da virada .. ${config.atrasoViradaSegundos()}s")
+            appendLine()
+            if (config.pinPainel == ConfigAparelho.PIN_PROVISORIO) {
+                appendLine("ATENÇÃO: PIN ainda é o provisório de fábrica.")
+            }
+        }
+    }
+
+    /** Nunca mostra a chave inteira na tela de um comércio. */
+    private fun resumirChave(chave: String?): String {
+        if (chave.isNullOrBlank()) return "—"
+        return if (chave.length <= 8) "••••" else "${chave.take(4)}…${chave.takeLast(4)}"
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            finish()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private companion object {
+        const val TAMANHO_PIN = 4
+    }
+}

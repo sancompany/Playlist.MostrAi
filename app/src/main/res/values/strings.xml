@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mostraí Player</string>
+    <string name="painel_titulo">Painel de manutenção</string>
+    <string name="painel_pin_vazio">· · · ·</string>
+    <string name="painel_dica_voltar">Pressione VOLTAR para sair</string>
+    <string name="painel_pin_errado">PIN incorreto</string>
+    <string name="institucional_sem_provisionamento">Aparelho ainda não provisionado</string>
+    <string name="institucional_sem_programacao">Sem programação para esta hora</string>
+</resources>
