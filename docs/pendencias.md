@@ -27,6 +27,21 @@
   ciclo de vida da fila de proof-of-play com Robolectric) — ver
   `docs/proximas-versoes.md` se não couber nesta estação.
 
+## Ideia registrada, não implementar sem pedido
+
+- **`margemVmin` devia vir do admin do site, não de arquivo/config local —
+  e por lado, não um valor só.** Hoje `ConfigAparelho.margemVmin` e
+  `ConfigExterna.Dados.margemVmin` são um `Float` único, aplicado igual nos
+  4 lados por `PlayerActivity.aplicarMargemOverscan()`
+  (`raiz.setPadding(px, px, px, px)`). O dono apontou (21/09/2026) que cada
+  TV tem sua própria margem de cada um dos 4 lados, e que isso deveria ser
+  configurado pelo site (por tela, no admin), não por um JSON/extra local.
+  Mesma ideia já registrada do lado do backend, com o histórico completo,
+  em `sancompany/mostrai`, `docs/proximas-versoes.md`, seção "Margem e
+  orientação por tela configuráveis no admin, não só na URL" — ler lá antes
+  de implementar. Só entra quando o dono pedir; implica mudança nos dois
+  repositórios (contrato novo do backend + leitura de 4 valores aqui).
+
 ## Bloqueios que travam a esteira
 
 Nenhum no momento — CI publicado e sendo verificado; sem push nem migration
