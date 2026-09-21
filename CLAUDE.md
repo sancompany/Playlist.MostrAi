@@ -73,6 +73,11 @@ Fechadas:
   puro, mesmo padrão de `PosicaoNaPlaylist`), com ramo explícito pro modo
   degradado (mantém o índice atual, não reinicia). 39 → 47 testes ·
   `docs/erros/2026-09-21-modo-degradado-reiniciava-a-cada-poll.md`.
+- Provisionamento sem `adb` — dois caminhos a mais, pedidos pelo dono: build
+  embutido (`-PconfigDispositivo`) e arquivo externo (`mostrai-config.json`
+  no pendrive, lido em runtime com permissão de armazenamento pedida só
+  quando necessário). 47 → 52 testes (`ConfigExternaTest`, 5 casos) ·
+  evidência: build local verde, a confirmar no CI.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem
@@ -88,10 +93,10 @@ que o dono confirmar o app rodando em aparelho real.
 - Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi`, `HttpCliente`, `PlaylistJson`, `PlayedJson`)
 - Playlist e reposicionamento: `app/src/main/java/br/com/mostrai/player/playlist/`
 - Proof-of-play (fila durável): `app/src/main/java/br/com/mostrai/player/proof/`
-- Configuração do aparelho: `app/src/main/java/br/com/mostrai/player/config/ConfigAparelho.kt`
+- Configuração do aparelho: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda; `ConfigExterna` lê `mostrai-config.json` do pendrive)
 - Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt`
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`
-- Variáveis/segredos: nenhum `.env` — configuração do aparelho fica em `SharedPreferences` no próprio dispositivo, provisionada por extras de Intent (`README.md`, "Instalar e provisionar em bancada")
+- Variáveis/segredos: nenhum `.env` — três caminhos de provisionamento, nesta ordem de precedência: build embutido (`-PconfigDispositivo`, README "Gerar um APK já configurado por tela") → arquivo externo (`mostrai-config.json` no pendrive, README "Configurar por um arquivo no pendrive") → extras de Intent por `adb` (sempre sobrescreve, é o caminho de depuração, README "Instalar e provisionar em bancada"). Nenhum dos três versiona segredo — `dispositivos/*.json` e `mostrai-config.json` ficam de fora do Git.
 
 ## Conformidade
 

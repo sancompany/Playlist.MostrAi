@@ -205,6 +205,47 @@ este caminho pede que alguém decida, num computador, qual tela é qual antes
 de gravar o pendrive. Para quem já opera assim (uma pessoa prepara os APKs,
 outra só troca o pendrive na loja), resolve completamente.
 
+## Configurar por um arquivo no pendrive (sem recompilar)
+
+Alternativa ao build por tela acima: **um único APK genérico** para todas
+as telas, e um arquivo `mostrai-config.json` no mesmo pendrive usado para
+instalar. No primeiro boot, se o aparelho ainda não estiver provisionado, o
+app procura esse arquivo em qualquer volume montado (o próprio pendrive,
+inclusive) e se configura sozinho. Você edita esse JSON toda vez que muda a
+tela — sem recompilar nada.
+
+1. Copie `dispositivos/exemplo.json.example` para `mostrai-config.json` na
+   **raiz do pendrive** (mesmo nível do `.apk`), com os dados daquela tela:
+
+   ```json
+   {
+     "dispositivoId": "id-da-tela-no-cadastro-do-admin",
+     "chaveAparelho": "chave-revogavel-emitida-no-admin",
+     "baseUrl": "https://exemplo.com/api",
+     "pin": "4821",
+     "margemVmin": 2.5
+   }
+   ```
+
+2. Instale o `.apk` normalmente (seção "Instalar pelo pendrive" acima), com
+   o mesmo pendrive ainda conectado na TV.
+
+3. No primeiro boot, o Android vai pedir permissão de armazenamento — é
+   nesse momento que o app consegue ler o pendrive. **Conceda a permissão**
+   (dá pra navegar o diálogo pelo D-pad do controle remoto). Sem alguém
+   presente pra conceder, o app não trava: segue sem provisionar e mostra a
+   tela institucional até alguém provisionar de outro jeito.
+
+4. Depois disso o app fica configurado permanentemente (não pergunta de
+   novo) — pode até tirar o pendrive.
+
+**Quando usar qual caminho:** o build por tela (seção acima) é mais
+hands-off depois de pronto (zero interação no primeiro boot), mas pede
+recompilar a cada tela nova. Este aqui pede um toque a mais no primeiro
+boot (conceder a permissão), mas é um `.apk` só, e trocar de tela é só
+editar um `.json`. Os dois convivem: se o build já vier configurado, este
+caminho nem chega a ser tentado.
+
 ## Instalar e provisionar em bancada (sem configuração embutida)
 
 Se preferir instalar o APK genérico e configurar depois (por exemplo, para

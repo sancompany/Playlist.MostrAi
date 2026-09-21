@@ -1,7 +1,9 @@
 package br.com.mostrai.player
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.Uri
@@ -12,8 +14,10 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -23,6 +27,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import br.com.mostrai.player.cache.CacheMidia
 import br.com.mostrai.player.config.ConfigAparelho
+import br.com.mostrai.player.config.ConfigExterna
 import br.com.mostrai.player.network.EstadoRede
 import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.playlist.ItemPlaylist
@@ -117,12 +122,29 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Só pede a permissão de armazenamento quando o aparelho ainda não está
+     * provisionado e existe algo a ganhar em ler o pendrive (README,
+     * "Configurar por um arquivo no pendrive"). Negada, ou sem ninguém para
+     * conceder no primeiro boot, o app não trava: segue sem provisionar, cai
+     * na tela institucional, e o painel de PIN mostra o estado.
+     */
+    private val lancadorPermissaoArmazenamento = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { concedida ->
+        if (concedida) aplicarConfigExternaSeNecessaria()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
 
         config = ConfigAparelho(this)
+        // Ordem: build embutido (-PconfigDispositivo) primeiro — se já veio
+        // configurado assim, nem chega a pedir permissão de armazenamento.
         config.aplicarConfiguracaoEmbutidaSeNecessaria()
+        if (!config.provisionado) pedirPermissaoOuAplicarConfigExterna()
+
         api = MostraiApi(config)
         repositorio = PlaylistRepositorio(this, api)
         fila = FilaProofOfPlay(this, api)
@@ -136,6 +158,22 @@ class PlayerActivity : AppCompatActivity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         aplicarMargemOverscan()
+    }
+
+    private fun pedirPermissaoOuAplicarConfigExterna() {
+        val jaConcedida = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.READ_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (jaConcedida) {
+            aplicarConfigExternaSeNecessaria()
+        } else {
+            lancadorPermissaoArmazenamento.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    private fun aplicarConfigExternaSeNecessaria() {
+        ConfigExterna.procurarEAplicar(this, config)
     }
 
     override fun onNewIntent(intent: Intent) {

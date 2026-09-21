@@ -155,6 +155,16 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   APK já veio configurado, sem tela de erro nem intervenção.
   `ConfigAparelho.aplicarConfiguracaoEmbutidaSeNecessaria`.
 
+- **RN-11 — Configuração por arquivo externo (`mostrai-config.json`) só é
+  tentada se ainda não houver configuração embutida nem provisionamento
+  prévio.** README, "Configurar por um arquivo no pendrive". Pede
+  permissão de armazenamento em runtime só quando vai precisar dela (nunca
+  antes) — negada, ou sem ninguém pra conceder no primeiro boot, o app
+  segue sem travar, sem provisionar, mostrando a tela institucional. Quem
+  vê: o operador, no diálogo de permissão do próprio Android (não é tela
+  deste app). `ConfigExterna.procurarEAplicar`,
+  `PlayerActivity.pedirPermissaoOuAplicarConfigExterna`.
+
 ## 6. Textos que o sistema diz
 
 | Texto | Onde | Arquivo |
