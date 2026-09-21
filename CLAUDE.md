@@ -139,6 +139,24 @@ Fechadas:
      apesar de `CLAUDE.md` já dizer que os dois ficam fora do Git — corrigido.
   67 testes (62 → 67). Handoff consolidado pro backend em `PARA-O-BACKEND.md`
   (novo).
+- Preparo pro backend (21/09/2026) — `margemVmin` virou 4 valores
+  independentes por lado (`MargensOverscan`; `RotacaoTela` passou a aplicar
+  o padding em `rotor`, o quadro visual, não em `raiz` — só assim margem
+  assimétrica sobrevive a `rotacaoTela` de 90°/270°), e o player passou a
+  decidir vídeo × tela institucional só pela presença de `url`, não pela
+  flag `institucional` — o vídeo de fundo servido pelo backend já toca sem
+  outra versão do app. RN-15 e RN-16 em `docs/funcional.md`. 67 → 70 testes.
+- Revisão de acompanhamento (foco no caminho de vídeo, pedido do dono,
+  21/09/2026) — 4 ciclos, 1 achado de correção **alta**, os 2 últimos
+  limpos: `PainelActivity` juntava tema translúcido (correção do ciclo
+  anterior) com o `screenOrientation="landscape"` que já tinha no
+  manifesto. No Android 8.0 — versão exata do parque instalado, com
+  `targetSdk = 26` — essa combinação faz `Activity.onCreate` lançar
+  `IllegalStateException("Only fullscreen opaque activities can request
+  orientation")`: abrir o painel derrubaria o app inteiro na loja, matando
+  o player e a exibição paga em andamento. `screenOrientation` removido
+  (janela translúcida herda a orientação da Activity opaca de trás).
+  `docs/erros/2026-09-21-painel-translucido-com-orientacao-fixa-derrubava-o-app.md`.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem

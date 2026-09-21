@@ -32,10 +32,18 @@
             </intent-filter>
         </activity>
 
+        <!--
+             Sem screenOrientation de propósito: no Android 8.0 (o do parque
+             instalado), uma Activity translúcida que pede orientação fixa
+             derruba o app com IllegalStateException("Only fullscreen opaque
+             activities can request orientation") logo no onCreate. Não faz
+             falta — janela translúcida herda a orientação da Activity opaca
+             de trás (PlayerActivity, já travada em landscape).
+             Ver docs/erros/2026-09-21-painel-translucido-com-orientacao-fixa-derrubava-o-app.md
+        -->
         <activity
             android:name=".ui.PainelActivity"
             android:exported="false"
-            android:screenOrientation="landscape"
             android:theme="@style/Theme.MostraiPlayer.Translucido" />
 
         <receiver

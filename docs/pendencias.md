@@ -9,11 +9,18 @@
   auto-boot, reprodução em laço, painel de manutenção (3 toques de OK + PIN),
   margem de overscan visível corretamente. É o que fecha "a versão inicial
   no ar" da estação 5 para este tipo de projeto (`CONSTRAINTS.md`).
-  **Inclui confirmar visualmente que abrir o painel não interrompe o vídeo**
-  — achado de revisão, 21/09/2026: `PainelActivity` ganhou um tema
-  translúcido (`Theme.MostraiPlayer.Translucido`) pra corrigir isso, mas
-  janela translúcida é comportamento de plataforma, sem como testar sem
-  aparelho real. Ver `docs/erros/2026-09-21-painel-parava-o-player-em-vez-de-so-cobrir.md`.
+  **Inclui confirmar, ao abrir o painel: (a) que o app não cai, e (b) que o
+  vídeo por trás continua rodando** — os dois são achados de revisão de
+  21/09/2026, um encadeado no outro. `PainelActivity` ganhou um tema
+  translúcido (`Theme.MostraiPlayer.Translucido`) pra não interromper o
+  vídeo (`docs/erros/2026-09-21-painel-parava-o-player-em-vez-de-so-cobrir.md`);
+  a revisão seguinte achou que esse tema, combinado com o
+  `screenOrientation="landscape"` que a Activity já tinha, derrubava o app
+  no Android 8.0 — versão exata do parque instalado — com
+  `IllegalStateException`. O `screenOrientation` foi removido
+  (`docs/erros/2026-09-21-painel-translucido-com-orientacao-fixa-derrubava-o-app.md`).
+  Os dois são comportamento de janela do Android, sem como testar sem
+  aparelho real: **abrir o painel na TV é o primeiro teste a fazer.**
 - **Testar contra o backend real** quando o contrato novo (seção 6) estiver
   no ar em `sancompany/mostrai` — hoje só foi testado com JSON sintético nos
   testes unitários (`PlaylistJsonTest`), nunca contra uma resposta real do
