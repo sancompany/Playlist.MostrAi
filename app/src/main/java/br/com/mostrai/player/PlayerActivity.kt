@@ -121,6 +121,7 @@ class PlayerActivity : AppCompatActivity() {
         setContentView(R.layout.activity_player)
 
         config = ConfigAparelho(this)
+        config.aplicarConfiguracaoEmbutidaSeNecessaria()
         api = MostraiApi(config)
         repositorio = PlaylistRepositorio(this, api)
         fila = FilaProofOfPlay(this, api)

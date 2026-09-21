@@ -88,6 +88,21 @@ suficiente para não precisar de ORM. `kotlinx-coroutines-android` e
 ferramentas de concorrência padrão do ecossistema Android/Kotlin, não
 dependências de negócio.
 
+## Chave embutida num APK gerado localmente não é segredo versionado
+
+`-PconfigDispositivo=<arquivo>.json` (README, "Gerar um APK já configurado
+por tela") embute `dispositivoId`/`chaveAparelho`/`baseUrl`/`pin` no
+`BuildConfig` de um APK específico. O arquivo `.json` com os valores reais
+nunca é commitado (`.gitignore` cobre `dispositivos/*.json`) — só o
+`.example` fica no Git. Isso não é uma exceção ao veto "nenhum segredo
+versionado": o segredo não entra no repositório em momento nenhum, só no
+binário que cada pessoa gera na própria máquina. O risco assumido —
+extrair a chave decompilando um APK instalado — já existia antes de forma
+equivalente (a mesma chave também fica em texto claro em
+`SharedPreferences` depois do provisionamento por `adb`), e a mitigação é a
+mesma: a chave é revogável por aparelho, então o pior caso continua sendo
+uma tela, não a rede inteira.
+
 ## Riscos de segurança aceitos (achados da revisão, estação 5)
 
 - **`baseUrl` não é validado como HTTPS.** Se o aparelho for provisionado com

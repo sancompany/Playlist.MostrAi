@@ -2,6 +2,7 @@ package br.com.mostrai.player.config
 
 import android.content.Context
 import android.content.SharedPreferences
+import br.com.mostrai.player.BuildConfig
 
 /**
  * Configuração persistida do aparelho.
@@ -60,6 +61,24 @@ class ConfigAparelho(context: Context) {
             hash = (hash * 31 + c.code) and 0x7fffffff
         }
         return hash % 30
+    }
+
+    /**
+     * Aplica a configuração embutida no build (`-PconfigDispositivo=<arquivo>.json`,
+     * ver README, "Gerar um APK já configurado por tela") — só na primeira
+     * vez, nunca sobrescreve um provisionamento que já existe. É o que
+     * permite instalar por pendrive um APK já pronto para uma tela
+     * específica, sem precisar de adb depois.
+     */
+    fun aplicarConfiguracaoEmbutidaSeNecessaria() {
+        if (provisionado) return
+        if (BuildConfig.DISPOSITIVO_ID_EMBUTIDO.isBlank()) return
+
+        dispositivoId = BuildConfig.DISPOSITIVO_ID_EMBUTIDO
+        if (BuildConfig.CHAVE_APARELHO_EMBUTIDA.isNotBlank()) chaveAparelho = BuildConfig.CHAVE_APARELHO_EMBUTIDA
+        if (BuildConfig.BASE_URL_EMBUTIDA.isNotBlank()) baseUrl = BuildConfig.BASE_URL_EMBUTIDA
+        if (BuildConfig.PIN_EMBUTIDO.isNotBlank()) pinPainel = BuildConfig.PIN_EMBUTIDO
+        BuildConfig.MARGEM_VMIN_EMBUTIDA.toFloatOrNull()?.let { margemVmin = it }
     }
 
     companion object {
