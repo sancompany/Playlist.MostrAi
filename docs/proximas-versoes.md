@@ -80,3 +80,36 @@ Ideias para depois. Entrada aqui não autoriza construir nada.
 
 Já está em `README.md`, "Em aberto", item 2 — mantido lá porque é decisão
 que precisa ser tomada antes de virar item de próxima versão ou de v1.
+
+**Pergunta do dono, 21/09/2026**: dá para lançar atualização pelo próprio
+painel admin do backend, em vez de sempre trocar o pendrive? Resposta
+técnica, sem código ainda — duas fases independentes:
+
+- **Fase 1 — sem enrollment, funciona em qualquer aparelho.** O admin
+  publica um `.apk` novo e um manifesto de versão (versionCode, URL de
+  download, talvez checksum). O player (que já faz poll a cada 15 min e
+  heartbeat a cada 5 min) compara sua própria versão
+  (`BuildConfig.VERSION_CODE`) com a do manifesto, baixa o APK em segundo
+  plano se houver novidade, e dispara a instalação via
+  `PackageInstaller`/`REQUEST_INSTALL_PACKAGES`. **Limite físico do
+  Android**: essa instalação sempre mostra um diálogo de confirmação do
+  sistema — alguém precisa estar na loja e tocar "Instalar" no controle
+  remoto. Não elimina a visita presencial, mas elimina o pendrive/laptop:
+  troca "levar um pendrive configurado" por "apertar OK na TV quando
+  aparecer o aviso".
+- **Fase 2 — instalação silenciosa, precisa de Device Owner.** Se o
+  aparelho for inscrito como Device Owner (Android Enterprise, feito uma
+  vez no provisionamento — o aparelho precisa estar "de fábrica", sem
+  conta nenhuma, ver `adb shell dpm set-device-owner`), o app ganha
+  permissão de instalar pacotes sem diálogo nenhum — atualização
+  verdadeiramente sem ninguém na loja. **Não dá para confirmar sem
+  hardware real**: não se sabe se o SEMP TCL 32S6500S (Android TV 8,
+  fabricante fechado) aceita Device Owner sem alguma trava do fabricante —
+  só um teste físico decide, e normalmente exige refazer o provisionamento
+  do zero (reset de fábrica) para inscrever.
+
+**Recomendação**: começar pela Fase 1 se/quando isso for priorizado —
+funciona em qualquer aparelho, sem risco, e já corta a dependência do
+pendrive para o caso comum (trocar app, não trocar tela). Fase 2 só depois
+de um teste real confirmando que este hardware aceita Device Owner — não
+vale desenhar o resto em cima de uma suposição não testada.

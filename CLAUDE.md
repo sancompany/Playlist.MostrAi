@@ -83,19 +83,25 @@ Fechadas:
   sozinho, então o app compensa em runtime girando o próprio conteúdo
   (`RotacaoTela`, par raiz/rotor, compartilhado entre `PlayerActivity` e
   `PainelActivity`), configurável (0/90/180/270) nos três caminhos de
-  provisionamento — a direção certa (90 ou 270) só o dono confirma no
-  aparelho real. `PlayerView` trocado de `SurfaceView` para `TextureView`
-  (necessário para a rotação, e suspeito de também resolver o vídeo bugado).
-  (2) tela institucional trocada de cor chapada por degradê radial. (5) PIN
-  do painel deixa de ser fixo em 4 dígitos, aceita de 4 a 6 — validado no
-  setter de `ConfigAparelho.pinPainel` (mesma guarda de `rotacaoTela`/
-  `margemVmin`: um PIN fora do formato nunca é gravado, porque travaria o
-  painel de manutenção para sempre sem nenhuma sequência digitável capaz de
-  bater com ele). Ponto 3 (ícone/arte de marca) é do dono. Ponto 6
+  provisionamento. `PlayerView` trocado de `SurfaceView` para `TextureView`
+  (necessário para a rotação, e suspeito de também resolver o vídeo
+  bugado). (2) tela institucional trocada de cor chapada por degradê
+  radial. (5) PIN do painel confirmado em exatamente 4 dígitos (não 4-6 —
+  ver lição abaixo). Ponto 3 (ícone/arte de marca) é do dono. Ponto 6
   (atualização OTA pelo site) ainda sem proposta — decisão arquitetural
-  maior, pendente. 53 → 62 testes (`ConfigAparelhoTest`, rotação e PIN;
-  `rotacaoTela` em `ConfigExternaTest`) · evidência: build + testes locais
+  maior, pendente. Testes: `ConfigAparelhoTest` (rotação e PIN),
+  `rotacaoTela` em `ConfigExternaTest` · evidência: build + testes locais
   verdes, a confirmar no CI.
+- Correção de rumo, mesma sessão: o dono descreveu a montagem física
+  ("logo virada para a direita, lateral esquerda da TV fica embaixo") —
+  geometria consistente com a borda esquerda nativa migrando para baixo,
+  ou seja, o painel foi montado fisicamente 90° anti-horário; o app
+  compensa girando o conteúdo 90° horário (`rotacaoTela: 90`, o padrão já
+  sugerido) — a confirmar visualmente pelo dono no aparelho. Nessa mesma
+  mensagem o dono também confirmou que o PIN é para ficar em exatamente 4
+  dígitos (não 4-6, como uma leitura anterior do pedido original tinha
+  entendido) — revertido de volta ao que a outra sessão concorrente já
+  tinha implementado (`TAMANHO_PIN = 4`), com o aviso via `Log.w` mantido.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem

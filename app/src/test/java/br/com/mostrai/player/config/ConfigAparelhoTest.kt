@@ -17,10 +17,10 @@ import org.robolectric.annotation.Config
  * inesperado.
  *
  * `pinPainel` só pode ser o que o teclado de
- * [br.com.mostrai.player.ui.PainelActivity] consegue digitar de volta: 4 a
- * 6 dígitos numéricos. Um PIN fora disso, vindo de qualquer provisionamento
- * (build embutido, `adb`, `mostrai-config.json`), trancaria o painel para
- * sempre — por isso o valor inválido é ignorado, não gravado.
+ * [br.com.mostrai.player.ui.PainelActivity] consegue digitar de volta: 4
+ * dígitos numéricos, nada mais. Um PIN fora disso, vindo de qualquer
+ * provisionamento (build embutido, `adb`, `mostrai-config.json`), trancaria
+ * o painel para sempre — por isso o valor inválido é ignorado, não gravado.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26])
@@ -64,19 +64,20 @@ class ConfigAparelhoTest {
     }
 
     @Test
-    fun `aceita pin numerico de 4 a 6 digitos`() {
-        for (pin in listOf("1234", "13579", "024680")) {
-            config.pinPainel = pin
-            assertEquals(pin, config.pinPainel)
-        }
+    fun `aceita pin de 4 digitos numericos`() {
+        config.pinPainel = "1357"
+        assertEquals("1357", config.pinPainel)
     }
 
     @Test
-    fun `pin fora de 4 a 6 digitos e ignorado, mantem o anterior`() {
+    fun `pin com menos de 4 digitos e ignorado, mantem o anterior`() {
         config.pinPainel = "123"
         assertEquals("0000", config.pinPainel)
+    }
 
-        config.pinPainel = "1234567"
+    @Test
+    fun `pin com mais de 4 digitos e ignorado, mantem o anterior`() {
+        config.pinPainel = "12345"
         assertEquals("0000", config.pinPainel)
     }
 
@@ -99,11 +100,10 @@ class ConfigAparelhoTest {
     @Test
     fun `ehPinValido cobre os casos`() {
         assertTrue(ConfigAparelho.ehPinValido("0000"))
-        assertTrue(ConfigAparelho.ehPinValido("13579"))
-        assertTrue(ConfigAparelho.ehPinValido("024680"))
+        assertTrue(ConfigAparelho.ehPinValido("9999"))
         assertFalse(ConfigAparelho.ehPinValido(""))
         assertFalse(ConfigAparelho.ehPinValido("123"))
-        assertFalse(ConfigAparelho.ehPinValido("1234567"))
+        assertFalse(ConfigAparelho.ehPinValido("12345"))
         assertFalse(ConfigAparelho.ehPinValido("12a4"))
     }
 }

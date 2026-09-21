@@ -60,13 +60,7 @@ class PainelActivity : AppCompatActivity() {
         raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margemVmin, config.rotacaoTela) }
     }
 
-    /**
-     * O PIN em si define o tamanho (4 a 6 dígitos) — nunca fixo em 4. Um PIN
-     * fora desse intervalo (não deveria acontecer, mas por segurança) é
-     * grampeado, pra nunca travar a grade num tamanho absurdo.
-     */
-    private fun tamanhoPin(): Int =
-        config.pinPainel.length.coerceIn(ConfigAparelho.TAMANHO_PIN_MINIMO, ConfigAparelho.TAMANHO_PIN_MAXIMO)
+    private fun tamanhoPin(): Int = ConfigAparelho.TAMANHO_PIN
 
     private fun montarTeclado(grade: GridLayout) {
         for (d in 0..9) {

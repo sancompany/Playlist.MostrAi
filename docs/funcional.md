@@ -32,8 +32,7 @@ não há interação nenhuma prevista para o espectador.
 
 **Operador de manutenção:**
 1. Aperta OK/CENTER 3 vezes em até 3 segundos no controle remoto.
-2. Digita o PIN (4 a 6 dígitos, conforme configurado) na grade numérica na
-   tela (D-pad).
+2. Digita o PIN de 4 dígitos na grade numérica na tela (D-pad).
 3. PIN certo → vê tela e chave configuradas, modo de contrato, origem da
    última playlist, erro do aparelho (se houver), fila de proof-of-play
    (pendentes/perdas).
@@ -175,10 +174,10 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   compensados juntos, mesma configuração. `ConfigAparelho.rotacaoTela`,
   `RotacaoTela.aplicar`.
 
-- **RN-13 — PIN do painel só aceita 4 a 6 dígitos numéricos.** É esse
-  tamanho que dita quantas teclas o painel espera antes de comparar — um
-  PIN fora desse formato, vindo de qualquer provisionamento, nunca poderia
-  ser digitado de volta e trancaria o painel de manutenção para sempre.
+- **RN-13 — PIN do painel só aceita exatamente 4 dígitos numéricos**, o
+  tamanho que o teclado do painel consegue digitar de volta — um PIN fora
+  desse formato, vindo de qualquer provisionamento, nunca poderia ser
+  digitado de volta e trancaria o painel de manutenção para sempre.
   Violada: o valor é ignorado, mantém o PIN anterior (o provisório de
   fábrica, se ainda não houver nenhum) — nunca lança exceção nem trava o
   app. `ConfigAparelho.pinPainel`.

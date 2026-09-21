@@ -141,9 +141,8 @@ O PIN inicial é `0000` e o painel avisa enquanto ele não for trocado. Não é 
 segredo versionado, é valor de fábrica. Como o PIN universal convive com o PIN
 por tela do admin é decisão em aberto.
 
-**De 4 a 6 dígitos numéricos** — é o que o teclado do painel consegue digitar
-de volta (o próprio tamanho do PIN configurado dita quantas teclas o painel
-espera). Um `pin` fora dessa faixa, em qualquer um dos três caminhos de
+**Sempre 4 dígitos numéricos** — é o que o teclado do painel consegue digitar
+de volta. Um `pin` fora disso, em qualquer um dos três caminhos de
 provisionamento abaixo, é **ignorado** (mantém o PIN anterior) em vez de
 gravado — evita travar o painel de manutenção com um PIN que nunca poderia
 ser digitado na TV.
