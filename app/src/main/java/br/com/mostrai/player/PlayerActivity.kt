@@ -14,6 +14,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
@@ -39,13 +40,12 @@ import br.com.mostrai.player.playlist.ReposicionamentoPlaylist
 import br.com.mostrai.player.proof.FilaProofOfPlay
 import br.com.mostrai.player.ui.GestoPainel
 import br.com.mostrai.player.ui.PainelActivity
+import br.com.mostrai.player.ui.RotacaoTela
 import br.com.mostrai.player.ui.TelaInstitucional
 import java.time.OffsetDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.min
-import kotlin.math.roundToInt
 
 /**
  * Tela única do player: vídeo em tela cheia, mudo, em laço, buscando a
@@ -68,6 +68,14 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private lateinit var institucional: TelaInstitucional
     private lateinit var raiz: View
+
+    /**
+     * Carrega o conteúdo de verdade (player + institucional). Tamanho e
+     * rotação calculados em [aplicarRotacaoEMargem] a partir de
+     * [ConfigAparelho.rotacaoTela] — compensa um painel montado fisicamente
+     * de lado, comum em sinalização digital em espaço estreito.
+     */
+    private lateinit var rotor: FrameLayout
 
     private var player: ExoPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -155,13 +163,14 @@ class PlayerActivity : AppCompatActivity() {
         cacheMidia = CacheMidia(this)
 
         raiz = findViewById(R.id.raiz)
+        rotor = findViewById(R.id.rotor)
         playerView = findViewById(R.id.player)
         institucional = findViewById(R.id.institucional)
 
         aplicarProvisionamentoProvisorio(intent)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        aplicarMargemOverscan()
+        aplicarRotacaoEMargem()
     }
 
     private fun pedirPermissaoOuAplicarConfigExterna() {
@@ -189,7 +198,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         aplicarProvisionamentoProvisorio(intent)
-        aplicarMargemOverscan()
+        aplicarRotacaoEMargem()
     }
 
     /**
@@ -208,6 +217,11 @@ class PlayerActivity : AppCompatActivity() {
         if (extras.containsKey(EXTRA_MARGEM)) {
             config.margemVmin = extras.getFloat(EXTRA_MARGEM, config.margemVmin)
         }
+        if (extras.containsKey(EXTRA_ROTACAO)) {
+            config.rotacaoTela = extras.getInt(EXTRA_ROTACAO, config.rotacaoTela)
+        }
+        // aplicarRotacaoEMargem() já é chamado logo depois, por quem chamou
+        // este método (onCreate/onNewIntent) — cobre margem e rotação juntos.
     }
 
     override fun onStart() {
@@ -451,17 +465,12 @@ class PlayerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------- tela
 
     /**
-     * Compensa a moldura física de TV que corta a borda da imagem (overscan).
-     * A margem é dada em vmin, como no player web.
+     * Margem de overscan e rotação de tela só fazem sentido depois que
+     * `raiz` foi medida — por isso o `post`. Lógica compartilhada com
+     * `PainelActivity` em [RotacaoTela] (mesmo padrão raiz/rotor nas duas).
      */
-    private fun aplicarMargemOverscan() {
-        val vmin = config.margemVmin
-        if (vmin <= 0f) return
-        raiz.post {
-            val base = min(raiz.width, raiz.height)
-            val px = (base * vmin / 100f).roundToInt()
-            raiz.setPadding(px, px, px, px)
-        }
+    private fun aplicarRotacaoEMargem() {
+        raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margemVmin, config.rotacaoTela) }
     }
 
     @Suppress("DEPRECATION")
@@ -500,6 +509,7 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_BASE_URL = "baseUrl"
         const val EXTRA_PIN = "pin"
         const val EXTRA_MARGEM = "margemVmin"
+        const val EXTRA_ROTACAO = "rotacaoTela"
 
         const val INTERVALO_POLL_MS = 15 * 60_000L
         const val INTERVALO_HEARTBEAT_MS = 5 * 60_000L

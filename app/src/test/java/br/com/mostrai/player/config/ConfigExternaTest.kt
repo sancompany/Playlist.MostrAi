@@ -15,7 +15,8 @@ class ConfigExternaTest {
                 "chaveAparelho": "chave-abc",
                 "baseUrl": "https://exemplo.com/api",
                 "pin": "1357",
-                "margemVmin": 2.5
+                "margemVmin": 2.5,
+                "rotacaoTela": 90
             }
             """.trimIndent()
         )
@@ -25,6 +26,7 @@ class ConfigExternaTest {
         assertEquals("https://exemplo.com/api", dados?.baseUrl)
         assertEquals("1357", dados?.pin)
         assertEquals(2.5f, dados?.margemVmin)
+        assertEquals(90, dados?.rotacaoTela)
     }
 
     @Test
@@ -63,5 +65,18 @@ class ConfigExternaTest {
         val dados = ConfigExterna.parse("{}")
 
         assertEquals(ConfigExterna.Dados(), dados)
+    }
+
+    @Test
+    fun `rotacaoTela fora do conjunto valido vira nulo, nunca gira a esmo`() {
+        assertNull(ConfigExterna.parse("""{"rotacaoTela": 45}""")?.rotacaoTela)
+        assertNull(ConfigExterna.parse("""{"rotacaoTela": -90}""")?.rotacaoTela)
+    }
+
+    @Test
+    fun `rotacaoTela aceita os quatro valores validos`() {
+        for (valor in listOf(0, 90, 180, 270)) {
+            assertEquals(valor, ConfigExterna.parse("""{"rotacaoTela": $valor}""")?.rotacaoTela)
+        }
     }
 }

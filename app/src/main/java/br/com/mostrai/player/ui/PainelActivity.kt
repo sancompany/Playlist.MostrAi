@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -29,6 +30,8 @@ import kotlinx.coroutines.withContext
 class PainelActivity : AppCompatActivity() {
 
     private lateinit var config: ConfigAparelho
+    private lateinit var raiz: View
+    private lateinit var rotor: FrameLayout
     private lateinit var display: TextView
     private lateinit var erro: TextView
     private lateinit var grupoPin: View
@@ -41,13 +44,29 @@ class PainelActivity : AppCompatActivity() {
         setContentView(R.layout.activity_painel)
 
         config = ConfigAparelho(this)
+        raiz = findViewById(R.id.raiz)
+        rotor = findViewById(R.id.rotor)
         display = findViewById(R.id.display)
         erro = findViewById(R.id.erroPin)
         grupoPin = findViewById(R.id.grupoPin)
         grupoInfo = findViewById(R.id.grupoInfo)
 
+        display.text = mascara()
         montarTeclado(findViewById(R.id.teclado))
+
+        // Mesma compensação de rotação do player (RotacaoTela) — sem isso o
+        // painel apareceria de lado no mesmo aparelho que o player já
+        // compensa.
+        raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margemVmin, config.rotacaoTela) }
     }
+
+    /**
+     * O PIN em si define o tamanho (4 a 6 dígitos) — nunca fixo em 4. Um PIN
+     * fora desse intervalo (não deveria acontecer, mas por segurança) é
+     * grampeado, pra nunca travar a grade num tamanho absurdo.
+     */
+    private fun tamanhoPin(): Int =
+        config.pinPainel.length.coerceIn(ConfigAparelho.TAMANHO_PIN_MINIMO, ConfigAparelho.TAMANHO_PIN_MAXIMO)
 
     private fun montarTeclado(grade: GridLayout) {
         for (d in 0..9) {
@@ -72,17 +91,18 @@ class PainelActivity : AppCompatActivity() {
     }
 
     private fun digitar(d: Int) {
-        if (digitado.length >= TAMANHO_PIN) return
+        val tamanho = tamanhoPin()
+        if (digitado.length >= tamanho) return
         digitado.append(d)
         display.text = mascara()
         erro.visibility = View.INVISIBLE
 
-        if (digitado.length == TAMANHO_PIN) {
+        if (digitado.length == tamanho) {
             if (digitado.toString() == config.pinPainel) {
                 mostrarInformacoes()
             } else {
                 digitado.setLength(0)
-                display.text = getString(R.string.painel_pin_vazio)
+                display.text = mascara()
                 erro.text = getString(R.string.painel_pin_errado)
                 erro.visibility = View.VISIBLE
             }
@@ -90,7 +110,7 @@ class PainelActivity : AppCompatActivity() {
     }
 
     private fun mascara(): String =
-        (0 until TAMANHO_PIN).joinToString(" ") { if (it < digitado.length) "•" else "·" }
+        (0 until tamanhoPin()).joinToString(" ") { if (it < digitado.length) "•" else "·" }
 
     private fun mostrarInformacoes() {
         grupoPin.visibility = View.GONE
@@ -105,6 +125,7 @@ class PainelActivity : AppCompatActivity() {
             appendLine("Servidor .......... ${config.baseUrl ?: "—"}")
             appendLine("Provisionado ...... ${if (config.provisionado) "sim" else "não"}")
             appendLine("Margem (vmin) ..... ${config.margemVmin}")
+            appendLine("Rotação da tela .... ${config.rotacaoTela}°")
             appendLine("Atraso da virada .. ${config.atrasoViradaSegundos()}s")
             appendLine()
             appendLine("Contrato do servidor  ${if (EstadoRede.contratoNovo) "novo" else "antigo (degradado)"}")
@@ -146,7 +167,4 @@ class PainelActivity : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
-    private companion object {
-        const val TAMANHO_PIN = 4
-    }
 }

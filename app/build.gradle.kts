@@ -22,6 +22,7 @@ data class ConfigEmbutidaDoDispositivo(
     val baseUrl: String = "",
     val pin: String = "",
     val margemVmin: String = "",
+    val rotacaoTela: String = "",
 )
 
 fun lerConfigDispositivo(): ConfigEmbutidaDoDispositivo {
@@ -37,6 +38,7 @@ fun lerConfigDispositivo(): ConfigEmbutidaDoDispositivo {
         baseUrl = json["baseUrl"] as? String ?: "",
         pin = json["pin"] as? String ?: "",
         margemVmin = json["margemVmin"]?.toString() ?: "",
+        rotacaoTela = json["rotacaoTela"]?.toString() ?: "",
     )
 }
 
@@ -62,6 +64,7 @@ android {
         buildConfigField("String", "BASE_URL_EMBUTIDA", paraLiteralJava(configDispositivo.baseUrl))
         buildConfigField("String", "PIN_EMBUTIDO", paraLiteralJava(configDispositivo.pin))
         buildConfigField("String", "MARGEM_VMIN_EMBUTIDA", paraLiteralJava(configDispositivo.margemVmin))
+        buildConfigField("String", "ROTACAO_TELA_EMBUTIDA", paraLiteralJava(configDispositivo.rotacaoTela))
     }
 
     buildFeatures {

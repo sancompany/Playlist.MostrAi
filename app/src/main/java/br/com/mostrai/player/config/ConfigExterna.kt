@@ -29,6 +29,7 @@ object ConfigExterna {
         val baseUrl: String? = null,
         val pin: String? = null,
         val margemVmin: Float? = null,
+        val rotacaoTela: Int? = null,
     )
 
     /** Função pura — testável sem Android, sem arquivo, sem permissão. */
@@ -45,6 +46,14 @@ object ConfigExterna {
                 // coerceIn() sem ser pego (NaN < x e NaN > x são sempre
                 // falsos) e vira padding silenciosamente zerado lá na frente.
                 json.optDouble("margemVmin").toFloat().takeUnless { it.isNaN() }
+            } else {
+                null
+            },
+            // Só 0/90/180/270 — qualquer outra coisa (string, número fora do
+            // conjunto) vira null aqui, e ConfigAparelho.rotacaoTela também
+            // barra de novo na escrita. Duas guardas, mesma regra.
+            rotacaoTela = if (json.has("rotacaoTela") && !json.isNull("rotacaoTela")) {
+                json.optInt("rotacaoTela", -1).takeIf { it in ConfigAparelho.ROTACOES_VALIDAS }
             } else {
                 null
             },
@@ -107,6 +116,7 @@ object ConfigExterna {
         dados.baseUrl?.let { config.baseUrl = it }
         dados.pin?.let { config.pinPainel = it }
         dados.margemVmin?.let { config.margemVmin = it }
+        dados.rotacaoTela?.let { config.rotacaoTela = it }
     }
 
     private const val TAG = "ConfigExterna"
