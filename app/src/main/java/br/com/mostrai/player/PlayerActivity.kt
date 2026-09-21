@@ -132,7 +132,11 @@ class PlayerActivity : AppCompatActivity() {
     private val lancadorPermissaoArmazenamento = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { concedida ->
-        if (concedida) aplicarConfigExternaSeNecessaria()
+        // Assíncrono: quando isto resolve, onStart() já rodou e já tentou
+        // buscar a playlist sem config nenhuma. Sem o retomarSeProvisionou,
+        // o app só buscaria de novo no próximo poll periódico — até 15 min
+        // depois de já estar configurado.
+        if (concedida) aplicarConfigExternaSeNecessaria(retomarSeProvisionou = true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,14 +170,19 @@ class PlayerActivity : AppCompatActivity() {
         ) == PackageManager.PERMISSION_GRANTED
 
         if (jaConcedida) {
-            aplicarConfigExternaSeNecessaria()
+            // Síncrono, dentro de onCreate: o onStart() que vem a seguir já
+            // busca a playlist com a config em dia — não precisa retomar.
+            aplicarConfigExternaSeNecessaria(retomarSeProvisionou = false)
         } else {
             lancadorPermissaoArmazenamento.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
 
-    private fun aplicarConfigExternaSeNecessaria() {
+    private fun aplicarConfigExternaSeNecessaria(retomarSeProvisionou: Boolean) {
         ConfigExterna.procurarEAplicar(this, config)
+        if (retomarSeProvisionou && config.provisionado) {
+            atualizarPlaylist(forcarReposicionamento = true)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

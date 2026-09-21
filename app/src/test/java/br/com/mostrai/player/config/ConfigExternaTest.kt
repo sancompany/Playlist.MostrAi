@@ -53,6 +53,12 @@ class ConfigExternaTest {
     }
 
     @Test
+    fun `margemVmin nao numerico vira nulo, nunca NaN`() {
+        val dados = ConfigExterna.parse("""{"margemVmin": "isto nao e numero"}""")
+        assertNull(dados?.margemVmin)
+    }
+
+    @Test
     fun `objeto vazio devolve dados todos nulos`() {
         val dados = ConfigExterna.parse("{}")
 

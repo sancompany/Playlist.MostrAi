@@ -11,8 +11,8 @@ import org.json.JSONObject
  * pendrive usado para instalar o APK. Alternativa a `-PconfigDispositivo`
  * (README, "Gerar um APK já configurado por tela") para quem prefere editar
  * um JSON toda vez que muda a tela, em vez de recompilar um APK — mesmo
- * mesmo formato dos arquivos dentro de `dispositivos/`, um único APK
- * genérico para todas as telas.
+ * formato dos arquivos dentro de `dispositivos/`, um único APK genérico
+ * para todas as telas.
  *
  * Só age enquanto o aparelho não está provisionado — nunca sobrescreve uma
  * configuração que já existe (mesma regra de
@@ -40,7 +40,11 @@ object ConfigExterna {
             baseUrl = json.optString("baseUrl").ifBlank { null },
             pin = json.optString("pin").ifBlank { null },
             margemVmin = if (json.has("margemVmin") && !json.isNull("margemVmin")) {
-                json.optDouble("margemVmin").toFloat()
+                // optDouble devolve NaN se o valor não for numérico (ex.: uma
+                // string) — nunca propaga isso pra frente: NaN sobrevive a
+                // coerceIn() sem ser pego (NaN < x e NaN > x são sempre
+                // falsos) e vira padding silenciosamente zerado lá na frente.
+                json.optDouble("margemVmin").toFloat().takeUnless { it.isNaN() }
             } else {
                 null
             },
@@ -57,7 +61,12 @@ object ConfigExterna {
         }
 
         val texto = runCatching { arquivo.readText() }.getOrNull()
-        val dados = texto?.let(::parse)
+        if (texto == null) {
+            Log.w(TAG, "${arquivo.absolutePath} encontrado, mas não pôde ser lido")
+            return
+        }
+
+        val dados = parse(texto)
         if (dados == null) {
             Log.w(TAG, "${arquivo.absolutePath} encontrado, mas não é JSON válido")
             return
