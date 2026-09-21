@@ -18,33 +18,19 @@
   provisionamento de campo.
 - **Gerar e guardar o keystore de release**, fora deste repositório — hoje
   só existe build debug (assinatura de teste).
-- **Pedir ao backend um campo para `margemVmin` por tela** (contrato de
-  `sancompany/mostrai`, outra sessão) — decisão do dono, 21/09/2026:
-  `margemVmin` deve ser configurável pelo próprio site admin, não só pelos
-  arquivos de provisionamento local. Ver `docs/proximas-versoes.md`,
-  "`margemVmin` configurada pelo admin, não pelo arquivo local", para o que
-  isso exige dos dois lados.
+- **Pedir ao backend um campo para `margemVmin` por tela, e por lado** (contrato
+  de `sancompany/mostrai`, outra sessão) — decisão do dono, 21/09/2026, **reafirmada
+  no mesmo dia**: `margemVmin` deve ser configurável pelo próprio site admin, não só
+  pelos arquivos de provisionamento local, e como 4 valores independentes (um por
+  lado — topo/base/esquerda/direita), não um único número igual nos 4. Ver
+  `docs/proximas-versoes.md`, "`margemVmin` configurada pelo admin, não pelo
+  arquivo local", para o que isso exige dos dois lados.
 
 ## Trabalho desta versão
 
 Todos os blocos do MVP (seção 3 do escopo original) estão implementados —
 ver `CLAUDE.md`, "Estado na esteira". Nada pendente de código nesta versão
 além do que está listado acima.
-
-## Ideia registrada, não implementar sem pedido
-
-- **`margemVmin` devia vir do admin do site, não de arquivo/config local —
-  e por lado, não um valor só.** Hoje `ConfigAparelho.margemVmin` e
-  `ConfigExterna.Dados.margemVmin` são um `Float` único, aplicado igual nos
-  4 lados por `PlayerActivity.aplicarMargemOverscan()`
-  (`raiz.setPadding(px, px, px, px)`). O dono apontou (21/09/2026) que cada
-  TV tem sua própria margem de cada um dos 4 lados, e que isso deveria ser
-  configurado pelo site (por tela, no admin), não por um JSON/extra local.
-  Mesma ideia já registrada do lado do backend, com o histórico completo,
-  em `sancompany/mostrai`, `docs/proximas-versoes.md`, seção "Margem e
-  orientação por tela configuráveis no admin, não só na URL" — ler lá antes
-  de implementar. Só entra quando o dono pedir; implica mudança nos dois
-  repositórios (contrato novo do backend + leitura de 4 valores aqui).
 
 ## Bloqueios que travam a esteira
 

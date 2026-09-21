@@ -49,23 +49,32 @@ Ideias para depois. Entrada aqui não autoriza construir nada.
   ajustada pelo dono direto no painel admin do backend, por tela — o app
   buscaria esse valor do servidor (provavelmente junto do cadastro da tela
   ou da resposta de `/playlist`) em vez de depender de alguém editar um
-  JSON local.
+  JSON local. **Reafirmado no mesmo dia**: não é um valor só — cada tela
+  precisa de 4 valores independentes, um por lado (topo/base/esquerda/
+  direita), porque cada TV tem sua própria folga de cada lado.
 - **Por quê**: quem ajusta a margem na prática é o dono, olhando a imagem
   real na TV — hoje isso significa reeditar um arquivo e reinstalar/reiniciar
   o app; pelo admin, é um campo que se ajusta remotamente, sem tocar no
-  aparelho de novo.
+  aparelho de novo. E um valor único nos 4 lados já se mostrou errado na
+  prática: a folga varia por lado, não só por tela.
 - **De onde veio**: pedido do dono, 21/09/2026 — decisão explícita de que
-  `margemVmin` deve ser configurada pelo próprio site admin.
-- **O que toca**: precisa de suporte do backend primeiro — um campo em
-  algum contrato (`sancompany/mostrai`, outra sessão) que o app ainda não
-  consome. Do lado deste app: `ConfigAparelho.margemVmin` passaria a ter
-  uma origem remota (buscada e cacheada, como a playlist), além ou no lugar
-  da local; `PlayerActivity.aplicarMargemOverscan` já reage a qualquer
-  mudança no valor, não precisa de reescrita.
-- **Quando vale a pena**: quando o contrato do backend definir onde esse
-  campo mora. Até lá, o campo `margemVmin` continua existindo nos arquivos
-  de provisionamento local (`dispositivos/*.json`, `mostrai-config.json`) —
-  é o único caminho disponível por enquanto.
+  `margemVmin` deve ser configurada pelo próprio site admin, reafirmada no
+  mesmo dia especificando que são 4 valores por lado, não 1 por tela. Mesma
+  ideia registrada do lado do backend, com o histórico completo, em
+  `sancompany/mostrai`, `docs/proximas-versoes.md`, seção "Margem e
+  orientação por tela configuráveis no admin, não só na URL".
+- **O que toca**: precisa de suporte do backend primeiro — 4 campos (um por
+  lado) em algum contrato (`sancompany/mostrai`, outra sessão) que o app
+  ainda não consome. Do lado deste app: `ConfigAparelho.margemVmin` (hoje um
+  `Float` único) precisaria virar 4 valores com origem remota (buscados e
+  cacheados, como a playlist), além ou no lugar dos locais;
+  `PlayerActivity.aplicarMargemOverscan()` hoje chama
+  `raiz.setPadding(px, px, px, px)` com o mesmo valor nos 4 lados — passaria
+  a receber 4 valores distintos, um por parâmetro do `setPadding`.
+- **Quando vale a pena**: quando o contrato do backend definir onde esses 4
+  campos moram. Até lá, o campo `margemVmin` continua existindo, como valor
+  único, nos arquivos de provisionamento local (`dispositivos/*.json`,
+  `mostrai-config.json`) — é o único caminho disponível por enquanto.
 
 ## Atualização remota (OTA)
 
