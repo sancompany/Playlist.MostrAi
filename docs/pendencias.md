@@ -18,16 +18,20 @@
   provisionamento de campo.
 - **Gerar e guardar o keystore de release**, fora deste repositório — hoje
   só existe build debug (assinatura de teste).
+- **Pedir ao backend um campo para `margemVmin` por tela** (contrato de
+  `sancompany/mostrai`, outra sessão) — decisão do dono, 21/09/2026:
+  `margemVmin` deve ser configurável pelo próprio site admin, não só pelos
+  arquivos de provisionamento local. Ver `docs/proximas-versoes.md`,
+  "`margemVmin` configurada pelo admin, não pelo arquivo local", para o que
+  isso exige dos dois lados.
 
-## Trabalho desta versão que falta
+## Trabalho desta versão
 
-- Cache local de mídia (bloco 4 do MVP) — em andamento nesta mesma sessão,
-  estação 5.
-- Mais testes de integração (parsing das duas formas do contrato,
-  ciclo de vida da fila de proof-of-play com Robolectric) — ver
-  `docs/proximas-versoes.md` se não couber nesta estação.
+Todos os blocos do MVP (seção 3 do escopo original) estão implementados —
+ver `CLAUDE.md`, "Estado na esteira". Nada pendente de código nesta versão
+além do que está listado acima.
 
 ## Bloqueios que travam a esteira
 
-Nenhum no momento — CI publicado e sendo verificado; sem push nem migration
-pendente do dono para o trabalho já commitado.
+Nenhum no momento — CI verde, sem push nem migration pendente do dono para
+o trabalho já commitado.
