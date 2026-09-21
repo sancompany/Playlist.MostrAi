@@ -15,3 +15,9 @@
 *.keystore
 keystore.properties
 signing.properties
+
+# Configuração de aparelho real (dispositivoId/chaveAparelho/baseUrl) para
+# gerar um APK já provisionado — README, "Gerar um APK já configurado por
+# tela". A chave é revogável, mas não é para versionar mesmo assim.
+/dispositivos/*.json
+!/dispositivos/exemplo.json.example

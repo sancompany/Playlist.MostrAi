@@ -6,9 +6,9 @@ import android.view.KeyEvent
 /**
  * Gesto de abertura do painel de manutenção no controle remoto.
  *
- * Equivalente aos 5 toques num canto usados hoje no player web: cinco
- * acionamentos do botão OK/CENTER dentro de [JANELA_MS]. Usa relógio monotônico
- * — o relógio da TV não é confiável.
+ * Equivalente aos 5 toques num canto usados hoje no player web, adaptado para
+ * controle remoto: três acionamentos do botão OK/CENTER dentro de [JANELA_MS].
+ * Usa relógio monotônico — o relógio da TV não é confiável.
  */
 class GestoPainel(private val aoCompletar: () -> Unit) {
 
@@ -37,7 +37,7 @@ class GestoPainel(private val aoCompletar: () -> Unit) {
     }
 
     companion object {
-        const val TOQUES = 5
+        const val TOQUES = 3
         const val JANELA_MS = 3_000L
     }
 }

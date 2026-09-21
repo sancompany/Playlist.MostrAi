@@ -7,6 +7,9 @@ anúncio realmente passou.
 Projeto separado do backend (`sancompany/mostrai`). Este repositório não altera
 o backend.
 
+Projeto da San & Co. — segue a esteira do plugin `san-co` (skill `leis`).
+Estado atual, decisões e pendências vivem em `CLAUDE.md`, não neste README.
+
 ## Alvo
 
 | | |
@@ -44,10 +47,24 @@ atrapalhariam este caso de uso.
    `play()`, com deduplicação obrigatória no backend.
 4. **Identidade de janela e de item vêm do backend** (`janelaId`,
    `itemProgramacaoId`), nunca do relógio da TV.
+5. **Retomada por posição temporal, nunca por índice salvo** (item 7.1,
+   fechado com o GPT em 21/09/2026). Depois de um reinício, o app calcula
+   onde a programação deveria estar (`janelaInicio` + `servidorAgora` +
+   tempo monotônico local) em vez de continuar do último índice tocado — que
+   distorceria a distribuição da hora e favoreceria sistematicamente o
+   começo da lista, o mesmo bug do player web (seção 5). Um item pego no
+   meio é pulado inteiro: nunca há seek, porque uma exibição parcial não
+   pode virar comprovante. Tolerância de 500 ms na borda inicial para
+   diferenças pequenas de sincronização. Sem `servidorAgora` confiável (por
+   exemplo, logo após um reboot real, que reinicia o relógio monotônico), o
+   app não improvisa com o índice salvo: espera sincronizar ou cai na tela
+   institucional.
 
-## Estado atual — fatia 1
+## Estado atual — MVP completo, fatias 1 a 3
 
 O que já está no APK:
+
+**Fatia 1 — player**
 
 - Activity única em tela cheia, vídeo mudo, sem barra de sistema, com
   `FLAG_KEEP_SCREEN_ON`.
@@ -63,19 +80,72 @@ O que já está no APK:
 - Atraso determinístico de 0 a 29 s derivado da chave do aparelho, para as telas
   da rede não baterem no servidor no mesmo segundo na virada da hora.
 
-O que ainda **não** está: rede, cache de mídia e fila durável de proof-of-play.
+**Fatia 2 — rede e comprovante**
+
+- Cliente HTTP próprio (`HttpURLConnection`, sem dependência externa) que lê
+  `/playlist` nas duas formas do contrato (seção 6.6) e escolhe modo novo ou
+  degradado automaticamente.
+- Busca a playlist a cada 15 min, mais uma busca extra na virada da hora com
+  o atraso determinístico da chave do aparelho. Heartbeat a cada 5 min.
+- Última playlist recebida com sucesso fica em cache local — o app continua
+  tocando offline se a rede cair.
+- Retomada por posição temporal (decisão 5 acima), com reancoragem pelo
+  `itemProgramacaoId` — não pelo índice bruto do array — quando a playlist é
+  atualizada dentro da mesma janela.
+- **Fila durável de proof-of-play em SQLite** (sem Room: esquema pequeno,
+  `SQLiteOpenHelper` já entrega a durabilidade que a decisão 6.4 pede). A
+  linha nasce com o `execucaoId` antes do `play()`, só fica elegível para
+  envio quando ganha `terminadoEm` no `STATE_ENDED`, e só sai da fila nos três
+  casos fechados na seção 6.5 — nunca por timeout, `5xx` ou reinício do app.
+  Envio em lote de até 50, backoff exponencial com jitter (5s → 30min, teto,
+  nunca desistência), fila limitada a 5.000 linhas com contador de perda
+  visível no painel.
+- Painel de manutenção agora mostra o modo de contrato, a origem da última
+  playlist (servidor/cache/institucional), erro do aparelho, e o estado da
+  fila de proof-of-play (pendentes e perdas).
+**Fatia 3 — cache de mídia**
+
+- Cache local por `criativoId` (bloco 4 do MVP): a imutabilidade
+  `criativoId → url` do contrato novo permite usar o `criativoId` como chave
+  sem revalidar nada; em modo degradado cai para hash da própria URL.
+- Pré-aquecimento sequencial a cada playlist nova — baixa o que falta em
+  segundo plano, sem atrasar a reprodução em andamento nem saturar a
+  internet de um comércio pequeno.
+- Teto de tamanho simples (1GB, descarte do mais antigo) — sem LRU
+  sofisticado na v1.
+- Download que falha nunca bloqueia a exibição: cai para tocar direto da
+  URL remota.
+
+**Testes e revisão**
+
+39 testes automatizados (`./gradlew testDebugUnitTest`), cobrindo as duas
+formas do contrato, a regra de reposicionamento, o cache e — com
+Robolectric, SQLite real, sem emulador — o ciclo de vida completo da fila
+de proof-of-play. CI (`.github/workflows/ci.yml`) roda build + testes a
+cada push e pull request.
+
+Todos os blocos do MVP (seção 3 do escopo original) estão implementados. O
+que falta para o projeto avançar na esteira san-co é a verificação em
+hardware real (`docs/pendencias.md`, "Só o dono faz") — esta sessão não tem
+acesso a um aparelho Android TV nem a um emulador viável.
 
 ### Gesto do painel
 
-**Cinco acionamentos do botão OK/CENTER em até 3 segundos.** É o equivalente de
-controle remoto aos cinco toques num canto que o player web usa hoje. Proposta —
-aguarda o aval do dono.
+**Três acionamentos do botão OK/CENTER em até 3 segundos.** É o equivalente de
+controle remoto aos cinco toques num canto que o player web usa hoje — número
+adaptado para o controle, já aprovado pelo dono.
 
 ### PIN
 
 O PIN inicial é `0000` e o painel avisa enquanto ele não for trocado. Não é um
 segredo versionado, é valor de fábrica. Como o PIN universal convive com o PIN
 por tela do admin é decisão em aberto.
+
+**Sempre 4 dígitos numéricos** — é o que o teclado do painel consegue digitar
+de volta. Um `pin` fora disso, em qualquer um dos três caminhos de
+provisionamento abaixo, é **ignorado** (mantém o PIN anterior) em vez de
+gravado — evita travar o painel de manutenção com um PIN que nunca poderia
+ser digitado na TV.
 
 ## Compilar
 
@@ -89,12 +159,109 @@ echo "sdk.dir=/caminho/para/android-sdk" > local.properties
 O APK sai em `app/build/outputs/apk/debug/app-debug.apk`, assinado com a chave
 de debug — suficiente para sideload de teste.
 
-## Instalar e provisionar em bancada
+## Gerar um APK já configurado por tela
+
+Quando você já sabe, antes de gravar o pendrive, qual `dispositivoId` e
+`chaveAparelho` vão para qual TV, não precisa de `adb` depois de instalar: dá
+para embutir a configuração no próprio APK e ele se provisiona sozinho no
+primeiro boot.
+
+1. Copie `dispositivos/exemplo.json.example` para `dispositivos/<nome-da-tela>.json`
+   e preencha com os dados reais daquela tela (vêm do cadastro no admin do
+   Mostraí). Esses arquivos **nunca são versionados** — `.gitignore` já
+   cobre `dispositivos/*.json` (só o `.example` fica no Git). A chave
+   continua sendo revogável no admin se algum dia esse APK vazar; não é
+   diferente do risco de qualquer aparelho perdido.
+
+   ```json
+   {
+     "dispositivoId": "id-da-tela-no-cadastro-do-admin",
+     "chaveAparelho": "chave-revogavel-emitida-no-admin",
+     "baseUrl": "https://exemplo.com/api",
+     "pin": "4821",
+     "margemVmin": 2.5
+   }
+   ```
+
+2. Compile passando o arquivo:
+
+   ```sh
+   ./gradlew assembleDebug -PconfigDispositivo=dispositivos/loja-centro.json
+   ```
+
+3. **Renomeie o APK antes de compilar o próximo**, porque a saída tem sempre
+   o mesmo nome:
+
+   ```sh
+   cp app/build/outputs/apk/debug/app-debug.apk mostrai-loja-centro.apk
+   ```
+
+4. Repita os passos 1–3 para cada tela. No fim você tem um `.apk` por
+   aparelho, cada um pronto para instalar por pendrive sem nenhum passo de
+   `adb` depois — o app lê a configuração embutida no primeiro boot e já
+   sobe funcionando.
+
+Sem `-PconfigDispositivo`, o build volta a ser exatamente o de sempre (os
+cinco campos ficam vazios, nada muda) — é seguro rodar `./gradlew
+assembleDebug` normalmente a qualquer momento.
+
+**O que isso não resolve**: o provisionamento verdadeiramente "sem
+intervenção nenhuma no campo" (item 4 em "Em aberto") continua em aberto —
+este caminho pede que alguém decida, num computador, qual tela é qual antes
+de gravar o pendrive. Para quem já opera assim (uma pessoa prepara os APKs,
+outra só troca o pendrive na loja), resolve completamente.
+
+## Configurar por um arquivo no pendrive (sem recompilar)
+
+Alternativa ao build por tela acima: **um único APK genérico** para todas
+as telas, e um arquivo `mostrai-config.json` no mesmo pendrive usado para
+instalar. No primeiro boot, se o aparelho ainda não estiver provisionado, o
+app procura esse arquivo em qualquer volume montado (o próprio pendrive,
+inclusive) e se configura sozinho. Você edita esse JSON toda vez que muda a
+tela — sem recompilar nada.
+
+1. Copie `dispositivos/exemplo.json.example` para `mostrai-config.json` na
+   **raiz do pendrive** (mesmo nível do `.apk`), com os dados daquela tela:
+
+   ```json
+   {
+     "dispositivoId": "id-da-tela-no-cadastro-do-admin",
+     "chaveAparelho": "chave-revogavel-emitida-no-admin",
+     "baseUrl": "https://exemplo.com/api",
+     "pin": "4821",
+     "margemVmin": 2.5
+   }
+   ```
+
+2. Instale o `.apk` normalmente (seção "Instalar pelo pendrive" acima), com
+   o mesmo pendrive ainda conectado na TV.
+
+3. No primeiro boot, o Android vai pedir permissão de armazenamento — é
+   nesse momento que o app consegue ler o pendrive. **Conceda a permissão**
+   (dá pra navegar o diálogo pelo D-pad do controle remoto). Sem alguém
+   presente pra conceder, o app não trava: segue sem provisionar e mostra a
+   tela institucional até alguém provisionar de outro jeito.
+
+4. Depois disso o app fica configurado permanentemente (não pergunta de
+   novo) — pode até tirar o pendrive.
+
+**Quando usar qual caminho:** o build por tela (seção acima) é mais
+hands-off depois de pronto (zero interação no primeiro boot), mas pede
+recompilar a cada tela nova. Este aqui pede um toque a mais no primeiro
+boot (conceder a permissão), mas é um `.apk` só, e trocar de tela é só
+editar um `.json`. Os dois convivem: se o build já vier configurado, este
+caminho nem chega a ser tentado.
+
+## Instalar e provisionar em bancada (sem configuração embutida)
+
+Se preferir instalar o APK genérico e configurar depois (por exemplo, para
+testar rápido sem preparar um arquivo por tela):
 
 ```sh
 adb install -r app-debug.apk
 
-# PROVISÓRIO: só para bancada. O provisionamento de campo é decisão em aberto.
+# PROVISÓRIO: só para bancada. Sempre sobrescreve, mesmo por cima de uma
+# configuração já embutida no build — é o caminho de depuração.
 adb shell am start -n br.com.mostrai.player/.PlayerActivity \
   -e dispositivoId "<id-da-tela>" \
   -e chaveAparelho "<chave-revogavel>" \
@@ -120,8 +287,14 @@ Duas garantias que este app depende do backend manter:
 
 ## Em aberto
 
-1. Retomada de índice depois de reinício (último índice × posição temporal na hora).
-2. Ciclo de vida quando o Android mata o app mesmo assim.
-3. Atualização remota (OTA) em Android TV 8 sideloaded.
-4. PIN universal × PIN por tela do admin.
-5. Provisionamento no primeiro boot, sem teclado e sem usuário/senha.
+1. Ciclo de vida quando o Android mata o app mesmo assim.
+2. Atualização remota (OTA) em Android TV 8 sideloaded.
+3. PIN universal × PIN por tela do admin.
+4. Provisionamento **de campo** — sem ninguém decidir de antemão qual APK vai
+   para qual tela (ex.: escanear um QR code no primeiro boot). "Gerar um APK
+   já configurado por tela" (seção acima) resolveu o caso em que alguém já
+   sabe essa relação antes de gravar o pendrive; o caso genérico — tela
+   chega sem ninguém ter decidido nada ainda — continua em aberto.
+
+Retomada de índice depois de reinício (item que era o nº 1 desta lista) foi
+fechada com o GPT em 21/09/2026 — ver decisão 5 acima.

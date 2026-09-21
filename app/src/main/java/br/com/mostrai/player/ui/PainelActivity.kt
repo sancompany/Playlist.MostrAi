@@ -9,9 +9,16 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import br.com.mostrai.player.BuildConfig
 import br.com.mostrai.player.R
 import br.com.mostrai.player.config.ConfigAparelho
+import br.com.mostrai.player.network.EstadoRede
+import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.proof.FilaProofOfPlay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Painel de manutenção acessível na própria TV, sem teclado.
@@ -88,7 +95,9 @@ class PainelActivity : AppCompatActivity() {
     private fun mostrarInformacoes() {
         grupoPin.visibility = View.GONE
         grupoInfo.visibility = View.VISIBLE
-        findViewById<TextView>(R.id.info).text = buildString {
+
+        val info = findViewById<TextView>(R.id.info)
+        info.text = buildString {
             appendLine("MOSTRAÍ PLAYER ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine()
             appendLine("Tela .............. ${config.dispositivoId ?: "—"}")
@@ -98,9 +107,28 @@ class PainelActivity : AppCompatActivity() {
             appendLine("Margem (vmin) ..... ${config.margemVmin}")
             appendLine("Atraso da virada .. ${config.atrasoViradaSegundos()}s")
             appendLine()
+            appendLine("Contrato do servidor  ${if (EstadoRede.contratoNovo) "novo" else "antigo (degradado)"}")
+            appendLine("Última playlist ..... ${EstadoRede.ultimaOrigem}")
+            EstadoRede.ultimoErroAparelho?.let { appendLine("Erro do aparelho .... HTTP $it") }
+            EstadoRede.ultimaFalhaTransitoria?.let { appendLine("Última falha de rede . $it") }
+            appendLine()
+            appendLine("Proof-of-play pendente  carregando…")
             if (config.pinPainel == ConfigAparelho.PIN_PROVISORIO) {
+                appendLine()
                 appendLine("ATENÇÃO: PIN ainda é o provisório de fábrica.")
             }
+        }
+
+        // Contagem em SQLite: mesmo sendo uma consulta pequena, E/S de disco
+        // não roda na thread principal — é a própria política do Android
+        // (StrictMode acusa isso em build de depuração).
+        lifecycleScope.launch {
+            val fila = FilaProofOfPlay(this@PainelActivity, MostraiApi(config))
+            val (pendentes, perdas) = withContext(Dispatchers.IO) { fila.pendentes() to fila.perdas() }
+            info.text = info.text.toString().replace(
+                "Proof-of-play pendente  carregando…",
+                "Proof-of-play pendente  $pendentes\nEventos perdidos ...... $perdas",
+            )
         }
     }
 
@@ -119,6 +147,6 @@ class PainelActivity : AppCompatActivity() {
     }
 
     private companion object {
-        const val TAMANHO_PIN = 4
+        const val TAMANHO_PIN = ConfigAparelho.TAMANHO_PIN
     }
 }

@@ -2,6 +2,8 @@ package br.com.mostrai.player.config
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import br.com.mostrai.player.BuildConfig
 
 /**
  * Configuração persistida do aparelho.
@@ -37,10 +39,23 @@ class ConfigAparelho(context: Context) {
         get() = prefs.getFloat(CHAVE_MARGEM, 0f)
         set(valor) = prefs.edit().putFloat(CHAVE_MARGEM, valor.coerceIn(0f, 10f)).apply()
 
-    /** PIN do painel de manutenção. Provisório até a decisão do PIN universal. */
+    /**
+     * PIN do painel de manutenção. Provisório até a decisão do PIN universal.
+     * Sempre 4 dígitos — é o que o teclado do painel ([PainelActivity]) aceita
+     * digitar; um PIN fora disso, vindo de qualquer provisionamento, nunca
+     * poderia ser digitado de volta e trancaria o painel de manutenção pra
+     * sempre. Um valor inválido é ignorado (mantém o PIN anterior), nunca
+     * lança exceção — provisionamento não pode derrubar o app.
+     */
     var pinPainel: String
         get() = prefs.getString(CHAVE_PIN, PIN_PROVISORIO) ?: PIN_PROVISORIO
-        set(valor) = prefs.edit().putString(CHAVE_PIN, valor).apply()
+        set(valor) {
+            if (!ehPinValido(valor)) {
+                Log.w(TAG, "PIN ignorado: precisa ter exatamente $TAMANHO_PIN dígitos numéricos")
+                return
+            }
+            prefs.edit().putString(CHAVE_PIN, valor).apply()
+        }
 
     val provisionado: Boolean
         get() = !dispositivoId.isNullOrBlank() &&
@@ -62,6 +77,24 @@ class ConfigAparelho(context: Context) {
         return hash % 30
     }
 
+    /**
+     * Aplica a configuração embutida no build (`-PconfigDispositivo=<arquivo>.json`,
+     * ver README, "Gerar um APK já configurado por tela") — só na primeira
+     * vez, nunca sobrescreve um provisionamento que já existe. É o que
+     * permite instalar por pendrive um APK já pronto para uma tela
+     * específica, sem precisar de adb depois.
+     */
+    fun aplicarConfiguracaoEmbutidaSeNecessaria() {
+        if (provisionado) return
+        if (BuildConfig.DISPOSITIVO_ID_EMBUTIDO.isBlank()) return
+
+        dispositivoId = BuildConfig.DISPOSITIVO_ID_EMBUTIDO
+        if (BuildConfig.CHAVE_APARELHO_EMBUTIDA.isNotBlank()) chaveAparelho = BuildConfig.CHAVE_APARELHO_EMBUTIDA
+        if (BuildConfig.BASE_URL_EMBUTIDA.isNotBlank()) baseUrl = BuildConfig.BASE_URL_EMBUTIDA
+        if (BuildConfig.PIN_EMBUTIDO.isNotBlank()) pinPainel = BuildConfig.PIN_EMBUTIDO
+        BuildConfig.MARGEM_VMIN_EMBUTIDA.toFloatOrNull()?.let { margemVmin = it }
+    }
+
     companion object {
         private const val ARQUIVO = "mostrai_config"
         private const val CHAVE_DISPOSITIVO = "dispositivo_id"
@@ -69,8 +102,16 @@ class ConfigAparelho(context: Context) {
         private const val CHAVE_BASE_URL = "base_url"
         private const val CHAVE_MARGEM = "margem_vmin"
         private const val CHAVE_PIN = "pin_painel"
+        private const val TAG = "ConfigAparelho"
+
+        /** Mesmo tamanho aceito pelo teclado de [PainelActivity]. */
+        const val TAMANHO_PIN = 4
 
         /** Trocado no primeiro provisionamento. Não é segredo, é valor inicial. */
         const val PIN_PROVISORIO = "0000"
+
+        /** Só dígitos, sempre [TAMANHO_PIN] deles — nunca letra, símbolo ou outro tamanho. */
+        fun ehPinValido(pin: String): Boolean =
+            pin.length == TAMANHO_PIN && pin.all { it.isDigit() }
     }
 }
