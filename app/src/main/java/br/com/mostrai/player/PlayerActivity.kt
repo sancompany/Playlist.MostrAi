@@ -30,6 +30,7 @@ import br.com.mostrai.player.playlist.Playlist
 import br.com.mostrai.player.playlist.PlaylistRepositorio
 import br.com.mostrai.player.playlist.PosicaoNaPlaylist
 import br.com.mostrai.player.playlist.RelogioJanela
+import br.com.mostrai.player.playlist.ReposicionamentoPlaylist
 import br.com.mostrai.player.proof.FilaProofOfPlay
 import br.com.mostrai.player.ui.GestoPainel
 import br.com.mostrai.player.ui.PainelActivity
@@ -193,20 +194,18 @@ class PlayerActivity : AppCompatActivity() {
     // --------------------------------------------------------------- playlist
 
     /**
-     * Busca a playlist no servidor (ou cai para cache/institucional). Só
-     * reposiciona por tempo — nunca por índice salvo — quando é um começo
-     * frio ou a janela mudou (decisão fechada com o GPT, item 7.1). Numa
-     * atualização dentro da mesma janela, reancora pelo `itemProgramacaoId`
-     * do item em exibição, nunca pelo índice bruto do array: um item que sai
-     * da elegibilidade no meio da hora não pode deslocar quem ficou — é
-     * exatamente o bug do player web descrito na seção 5.
+     * Busca a playlist no servidor (ou cai para cache/institucional) e
+     * decide o que fazer com o índice — a decisão em si mora em
+     * [ReposicionamentoPlaylist], testável sem Android; aqui só se aplica o
+     * resultado. Ver a doc daquele objeto para os três casos (início
+     * frio/janela nova, modo degradado, reancoragem por `itemProgramacaoId`).
      */
     private fun atualizarPlaylist(forcarReposicionamento: Boolean) {
         lifecycleScope.launch {
             val resultado = withContext(Dispatchers.IO) { repositorio.buscar() }
 
             val playlistAnterior = playlist
-            val idItemAtual = playlistAnterior.itens.getOrNull(indice)?.itemProgramacaoId
+            val indiceAnterior = indice
             val trocouDeJanela = resultado.playlist.janelaId != janelaIdAtual
 
             playlist = resultado.playlist
@@ -215,28 +214,16 @@ class PlayerActivity : AppCompatActivity() {
             atualizarEstadoRede(resultado)
             preAquecerCache(playlist)
 
-            if (playlist.itens.isEmpty()) {
-                indice = 0
-                return@launch
-            }
-
-            when {
-                forcarReposicionamento || trocouDeJanela -> {
-                    indice = calcularIndiceInicial()
-                    reiniciarItemAgora()
-                }
-                else -> {
-                    val novoIndice = idItemAtual
-                        ?.let { id -> playlist.itens.indexOfFirst { it.itemProgramacaoId == id } }
-                        ?: -1
-                    if (novoIndice >= 0) {
-                        indice = novoIndice
-                    } else {
-                        indice = calcularIndiceInicial()
-                        reiniciarItemAgora()
-                    }
-                }
-            }
+            val decisao = ReposicionamentoPlaylist.decidir(
+                playlistAnterior = playlistAnterior,
+                indiceAnterior = indiceAnterior,
+                playlistNova = playlist,
+                forcarReposicionamento = forcarReposicionamento,
+                trocouDeJanela = trocouDeJanela,
+                indiceInicialPorTempo = ::calcularIndiceInicial,
+            )
+            indice = decisao.indice
+            if (decisao.reiniciarAgora) reiniciarItemAgora()
         }
     }
 

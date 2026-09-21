@@ -64,6 +64,15 @@ Fechadas:
 - Ciclo de revisão (skill `revisar`) — 3 ciclos, 3 achados corrigidos (dois
   de correção alta em `PlayerActivity`/`CacheMidia`, um de correção média em
   `PainelActivity`), terceiro ciclo limpo · evidência: commit `4e56f94`
+- Revisão de acompanhamento (sessão separada, 21/09/2026) — achado de
+  correção alta: em modo degradado, `atualizarPlaylist` reiniciava a
+  exibição em andamento a cada busca periódica (15 em 15 min), porque a
+  reancoragem por `itemProgramacaoId` sempre falha nesse modo (o campo não
+  existe) e o fallback por tempo sempre devolvia o item 0 (`janelaInicio`
+  também não existe). Extraído para `ReposicionamentoPlaylist` (objeto
+  puro, mesmo padrão de `PosicaoNaPlaylist`), com ramo explícito pro modo
+  degradado (mantém o índice atual, não reinicia). 39 → 47 testes ·
+  `docs/erros/2026-09-21-modo-degradado-reiniciava-a-cada-poll.md`.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem
