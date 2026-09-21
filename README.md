@@ -141,6 +141,12 @@ O PIN inicial é `0000` e o painel avisa enquanto ele não for trocado. Não é 
 segredo versionado, é valor de fábrica. Como o PIN universal convive com o PIN
 por tela do admin é decisão em aberto.
 
+**Sempre 4 dígitos numéricos** — é o que o teclado do painel consegue digitar
+de volta. Um `pin` fora disso, em qualquer um dos três caminhos de
+provisionamento abaixo, é **ignorado** (mantém o PIN anterior) em vez de
+gravado — evita travar o painel de manutenção com um PIN que nunca poderia
+ser digitado na TV.
+
 ## Compilar
 
 Precisa de JDK 17+ e do Android SDK (platform 35, build-tools 35.0.1).

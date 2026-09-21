@@ -147,6 +147,6 @@ class PainelActivity : AppCompatActivity() {
     }
 
     private companion object {
-        const val TAMANHO_PIN = 4
+        const val TAMANHO_PIN = ConfigAparelho.TAMANHO_PIN
     }
 }
