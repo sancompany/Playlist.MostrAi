@@ -9,6 +9,11 @@
   auto-boot, reprodução em laço, painel de manutenção (3 toques de OK + PIN),
   margem de overscan visível corretamente. É o que fecha "a versão inicial
   no ar" da estação 5 para este tipo de projeto (`CONSTRAINTS.md`).
+  **Inclui confirmar visualmente que abrir o painel não interrompe o vídeo**
+  — achado de revisão, 21/09/2026: `PainelActivity` ganhou um tema
+  translúcido (`Theme.MostraiPlayer.Translucido`) pra corrigir isso, mas
+  janela translúcida é comportamento de plataforma, sem como testar sem
+  aparelho real. Ver `docs/erros/2026-09-21-painel-parava-o-player-em-vez-de-so-cobrir.md`.
 - **Testar contra o backend real** quando o contrato novo (seção 6) estiver
   no ar em `sancompany/mostrai` — hoje só foi testado com JSON sintético nos
   testes unitários (`PlaylistJsonTest`), nunca contra uma resposta real do

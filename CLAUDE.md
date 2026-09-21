@@ -111,6 +111,34 @@ Fechadas:
   backend manda ("sem programação para esta hora", RN-14, decisão do
   dono: isso é conteúdo da playlist, não uma arte fixa do app).
   `TelaInstitucional`, `EstadoInstitucional` (novo), `PlayerActivity`.
+- Revisão do app inteiro (skill `revisar`, pedido do dono, 21/09/2026) — 6
+  ciclos, os 3 primeiros com achado, os 3 últimos limpos:
+  1. `TelaInstitucional` decodificava o PNG do estado institucional dentro
+     de `onDraw` (thread de UI) — movido pra uma thread de fundo, guardado
+     por geração (mesmo padrão de `PlayerActivity.geracaoReproducao`).
+  2. `CacheMidia.baixarPara`/`HttpCliente.chamar`: `openConnection() as
+     HttpURLConnection` lança `ClassCastException` (não `IOException`)
+     pra uma URL com esquema inesperado (não http/s) — escapava do catch
+     de quem chama e derrubava o app; convertido pra `IOException` na
+     origem. `MostraiApi.enviarLote`/`enviarLegado`/`heartbeat` também
+     ganharam o mesmo catch amplo que `buscarPlaylist` já tinha (corpo de
+     resposta malformado lança `JSONException`, não capturada antes).
+     Cobertos por `HttpClienteTest` e `CacheMidiaTest` (novos).
+  3. **`PainelActivity` não era translúcida** — achado de correção alta:
+     `docs/funcional.md` sempre documentou "o player continua rodando por
+     trás" ao abrir o painel, e o fundo semi-opaco (`#E6000000`) só faz
+     sentido como sobreposição, mas nenhum tema declarava
+     `windowIsTranslucent`. Abrir o painel era uma troca de Activity
+     opaca — `PlayerActivity.onStop()` liberava o ExoPlayer e cancelava
+     todos os temporizadores, interrompendo uma exibição paga no meio.
+     Corrigido com `Theme.MostraiPlayer.Translucido`, só em
+     `PainelActivity`. Sem como testar sem aparelho real — nova pendência
+     em `docs/pendencias.md`. Detalhe em
+     `docs/erros/2026-09-21-painel-parava-o-player-em-vez-de-so-cobrir.md`.
+  4. `.gitignore` não cobria `mostrai-config.json` (só `dispositivos/*.json`)
+     apesar de `CLAUDE.md` já dizer que os dois ficam fora do Git — corrigido.
+  67 testes (62 → 67). Handoff consolidado pro backend em `PARA-O-BACKEND.md`
+  (novo).
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem
@@ -130,6 +158,7 @@ que o dono confirmar o app rodando em aparelho real.
 - Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt`
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`
 - Variáveis/segredos: nenhum `.env` — três caminhos de provisionamento, nesta ordem de precedência: build embutido (`-PconfigDispositivo`, README "Gerar um APK já configurado por tela") → arquivo externo (`mostrai-config.json` no pendrive, README "Configurar por um arquivo no pendrive") → extras de Intent por `adb` (sempre sobrescreve, é o caminho de depuração, README "Instalar e provisionar em bancada"). Nenhum dos três versiona segredo — `dispositivos/*.json` e `mostrai-config.json` ficam de fora do Git.
+- Handoff pro backend (`sancompany/mostrai`): `PARA-O-BACKEND.md` — o que este app já assume do contrato, e o que ainda falta do lado de lá (`margemVmin` por admin/por lado, vídeo de fundo institucional servido pelo backend).
 
 ## Conformidade
 

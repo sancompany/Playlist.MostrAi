@@ -27,13 +27,11 @@ import kotlin.math.min
  * marca entregue pelo dono, um PNG cheio por estado — ver
  * `docs/funcional.md`, seção 4.
  */
-enum class EstadoInstitucional(private val drawableRes: Int?) {
+enum class EstadoInstitucional(val drawableRes: Int?) {
     PADRAO(null),
     NAO_PROVISIONADO(R.drawable.institucional_nao_provisionado),
     ERRO_CARREGAR(R.drawable.institucional_erro),
-    CARREGANDO(R.drawable.institucional_carregando);
-
-    fun drawable(): Int? = drawableRes
+    CARREGANDO(R.drawable.institucional_carregando),
 }
 
 class TelaInstitucional @JvmOverloads constructor(
@@ -52,6 +50,7 @@ class TelaInstitucional @JvmOverloads constructor(
             if (field == valor) return
             field = valor
             bitmapEstado = null
+            carregarBitmapEmSegundoPlano(valor)
             invalidate()
         }
 
@@ -71,8 +70,11 @@ class TelaInstitucional @JvmOverloads constructor(
 
     private val linha = Paint().apply { color = Color.parseColor("#2A2F3A") }
 
-    /** Bitmap do estado atual, decodificado sob demanda e recortado até o próximo troca de [estado]. */
+    /** Bitmap do estado atual — null enquanto decodifica, ou o tempo todo no PADRAO. */
     private var bitmapEstado: Bitmap? = null
+
+    /** Só a decodificação da geração mais recente pode gravar [bitmapEstado] — descarta as demais. */
+    private var geracaoCarregamento = 0
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -91,12 +93,34 @@ class TelaInstitucional @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val drawableRes = estado.drawable()
-        if (drawableRes != null) {
-            desenharBitmapDoEstado(canvas, drawableRes)
-            return
+        if (estado.drawableRes != null) {
+            desenharBitmapDoEstado(canvas)
+        } else {
+            desenharPadrao(canvas)
         }
-        desenharPadrao(canvas)
+    }
+
+    /**
+     * Decodifica fora da UI thread — um PNG de ~1080x1920 é rápido, mas
+     * `onDraw` é o pior lugar pra fazer isso: qualquer E/S ali é uma trava
+     * de frame na hora exata em que a tela institucional aparece (erro,
+     * carregando, não provisionado). Guardado por geração, mesmo padrão de
+     * `PlayerActivity.geracaoReproducao`: se o estado mudar nas duas vezes
+     * antes da primeira decodificação terminar, o resultado antigo é
+     * descartado, nunca sobrescreve o bitmap do estado atual.
+     */
+    private fun carregarBitmapEmSegundoPlano(estado: EstadoInstitucional) {
+        val drawableRes = estado.drawableRes ?: return
+        val minhaGeracao = ++geracaoCarregamento
+        Thread {
+            val bitmap = BitmapFactory.decodeResource(resources, drawableRes)
+            post {
+                if (minhaGeracao == geracaoCarregamento) {
+                    bitmapEstado = bitmap
+                    invalidate()
+                }
+            }
+        }.start()
     }
 
     /**
@@ -105,11 +129,14 @@ class TelaInstitucional @JvmOverloads constructor(
      * [RotacaoTela]) — "fit center" preserva a proporção sem cortar nem
      * distorcer, mesmo quando a margem de overscan ou uma TV com proporção
      * ligeiramente diferente deixar uma folga nas bordas.
+     *
+     * Enquanto o bitmap ainda não decodificou (poucos frames, ver
+     * [carregarBitmapEmSegundoPlano]), desenha só o fundo branco — a arte
+     * aparece assim que ficar pronta, sem travar o frame atual.
      */
-    private fun desenharBitmapDoEstado(canvas: Canvas, drawableRes: Int) {
+    private fun desenharBitmapDoEstado(canvas: Canvas) {
         canvas.drawColor(Color.WHITE)
-        val bitmap = bitmapEstado ?: BitmapFactory.decodeResource(resources, drawableRes)?.also { bitmapEstado = it }
-        bitmap ?: return
+        val bitmap = bitmapEstado ?: return
 
         val escala = min(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
         val larguraDestino = bitmap.width * escala

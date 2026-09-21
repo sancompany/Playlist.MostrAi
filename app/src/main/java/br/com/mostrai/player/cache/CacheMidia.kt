@@ -83,7 +83,16 @@ class CacheMidia(context: Context) {
     @Throws(IOException::class)
     private fun baixarPara(url: String, destino: File) {
         val temporario = File(destino.parentFile, "${destino.name}.tmp")
-        val conexao = URL(url).openConnection() as HttpURLConnection
+        // Mesma guarda de HttpCliente.chamar: uma url de mídia com esquema
+        // inesperado (não http/https) faz o cast falhar com
+        // ClassCastException, não IOException — sem converter aqui, escapa
+        // do catch de resolver() e derruba o app, exatamente o que essa
+        // função promete nunca fazer.
+        val conexao = try {
+            URL(url).openConnection() as HttpURLConnection
+        } catch (e: ClassCastException) {
+            throw IOException("URL de mídia não é http(s): $url", e)
+        }
         try {
             conexao.connectTimeout = TIMEOUT_CONEXAO_MS
             conexao.readTimeout = TIMEOUT_LEITURA_MS

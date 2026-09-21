@@ -36,7 +36,7 @@
             android:name=".ui.PainelActivity"
             android:exported="false"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.MostraiPlayer" />
+            android:theme="@style/Theme.MostraiPlayer.Translucido" />
 
         <receiver
             android:name=".BootReceiver"

@@ -70,6 +70,13 @@ open class MostraiApi(
             }
         } catch (e: IOException) {
             RespostaPlayed.Transitorio(e.message ?: "falha de rede")
+        } catch (e: Exception) {
+            // Mesma guarda de buscarPlaylist: PlayedJson.parseResultados roda
+            // dentro deste try, e um 200 com corpo malformado lança
+            // JSONException, não IOException — sem isto, um envio de
+            // proof-of-play derrubaria o app por causa de uma resposta ruim.
+            Log.w(TAG, "resposta de /played (lote) não reconhecida", e)
+            RespostaPlayed.Transitorio("resposta não reconhecida")
         }
     }
 
@@ -89,6 +96,13 @@ open class MostraiApi(
             }
         } catch (e: IOException) {
             RespostaPlayed.Transitorio(e.message ?: "falha de rede")
+        } catch (e: Exception) {
+            // PlayedJson.parseContouLegado já se protege sozinha (runCatching),
+            // mas o resto da função (montar a URL, ler os cabeçalhos) ainda
+            // pode lançar algo que não é IOException — mesma guarda das
+            // outras duas chamadas desta classe.
+            Log.w(TAG, "resposta de /played (legado) não reconhecida", e)
+            RespostaPlayed.Transitorio("resposta não reconhecida")
         }
     }
 
@@ -98,6 +112,9 @@ open class MostraiApi(
         return try {
             http.post("$base/player/$dispositivoId/heartbeat", cabecalhosAuth(), "").codigo in 200..299
         } catch (e: IOException) {
+            false
+        } catch (e: Exception) {
+            Log.w(TAG, "falha inesperada no heartbeat", e)
             false
         }
     }

@@ -29,7 +29,17 @@ class HttpCliente(
 
     @Throws(IOException::class)
     private fun chamar(metodo: String, url: String, cabecalhos: Map<String, String>, corpo: String?): Resposta {
-        val conexao = URL(url).openConnection() as HttpURLConnection
+        // openConnection() não valida o esquema — uma baseUrl mal configurada
+        // (ex.: sem "http"/"https", ou outro esquema qualquer) devolve uma
+        // conexão de outro tipo, e o cast falha com ClassCastException, não
+        // IOException. Sem converter aqui, isso escaparia do catch de quem
+        // chama e derrubaria o app — errado para um aparelho que precisa
+        // nunca travar por causa de configuração ruim.
+        val conexao = try {
+            URL(url).openConnection() as HttpURLConnection
+        } catch (e: ClassCastException) {
+            throw IOException("URL não é http(s): $url", e)
+        }
         try {
             conexao.requestMethod = metodo
             conexao.connectTimeout = timeoutConexaoMs
