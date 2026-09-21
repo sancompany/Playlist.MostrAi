@@ -108,8 +108,25 @@ técnica, sem código ainda — duas fases independentes:
   só um teste físico decide, e normalmente exige refazer o provisionamento
   do zero (reset de fábrica) para inscrever.
 
+  **Pesquisa (21/09/2026, sem hardware — sinal, não confirmação):** um
+  relato real de usuário (XDA Forums) tentando `dpm set-device-owner` numa
+  TCL Android TV (modelo TCL32A5, Android 9 — não o mesmo modelo nem a
+  mesma versão do Mostraí, mas mesmo fabricante e mesma categoria de
+  produto) bateu em `"Can't set package as device owner"` — o mesmo
+  comando funcionou sem problema em Sony TV e em aparelhos móveis. Isso
+  não prova que o SEMP TCL 32S6500S vai falhar da mesma forma (modelo e
+  versão de Android diferentes, e é uma amostra de um usuário só), mas é
+  um sinal real contra a Fase 2, não hipotético — TCL como fabricante tem
+  pelo menos um caso documentado de travar esse caminho num aparelho de
+  TV. Eleva a prioridade do teste físico antes de investir qualquer linha
+  de código na Fase 2. Fontes: [thread original](https://xdaforums.com/t/how-to-set-device-owner-in-tcl-android-tv.4590837/)
+  (bloqueado pra fetch automatizado, resumo via busca).
+
 **Recomendação**: começar pela Fase 1 se/quando isso for priorizado —
 funciona em qualquer aparelho, sem risco, e já corta a dependência do
-pendrive para o caso comum (trocar app, não trocar tela). Fase 2 só depois
-de um teste real confirmando que este hardware aceita Device Owner — não
-vale desenhar o resto em cima de uma suposição não testada.
+pendrive para o caso comum (trocar app, não trocar tela). Fase 2 agora tem
+um motivo concreto a mais pra não ser a aposta principal: além de precisar
+de teste físico de qualquer forma, já existe um relato real de falha em
+TV TCL (fabricante diferente do celular/tablet onde esse caminho é mais
+testado). Não vale desenhar o resto em cima de uma suposição não testada
+— e essa suposição já tem um dado contra ela.
