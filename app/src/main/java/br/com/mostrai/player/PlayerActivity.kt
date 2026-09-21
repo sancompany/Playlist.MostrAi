@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import br.com.mostrai.player.cache.CacheMidia
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.network.EstadoRede
 import br.com.mostrai.player.network.MostraiApi
@@ -55,6 +57,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var api: MostraiApi
     private lateinit var repositorio: PlaylistRepositorio
     private lateinit var fila: FilaProofOfPlay
+    private lateinit var cacheMidia: CacheMidia
 
     private lateinit var playerView: PlayerView
     private lateinit var institucional: TelaInstitucional
@@ -111,6 +114,7 @@ class PlayerActivity : AppCompatActivity() {
         api = MostraiApi(config)
         repositorio = PlaylistRepositorio(this, api)
         fila = FilaProofOfPlay(this, api)
+        cacheMidia = CacheMidia(this)
 
         raiz = findViewById(R.id.raiz)
         playerView = findViewById(R.id.player)
@@ -199,6 +203,7 @@ class PlayerActivity : AppCompatActivity() {
             relogioJanela = resultado.relogio
             janelaIdAtual = resultado.playlist.janelaId
             atualizarEstadoRede(resultado)
+            preAquecerCache(playlist)
 
             if (playlist.itens.isEmpty()) {
                 indice = 0
@@ -273,6 +278,16 @@ class PlayerActivity : AppCompatActivity() {
         }, atrasoMs.coerceAtLeast(1_000L))
     }
 
+    /**
+     * Baixa de antemão os itens da playlist que ainda não estão em cache
+     * (bloco 4 do MVP), para que a primeira exibição de cada um não fique
+     * esperando o download. Dispara em segundo plano, sem bloquear nem
+     * atrasar a reprodução em andamento.
+     */
+    private fun preAquecerCache(playlist: Playlist) {
+        lifecycleScope.launch(Dispatchers.IO) { cacheMidia.preAquecer(playlist.itens) }
+    }
+
     // ---------------------------------------------------------------- player
 
     private fun criarPlayer() {
@@ -323,15 +338,21 @@ class PlayerActivity : AppCompatActivity() {
         val playlistDoItem = playlist
         lifecycleScope.launch {
             // A linha da fila nasce ANTES do play() (decisão 3, seção 4) — só
-            // toca depois que o execucaoId está persistido.
-            val id = withContext(Dispatchers.IO) { fila.registrarInicio(item, playlistDoItem) }
+            // toca depois que o execucaoId está persistido. Resolve o arquivo
+            // do cache local na mesma ida à thread de fundo (bloco 4 do MVP);
+            // se não conseguir (sem cache e download falhou), cai para tocar
+            // direto da URL remota — nunca trava a exibição por causa do cache.
+            val (id, arquivoLocal) = withContext(Dispatchers.IO) {
+                fila.registrarInicio(item, playlistDoItem) to cacheMidia.resolver(item)
+            }
             execucaoAtualId = id
 
             institucional.visibility = View.GONE
             playerView.visibility = View.VISIBLE
 
             val exo = player ?: return@launch
-            exo.setMediaItem(MediaItem.fromUri(item.url!!))
+            val uri = if (arquivoLocal != null) Uri.fromFile(arquivoLocal) else Uri.parse(item.url!!)
+            exo.setMediaItem(MediaItem.fromUri(uri))
             exo.prepare()
             exo.playWhenReady = true
         }
