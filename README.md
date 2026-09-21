@@ -67,9 +67,9 @@ O que ainda **não** está: rede, cache de mídia e fila durável de proof-of-pl
 
 ### Gesto do painel
 
-**Cinco acionamentos do botão OK/CENTER em até 3 segundos.** É o equivalente de
-controle remoto aos cinco toques num canto que o player web usa hoje. Proposta —
-aguarda o aval do dono.
+**Três acionamentos do botão OK/CENTER em até 3 segundos.** É o equivalente de
+controle remoto aos cinco toques num canto que o player web usa hoje — número
+adaptado para o controle, já aprovado pelo dono.
 
 ### PIN
 
