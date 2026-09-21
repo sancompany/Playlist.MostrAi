@@ -74,6 +74,16 @@ class PlayerActivity : AppCompatActivity() {
     /** execucaoId da exibição em andamento, ou null se o item não conta. */
     private var execucaoAtualId: String? = null
 
+    /**
+     * Incrementada a cada chamada de [tocarItemAtual]. `mostrarVideo` guarda a
+     * geração com que foi chamado e confere antes de aplicar o resultado —
+     * sem isso, uma corrotina de um item anterior que ainda está resolvendo
+     * cache/registrando início pode terminar DEPOIS de um item mais novo já
+     * ter assumido a tela, e sobrescrever `execucaoAtualId` e o item do
+     * ExoPlayer com o item errado.
+     */
+    private var geracaoReproducao = 0
+
     private val gestoPainel = GestoPainel { abrirPainel() }
 
     private val avancarPorTempo = Runnable { avancar() }
@@ -321,6 +331,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun tocarItemAtual() {
         handler.removeCallbacks(avancarPorTempo)
+        val minhaGeracao = ++geracaoReproducao
         val item = playlist.itens.getOrNull(indice) ?: run {
             indice = 0
             playlist.itens.firstOrNull()
@@ -330,11 +341,11 @@ class PlayerActivity : AppCompatActivity() {
             execucaoAtualId = null
             mostrarInstitucional(item)
         } else {
-            mostrarVideo(item)
+            mostrarVideo(item, minhaGeracao)
         }
     }
 
-    private fun mostrarVideo(item: ItemPlaylist) {
+    private fun mostrarVideo(item: ItemPlaylist, minhaGeracao: Int) {
         val playlistDoItem = playlist
         lifecycleScope.launch {
             // A linha da fila nasce ANTES do play() (decisão 3, seção 4) — só
@@ -345,6 +356,16 @@ class PlayerActivity : AppCompatActivity() {
             val (id, arquivoLocal) = withContext(Dispatchers.IO) {
                 fila.registrarInicio(item, playlistDoItem) to cacheMidia.resolver(item)
             }
+
+            if (minhaGeracao != geracaoReproducao) {
+                // Um item mais novo já assumiu a tela enquanto isto resolvia
+                // (troca de janela, painel reposicionando etc.) — nunca toca
+                // por cima do que já está rodando. A linha nunca teve
+                // terminadoEm, então descartá-la é correto, não é perda.
+                if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
+                return@launch
+            }
+
             execucaoAtualId = id
 
             institucional.visibility = View.GONE

@@ -19,7 +19,14 @@ import java.net.URL
  */
 class CacheMidia(context: Context) {
 
-    private val diretorio: File = File(context.applicationContext.cacheDir, "midia").apply { mkdirs() }
+    private val diretorio: File = File(context.applicationContext.cacheDir, "midia").apply {
+        mkdirs()
+        // Um .tmp órfão só existe se um download anterior foi interrompido no
+        // meio (processo morto pelo Android) — nunca vira arquivo válido
+        // porque resolver() só procura pelo nome sem sufixo. Sem isto, sobra
+        // para sempre, contando no teto de tamanho sem nunca ser usado.
+        listFiles { arquivo -> arquivo.name.endsWith(".tmp") }?.forEach { it.delete() }
+    }
 
     /**
      * Devolve o arquivo local pronto para tocar — do cache se já existir,
@@ -27,8 +34,15 @@ class CacheMidia(context: Context) {
      * (sem URL, ou download falhou) — quem chama cai para tocar direto da
      * URL remota nesse caso.
      *
+     * Sincronizado de propósito: sem isso, o pré-aquecimento em segundo
+     * plano e a exibição que acabou de chegar no mesmo item podem baixar a
+     * mesma chave ao mesmo tempo e escrever por cima uma da outra no mesmo
+     * arquivo temporário, corrompendo o cache. Serializar aqui é a mesma
+     * decisão que já limita `preAquecer` a uma baixa por vez.
+     *
      * Bloqueante — chamar de uma thread de fundo.
      */
+    @Synchronized
     fun resolver(item: ItemPlaylist): File? {
         val url = item.url ?: return null
         val chave = ChaveCache.paraItem(item) ?: return null

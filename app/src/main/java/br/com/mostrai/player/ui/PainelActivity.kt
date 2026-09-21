@@ -9,12 +9,16 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import br.com.mostrai.player.BuildConfig
 import br.com.mostrai.player.R
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.network.EstadoRede
 import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.proof.FilaProofOfPlay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Painel de manutenção acessível na própria TV, sem teclado.
@@ -92,11 +96,8 @@ class PainelActivity : AppCompatActivity() {
         grupoPin.visibility = View.GONE
         grupoInfo.visibility = View.VISIBLE
 
-        // Leitura rápida e local (contagem em SQLite + SharedPreferences); não
-        // dispara rede nenhuma, então não precisa de thread de fundo aqui.
-        val fila = FilaProofOfPlay(this, MostraiApi(config))
-
-        findViewById<TextView>(R.id.info).text = buildString {
+        val info = findViewById<TextView>(R.id.info)
+        info.text = buildString {
             appendLine("MOSTRAÍ PLAYER ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine()
             appendLine("Tela .............. ${config.dispositivoId ?: "—"}")
@@ -111,12 +112,23 @@ class PainelActivity : AppCompatActivity() {
             EstadoRede.ultimoErroAparelho?.let { appendLine("Erro do aparelho .... HTTP $it") }
             EstadoRede.ultimaFalhaTransitoria?.let { appendLine("Última falha de rede . $it") }
             appendLine()
-            appendLine("Proof-of-play pendente  ${fila.pendentes()}")
-            appendLine("Eventos perdidos ...... ${fila.perdas()}")
-            appendLine()
+            appendLine("Proof-of-play pendente  carregando…")
             if (config.pinPainel == ConfigAparelho.PIN_PROVISORIO) {
+                appendLine()
                 appendLine("ATENÇÃO: PIN ainda é o provisório de fábrica.")
             }
+        }
+
+        // Contagem em SQLite: mesmo sendo uma consulta pequena, E/S de disco
+        // não roda na thread principal — é a própria política do Android
+        // (StrictMode acusa isso em build de depuração).
+        lifecycleScope.launch {
+            val fila = FilaProofOfPlay(this@PainelActivity, MostraiApi(config))
+            val (pendentes, perdas) = withContext(Dispatchers.IO) { fila.pendentes() to fila.perdas() }
+            info.text = info.text.toString().replace(
+                "Proof-of-play pendente  carregando…",
+                "Proof-of-play pendente  $pendentes\nEventos perdidos ...... $perdas",
+            )
         }
     }
 

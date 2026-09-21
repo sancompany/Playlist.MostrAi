@@ -88,6 +88,23 @@ suficiente para não precisar de ORM. `kotlinx-coroutines-android` e
 ferramentas de concorrência padrão do ecossistema Android/Kotlin, não
 dependências de negócio.
 
+## Riscos de segurança aceitos (achados da revisão, estação 5)
+
+- **`baseUrl` não é validado como HTTPS.** Se o aparelho for provisionado com
+  uma URL `http://`, a chave revogável (`X-Aparelho-Id`) trafega em texto
+  claro na rede do comércio. Não corrigido em código de propósito: enforçar
+  HTTPS quebraria bancada local (`http://localhost` na fase de testes).
+  Mitigação real: a chave é revogável (veto formal), então o pior caso é
+  revogar e reemitir, não um segredo permanente exposto. Quem provisiona em
+  campo é responsável por usar `https://` (`README.md`, "Instalar e
+  provisionar em bancada").
+- **PIN do painel sem limite de tentativas.** `PainelActivity` aceita
+  qualquer número de tentativas seguidas sem atraso. Aceito porque o painel é
+  **somente leitura** na v1 (`docs/funcional.md`, seção 3) — o pior caso de
+  um PIN quebrado por força bruta física é ver `dispositivoId`, chave
+  truncada e contadores, não uma ação destrutiva. Reavaliar se o painel
+  ganhar ação de escrita numa versão futura.
+
 ## CI (estação 3)
 
 Sem verificação automática de segurança dedicada (SAST, scanner de
