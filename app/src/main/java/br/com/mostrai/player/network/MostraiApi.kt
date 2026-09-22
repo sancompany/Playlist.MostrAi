@@ -2,6 +2,7 @@ package br.com.mostrai.player.network
 
 import android.util.Log
 import br.com.mostrai.player.config.ConfigAparelho
+import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.playlist.Playlist
 import br.com.mostrai.player.proof.EventoExibicao
 import java.io.IOException
@@ -106,16 +107,25 @@ open class MostraiApi(
         }
     }
 
-    fun heartbeat(): Boolean {
-        val base = config.baseUrl ?: return false
-        val dispositivoId = config.dispositivoId ?: return false
+    /**
+     * Devolve as margens da safe area que o backend mandou (migration 069 de
+     * `sancompany/mostrai`), ou `null` — tanto pra heartbeat que falhou
+     * quanto pra resposta sem `margens` (contrato antigo do servidor, ou tela
+     * sem dono ainda). `null` nunca zera a margem local: quem chama só
+     * atualiza [ConfigAparelho] quando há valor de verdade pra aplicar.
+     */
+    open fun heartbeat(): MargensOverscan? {
+        val base = config.baseUrl ?: return null
+        val dispositivoId = config.dispositivoId ?: return null
         return try {
-            http.post("$base/player/$dispositivoId/heartbeat", cabecalhosAuth(), "").codigo in 200..299
+            val resposta = http.post("$base/player/$dispositivoId/heartbeat", cabecalhosAuth(), "")
+            if (resposta.codigo !in 200..299) return null
+            HeartbeatJson.parseMargens(resposta.corpo)
         } catch (e: IOException) {
-            false
+            null
         } catch (e: Exception) {
-            Log.w(TAG, "falha inesperada no heartbeat", e)
-            false
+            Log.w(TAG, "resposta de /heartbeat não reconhecida", e)
+            null
         }
     }
 

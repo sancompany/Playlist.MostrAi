@@ -225,6 +225,18 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   de aplicar que `RotacaoTela.aplicar` implementa.
   `ConfigAparelho.margensOverscan`, `RotacaoTela.aplicar`.
 
+- **RN-17 — Margem que o backend manda no heartbeat sobrescreve a local,
+  nunca a zera.** `POST /player/:dispositivoId/heartbeat` (migration 069 de
+  `sancompany/mostrai`) devolve `{margens: {superior, direita, inferior,
+  esquerda}}` em vmin; `MostraiApi.heartbeat()` devolve `MargensOverscan?`
+  (`null` pra heartbeat que falhou ou resposta sem `margens`). Só quando não
+  é `null` é que `ConfigAparelho` é atualizado e `RotacaoTela.aplicar`
+  reaplicado — um heartbeat que falha (rede caiu, servidor fora) mantém a
+  última margem conhecida, nunca volta pro valor de provisionamento local
+  nem zera. Violada: não se aplica — `PlayerActivity.heartbeatPeriodico` só
+  escreve em `ConfigAparelho` dentro do `if (margens != null)`.
+  `network.HeartbeatJson`, `PlayerActivity.heartbeatPeriodico`.
+
 ## 6. Textos que o sistema diz
 
 | Texto | Onde | Arquivo |
@@ -315,3 +327,8 @@ Duas garantias que este app depende do backend manter:
   do índice do array da resposta (RN-09 depende disso).
 - `criativoId → url` é imutável — criativo trocado é `criativoId` novo (usa-se
   como chave de cache de mídia sem revalidar, ver bloco de cache local).
+
+`POST /player/:dispositivoId/heartbeat` (chamado a cada 5 min, já rodava
+antes por outro motivo) ganhou `margens` na resposta em 22/09/2026 —
+migration 069 do backend — fechando a pendência de `margemVmin` por lado
+(RN-17, `PARA-O-BACKEND.md`).

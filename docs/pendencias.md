@@ -30,14 +30,13 @@
   provisionamento de campo.
 - **Gerar e guardar o keystore de release**, fora deste repositório — hoje
   só existe build debug (assinatura de teste).
-- **Pedir ao backend um campo para `margemVmin` por tela, e por lado** (contrato
-  de `sancompany/mostrai`, outra sessão) — decisão do dono, 21/09/2026, **reafirmada
-  no mesmo dia**. **Lado do app já pronto (21/09/2026)**: `margemVmin` virou
-  4 campos independentes (`margemVminTopo/Base/Esquerda/Direita`), já
-  funcionando nos três caminhos de provisionamento locais — falta só o
-  backend expor esses 4 valores por tela, resumido em `PARA-O-BACKEND.md`.
-  Ver `docs/proximas-versoes.md`, "`margemVmin` configurada pelo admin, não
-  pelo arquivo local", para o que isso ainda exige do lado do backend.
+- ~~Pedir ao backend um campo para `margemVmin` por tela, e por lado~~ —
+  **RESOLVIDO em 22/09/2026**: backend (`sancompany/mostrai`, migration 069)
+  expõe os 4 valores por tela, admin edita, heartbeat entrega; este app lê e
+  aplica em runtime (`HeartbeatJson`, `PlayerActivity.heartbeatPeriodico`).
+  Detalhe em `CLAUDE.md` (estado na esteira) e `PARA-O-BACKEND.md`. Falta só
+  a verificação em hardware real, já coberta pelo item acima ("margem de
+  overscan visível corretamente").
 - **Vídeo de fundo vem do site, não do app** — decisão do dono, 21/09/2026:
   ao contrário dos assets de marca acima (que são locais, embutidos no
   APK), o vídeo de fundo deve ser servido pelo próprio backend/admin, não

@@ -158,6 +158,22 @@ Fechadas:
   (janela translúcida herda a orientação da Activity opaca de trás).
   `docs/erros/2026-09-21-painel-translucido-com-orientacao-fixa-derrubava-o-app.md`.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
+- **`margemVmin` por lado, fechado com o backend (22/09/2026, sessão do
+  backend `sancompany/mostrai`)** — o pedido pendente em `PARA-O-BACKEND.md`
+  item 1 foi resolvido: migration 069 lá deu 4 colunas por tela, editáveis
+  na aba Telas do admin, entregues a cada heartbeat
+  (`{margens: {superior, direita, inferior, esquerda}}`, vmin, termos
+  visuais — mesmo formato que o player web já consumia). Aqui:
+  `network.HeartbeatJson.parseMargens` (novo) lê essa resposta;
+  `MostraiApi.heartbeat()` passou de `Boolean` pra `MargensOverscan?`
+  (`null` = sem novidade, nunca zera o que já estava configurado);
+  `PlayerActivity.heartbeatPeriodico` grava em `ConfigAparelho` e reaplica
+  `RotacaoTela.aplicar` a cada resposta com valor. Precedência: backend
+  sobrescreve o local assim que a tela responde online — local continua
+  sendo o valor até o primeiro heartbeat bem-sucedido. 70 → 74 testes
+  (`HeartbeatJsonTest`). Verificado só por teste unitário — sem hardware
+  real, não dá pra confirmar visualmente que a margem aplicada bate com o
+  que o admin gravou (mesma limitação de sempre desta sessão).
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem
   hardware Android TV nem emulador viável (`CONSTRAINTS.md`). Único item que
@@ -176,7 +192,7 @@ que o dono confirmar o app rodando em aparelho real.
 - Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt`
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`
 - Variáveis/segredos: nenhum `.env` — três caminhos de provisionamento, nesta ordem de precedência: build embutido (`-PconfigDispositivo`, README "Gerar um APK já configurado por tela") → arquivo externo (`mostrai-config.json` no pendrive, README "Configurar por um arquivo no pendrive") → extras de Intent por `adb` (sempre sobrescreve, é o caminho de depuração, README "Instalar e provisionar em bancada"). Nenhum dos três versiona segredo — `dispositivos/*.json` e `mostrai-config.json` ficam de fora do Git.
-- Handoff pro backend (`sancompany/mostrai`): `PARA-O-BACKEND.md` — o que este app já assume do contrato, e o que ainda falta do lado de lá (`margemVmin` por admin/por lado, vídeo de fundo institucional servido pelo backend).
+- Handoff pro backend (`sancompany/mostrai`): `PARA-O-BACKEND.md` — o que este app já assume do contrato, e o que ainda falta do lado de lá (`margemVmin` resolvido em 22/09/2026; só falta vídeo de fundo institucional servido pelo backend).
 
 ## Conformidade
 

@@ -42,7 +42,14 @@ Ideias para depois. Entrada aqui não autoriza construir nada.
 - **Quando vale a pena**: se a métrica de "cache miss" (a criar) mostrar
   descarte de criativo que volta a ser pedido em menos de 24h.
 
-## `margemVmin` configurada pelo admin, não pelo arquivo local
+## `margemVmin` configurada pelo admin, não pelo arquivo local — CONCLUÍDO em 22/09/2026
+
+Backend (`sancompany/mostrai`, migration 069) e app fechados: heartbeat
+devolve `margens` por lado, `PlayerActivity` aplica em runtime e
+sobrescreve o valor local assim que a tela responde online — precedência
+exatamente como o "quando vale a pena" abaixo previa. Detalhe em
+`CLAUDE.md` (estado na esteira) e `PARA-O-BACKEND.md`. Registro original
+mantido abaixo por histórico.
 
 - **O quê**: a margem de overscan deixa de vir só do provisionamento local
   (build embutido, `mostrai-config.json` ou `adb`) e passa a poder ser

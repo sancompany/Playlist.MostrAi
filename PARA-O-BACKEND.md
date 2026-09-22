@@ -40,35 +40,42 @@ backend" — aqui só o resumo de quem lê rápido:
      servidor; se a mesma `criativoId` puder um dia apontar pra uma `url`
      diferente, o cache local ficaria servindo mídia errada.
 
-## O que este app precisa do backend (pendente, do lado de lá)
+## O que este app precisa do backend
 
-O lado deste app está pronto pros dois itens abaixo — o app já sabe
-consumir o que falta assim que existir. Não é "vamos ter que atualizar o
-player depois" — é só o backend expor o campo.
+### 1. `margemVmin` configurável pelo admin, por lado — RESOLVIDO em 22/09/2026
 
-### 1. `margemVmin` configurável pelo admin, por lado (não 1 valor por tela)
+O backend (`sancompany/mostrai`, migration 069) ganhou 4 colunas em
+`dispositivos` (`margem_superior/direita/inferior/esquerda`, editáveis na
+aba Telas do admin) e passou a entregar isso a cada heartbeat:
+`POST /player/:dispositivoId/heartbeat` devolve
+`{ok, margens: {superior, direita, inferior, esquerda}}`, em vmin, sempre
+em termos visuais — mesmo formato que o player web já consome.
 
-**Lado do app pronto (21/09/2026).** `margemVmin` deixou de ser um valor
-único e agora são 4 campos independentes —
+Do lado deste app: `network.HeartbeatJson.parseMargens` lê essa resposta
+(`superior`/`inferior` viram `topo`/`base` só pra bater com o nome que
+`MargensOverscan` já tinha); `MostraiApi.heartbeat()` devolve
+`MargensOverscan?` em vez de `Boolean` (`null` = heartbeat falhou ou o
+servidor não mandou margens — nunca zera o que já estava configurado).
+`PlayerActivity.heartbeatPeriodico` grava em `ConfigAparelho` e reaplica
+`RotacaoTela.aplicar` a cada resposta com valor — o backend sobrescreve o
+que veio de provisionamento local assim que a tela ficar online, exatamente
+a precedência sugerida abaixo (mantida por registro histórico). 70 → 74
+testes (`HeartbeatJsonTest`, novo).
+
+<details>
+<summary>Pedido original (21/09/2026), mantido como registro</summary>
+
+`margemVmin` deixou de ser um valor único e virou 4 campos independentes —
 `ConfigAparelho.margemVminTopo/Base/Esquerda/Direita`, sempre em termos
 **visuais** (o que o operador vê olhando pra tela já montada — o app já
 resolve a conversão pra rotação física da tela sozinho, o backend não
-precisa saber disso). Hoje esses 4 valores só vêm dos três caminhos de
-provisionamento **locais** (build embutido, `mostrai-config.json`, extras
-de `adb`) — os mesmos 4 nomes de campo (`margemVminTopo`, `margemVminBase`,
-`margemVminEsquerda`, `margemVminDireita`), como float.
+precisava saber disso). Sugestão que acabou virando a implementação real:
+"backend sobrescreve local, mesmo padrão que os outros campos já seguem".
+Detalhe em `docs/proximas-versoes.md`, seção "`margemVmin` configurada pelo
+admin, não pelo arquivo local".
+</details>
 
-O que falta é só do lado do backend: um campo (ou 4) no cadastro da tela
-que o admin edite, e uma forma do app buscar esse valor (mais natural:
-junto da resposta de `/playlist`, ou do cadastro do dispositivo). Quando
-esse campo existir, é só decidir a precedência com os caminhos locais
-(sugestão: backend sobrescreve local, mesmo padrão que os outros campos já
-seguem) — não precisa de mudança nenhuma na forma como o app já entende
-"4 valores por lado, em vmin, em termos visuais". Detalhe em
-`docs/proximas-versoes.md`, seção "`margemVmin` configurada pelo admin,
-não pelo arquivo local".
-
-### 2. Vídeo de fundo institucional servido pelo backend, não embutido no app
+### 2. Vídeo de fundo institucional servido pelo backend, não embutido no app — pendente
 
 **Lado do app pronto (21/09/2026).** O app agora decide se toca vídeo ou
 desenha a tela institucional local **só pela presença de `url`** no item

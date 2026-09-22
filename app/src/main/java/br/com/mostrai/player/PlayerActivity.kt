@@ -122,7 +122,20 @@ class PlayerActivity : AppCompatActivity() {
 
     private val heartbeatPeriodico = object : Runnable {
         override fun run() {
-            lifecycleScope.launch(Dispatchers.IO) { api.heartbeat() }
+            lifecycleScope.launch(Dispatchers.IO) {
+                val margens = api.heartbeat()
+                // null é "sem novidade" (heartbeat falhou, ou o servidor não
+                // mandou margens) — nunca zera o que já estava configurado.
+                // Mesma precedência do player web: backend sobrescreve local
+                // só quando responde de verdade (PARA-O-BACKEND.md).
+                if (margens != null) {
+                    config.margemVminTopo = margens.topo
+                    config.margemVminBase = margens.base
+                    config.margemVminEsquerda = margens.esquerda
+                    config.margemVminDireita = margens.direita
+                    aplicarRotacaoEMargem()
+                }
+            }
             handler.postDelayed(this, INTERVALO_HEARTBEAT_MS)
         }
     }
