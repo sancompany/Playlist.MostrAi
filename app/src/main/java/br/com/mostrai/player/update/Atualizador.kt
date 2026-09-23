@@ -95,6 +95,15 @@ class Atualizador(
         }
         if (manifesto.build == buildAlvo && estado in setOf(EstadoUpdate.READY, EstadoUpdate.DOWNLOADING)) return
 
+        // BUG-011: o mesmo build que acabou de falhar continua falhando até
+        // alguém corrigir o APK no servidor. Sem esta espera, cada heartbeat
+        // (5 min) o marcava AVAILABLE de novo e rebaixava o APK inteiro —
+        // 30 MB viram ~8,6 GB/dia na internet da loja. Um build NOVO passa
+        // direto: pode ser justamente a correção.
+        if (manifesto.build == buildAlvo && estado == EstadoUpdate.FAILED &&
+            System.currentTimeMillis() < proximaTentativaMs
+        ) return
+
         buildAlvo = manifesto.build
         versaoAlvo = manifesto.versao
         obrigatorio = manifesto.obrigatorio
@@ -102,26 +111,53 @@ class Atualizador(
         diario.registrar(DiarioBordo.Codigo.UPDATE_DETECTADO, "build ${manifesto.build} (${manifesto.versao})")
     }
 
-    /** Bloqueante — chamar de thread de fundo. */
-    @Synchronized
+    /**
+     * Bloqueante — chamar de thread de fundo.
+     *
+     * O download roda **fora** do monitor (BUG-012). Ele é chamado de dentro
+     * do ciclo de heartbeat; segurando o monitor durante minutos de rede, o
+     * heartbeat seguinte travava em [considerar] e os efeitos dele
+     * (`playlist.atualizar`, margens) ficavam parados até o APK terminar.
+     * O monitor agora só protege as transições de estado: reservar o
+     * download no começo, e publicar o resultado no fim — descartando-o se,
+     * no meio do caminho, um manifesto mais novo tiver chegado.
+     */
     fun baixarSeNecessario(manifesto: UpdateManifesto?) {
-        if (manifesto == null || estado != EstadoUpdate.AVAILABLE) return
-        if (manifesto.build != buildAlvo) return
+        val alvo = synchronized(this) {
+            if (manifesto == null || estado != EstadoUpdate.AVAILABLE) return
+            if (manifesto.build != buildAlvo) return
+            estado = EstadoUpdate.DOWNLOADING
+            manifesto
+        }
 
-        val destino = File(diretorio, "${manifesto.build}.apk")
-        estado = EstadoUpdate.DOWNLOADING
-        try {
-            baixar(manifesto, destino)
-            if (!pacoteConfere(destino, manifesto.build)) {
+        val destino = File(diretorio, "${alvo.build}.apk")
+        val falha: Exception? = try {
+            baixar(alvo, destino)
+            if (!pacoteConfere(destino, alvo.build)) {
                 throw IOException("APK não é uma atualização de ${BuildConfig.APPLICATION_ID}")
             }
-            estado = EstadoUpdate.READY
-            diario.registrar(DiarioBordo.Codigo.UPDATE_BAIXADO, "build ${manifesto.build} verificado")
+            null
         } catch (e: Exception) {
-            destino.delete()
-            estado = EstadoUpdate.FAILED
-            diario.registrar(DiarioBordo.Codigo.UPDATE_FALHOU, e.message ?: "falha ao baixar")
-            Log.w(TAG, "falha ao preparar atualização", e)
+            e
+        }
+
+        synchronized(this) {
+            if (buildAlvo != alvo.build) {
+                // Superado por um manifesto mais novo durante o download: este
+                // arquivo não é mais o alvo e não pode virar READY.
+                destino.delete()
+                return
+            }
+            if (falha == null) {
+                estado = EstadoUpdate.READY
+                diario.registrar(DiarioBordo.Codigo.UPDATE_BAIXADO, "build ${alvo.build} verificado")
+            } else {
+                destino.delete()
+                estado = EstadoUpdate.FAILED
+                proximaTentativaMs = System.currentTimeMillis() + ESPERA_APOS_FALHA_MS
+                diario.registrar(DiarioBordo.Codigo.UPDATE_FALHOU, falha.message ?: "falha ao baixar")
+                Log.w(TAG, "falha ao preparar atualização", falha)
+            }
         }
     }
 
@@ -261,5 +297,8 @@ class Atualizador(
         private const val CHAVE_PROXIMA_TENTATIVA = "proxima_tentativa_ms"
         private const val TIMEOUT_CONEXAO_MS = 20_000
         private const val TIMEOUT_LEITURA_MS = 60_000
+
+        /** Quanto esperar antes de tentar de novo o mesmo build que falhou. */
+        const val ESPERA_APOS_FALHA_MS = 6 * 60 * 60 * 1000L
     }
 }
