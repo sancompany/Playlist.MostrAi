@@ -61,7 +61,11 @@ class ConfigAparelho(context: Context) {
 
     /** Base da API, ex.: https://exemplo/api. Não vai versionada no repositório. */
     var baseUrl: String?
-        get() = prefs.getString(CHAVE_BASE_URL, null)
+        // BUG-037: "https://api/" digitado no pendrive virava "//playlist/..."
+        // nas URLs montadas, que frameworks como o Express não casam com a
+        // rota (404 → tela presa em cache/institucional). Normalizado na
+        // leitura, cobre também o que versões anteriores gravaram.
+        get() = prefs.getString(CHAVE_BASE_URL, null)?.trim()?.trimEnd('/')?.ifBlank { null }
         set(valor) = prefs.edit().putString(CHAVE_BASE_URL, valor).apply()
 
     /** Token de uso único do pendrive, apagado assim que vira credencial. */

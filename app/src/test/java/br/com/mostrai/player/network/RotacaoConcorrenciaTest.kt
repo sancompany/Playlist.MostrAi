@@ -104,4 +104,17 @@ class RotacaoConcorrenciaTest {
     private companion object {
         const val PLAYLIST = """{"versaoContrato":1,"janelaId":"j1","itens":[]}"""
     }
+
+    @Test
+    fun `baseUrl com barra final nao gera caminho com barra dupla`() {
+        // Auditoria H: "https://api/" digitado no pendrive virava
+        // "//playlist/..." — que frameworks como o Express não casam com
+        // "/playlist/:id" (404), e a tela ficava em cache/institucional.
+        config.baseUrl = servidor.baseUrl + "/"
+        servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = PLAYLIST.toByteArray())
+
+        api.buscarPlaylist()
+
+        assertEquals("GET /playlist/tela-1", servidor.recebidas.last())
+    }
 }
