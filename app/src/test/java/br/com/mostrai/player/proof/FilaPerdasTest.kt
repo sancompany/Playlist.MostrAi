@@ -133,6 +133,45 @@ class FilaPerdasTest {
     }
 
     @Test
+    fun `comprovante de dois dias continua na fila`() {
+        // Horizonte é de 7 dias (feriado prolongado offline). Um horizonte
+        // menor jogaria fora receita recuperável (mutação M12).
+        val id = fila.registrarInicio(item, playlist)!!
+        fila.registrarFim(id)
+        val doisDias = System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000L
+        ProofOfPlayDb(contexto).writableDatabase.execSQL(
+            "UPDATE ${ProofOfPlayDb.TABELA} SET criado_em_ms = $doisDias",
+        )
+
+        fila.tentarEnviar()
+
+        assertEquals(1, fila.pendentes())
+        assertEquals(0, fila.perdas())
+    }
+
+    @Test
+    fun `retentativa leva o mesmo execucaoId`() {
+        // Invariante 3: o servidor deduplica por execucaoId. Um id novo na
+        // retentativa viraria cobrança dupla da mesma exibição.
+        val ids = mutableListOf<List<String>>()
+        val espiao = object : MostraiApi(ConfigAparelho(contexto)) {
+            override fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
+                ids += eventos.map { it.execucaoId }
+                return RespostaPlayed.Transitorio("x")
+            }
+        }
+        val filaEspia = FilaProofOfPlay(contexto, espiao)
+        val id = filaEspia.registrarInicio(item, playlist)!!
+        filaEspia.registrarFim(id)
+
+        filaEspia.tentarEnviar()
+        ProofOfPlayDb(contexto).writableDatabase.execSQL("UPDATE ${ProofOfPlayDb.TABELA} SET proximo_envio_em = 0")
+        filaEspia.tentarEnviar()
+
+        assertEquals(listOf(listOf(id), listOf(id)), ids)
+    }
+
+    @Test
     fun `comprovante terminado que expira sem envio conta como perda`() {
         val id = fila.registrarInicio(item, playlist)!!
         fila.registrarFim(id)

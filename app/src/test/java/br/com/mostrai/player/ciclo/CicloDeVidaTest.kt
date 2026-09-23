@@ -129,4 +129,70 @@ class CicloDeVidaTest {
         h.avancar(5 * 60_000L + 1_000L) // um heartbeat periódico
         runCatching { h.esperar { h.servidor.contar("/player/tela-1/hello") == 2 } }.onFailure { throw AssertionError("recebidas: ${h.servidor.recebidas}") }
     }
+
+    // ------------------------------------------------------ Ciclo 18/19
+
+    private fun execucaoAtual(atividade: PlayerActivity): String? {
+        val campo = PlayerActivity::class.java.getDeclaredField("execucaoAtualId")
+        campo.isAccessible = true
+        return campo.get(atividade) as String?
+    }
+
+    @Test
+    fun `parar com anuncio tocando nao deixa comprovante orfao`() {
+        // A exibição que o onStop interrompe nunca vai terminar: sem
+        // cancelar, a linha fica 7 dias ocupando a fila (mutação M13).
+        h.provisionar()
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
+        h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(corpo = "bytes".toByteArray())
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+
+        val controle = h.subir()
+        // O ExoPlayer do Robolectric não decodifica o corpo de teste e acaba
+        // em onPlayerError; sob carga isso pode vir antes da observação, e a
+        // tentativa seguinte só sai depois da pausa de 10s em tempo de
+        // looper. Avança o relógio até pegar uma exibição no ar. Entre a
+        // observação e o stop() nenhum callback é entregue: os dois rodam na
+        // thread principal do teste.
+        val limite = System.currentTimeMillis() + 20_000
+        while (execucaoAtual(controle.get()) == null) {
+            check(System.currentTimeMillis() < limite) { "nenhuma exibição chegou a tocar" }
+            h.idle()
+            Thread.sleep(20)
+            if (execucaoAtual(controle.get()) == null) h.avancar(1_000L)
+        }
+        controle.pause().stop()
+
+        h.esperar { h.orfaos() == 0 }
+    }
+
+    @Test
+    fun `duas buscas de playlist nunca ficam em voo ao mesmo tempo`() {
+        // Invariante 9: com uma busca por vez, a resposta de uma busca antiga
+        // não tem como chegar depois da de uma nova e sobrescrevê-la.
+        h.provisionar()
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
+        val trava = CountDownLatch(1)
+        h.servidor.travas["/playlist"] = trava
+
+        val atividade = h.subir().get()
+        h.esperar { h.servidor.contar("/playlist") == 1 }
+        val atualizar = PlayerActivity::class.java.getDeclaredMethod("atualizarPlaylist", Boolean::class.javaPrimitiveType)
+        atualizar.isAccessible = true
+        repeat(3) { atualizar.invoke(atividade, true) }
+        repeat(10) {
+            Thread.sleep(20)
+            h.idle()
+        }
+        assertEquals("segunda busca saiu com a primeira em voo", 1, h.servidor.contar("/playlist"))
+
+        trava.countDown()
+        h.esperar { h.servidor.contar("/playlist") == 2 } // os três pedidos viram uma rodada só
+        repeat(10) {
+            Thread.sleep(20)
+            h.idle()
+        }
+        assertEquals(2, h.servidor.contar("/playlist"))
+    }
 }

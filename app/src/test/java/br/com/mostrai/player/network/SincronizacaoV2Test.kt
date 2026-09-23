@@ -102,6 +102,9 @@ class SincronizacaoV2Test {
 
     @Test
     fun `404 no heartbeat marca backend V1 e nao quebra nada`() {
+        // Parte de V2 disponível: o default já é false, e sem isto o teste
+        // passava mesmo com a marcação removida (mutação M10, Ciclo 18).
+        config.backendV2Disponivel = true
         api.respostaHeartbeat = ResultadoHttp.NaoEncontrado
 
         val efeitos = sync.heartbeat(corpo)

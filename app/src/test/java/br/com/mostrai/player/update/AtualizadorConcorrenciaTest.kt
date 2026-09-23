@@ -81,4 +81,19 @@ class AtualizadorConcorrenciaTest {
         assertEquals(EstadoUpdate.FAILED, atualizador.estado)
         assertEquals("APK rejeitado foi rebaixado a cada ciclo", 1, servidor.contar("/ruim.apk"))
     }
+
+    @Test
+    fun `apk com sha256 divergente e recusado pelo hash, antes de qualquer outra checagem`() {
+        // Sem esta asserção a conferência de pacote recusava o corpo de teste
+        // por acaso e a do hash podia sumir sem ninguém notar (mutação M05).
+        servidor.rotas["/ruim.apk"] = ServidorDeTeste.Resposta(corpo = "nao-confere".toByteArray())
+        val m = manifesto(BuildConfig.VERSION_CODE + 1, "/ruim.apk")
+
+        atualizador.considerar(m)
+        atualizador.baixarSeNecessario(m)
+
+        val falha = diario.ultimos(10).first { it.codigo == DiarioBordo.Codigo.UPDATE_FALHOU.name }
+        assertTrue("motivo: ${falha.mensagem}", falha.mensagem!!.contains("SHA-256"))
+        assertEquals(0, java.io.File(contexto.cacheDir, "update").listFiles()!!.count { it.name.endsWith(".apk") })
+    }
 }

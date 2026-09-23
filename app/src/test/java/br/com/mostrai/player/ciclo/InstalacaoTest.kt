@@ -88,7 +88,9 @@ class InstalacaoTest {
 
         val controle = h.subir()
         val atividade = controle.get()
-        h.esperar { h.orfaos() == 1 } // exibição em andamento
+        // Não espera orfaos() == 1: sob carga, o ExoPlayer do Robolectric erra
+        // e recomeça, e a contagem pisca entre 0 e 1.
+        h.esperar { geracao(atividade) >= 1 && h.servidor.contar("/midia") > 0 }
 
         concluirExibicao(atividade)
         // O pedido saiu (o Robolectric pode já ter entregue a falha ao

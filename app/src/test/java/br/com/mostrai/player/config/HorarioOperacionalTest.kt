@@ -80,6 +80,20 @@ class HorarioOperacionalTest {
     }
 
     @Test
+    fun `HORAS_24 ignora faixas que continuam gravadas`() {
+        // Admin volta a tela para 24h sem apagar as faixas antigas: a tela
+        // não pode continuar obedecendo o horário velho (mutação M07).
+        val horario = HorarioOperacional(
+            regime = RegimeOperacao.HORAS_24,
+            porDiaDaSemana = DayOfWeek.values().associateWith { listOf(faixa("09:00", "18:00")) },
+            feriados = mapOf(LocalDate.parse("2026-09-23") to emptyList()),
+        )
+
+        assertTrue(horario.estaDentro(instante("2026-09-23", "03:00")))
+        assertTrue(horario.estaDentro(instante("2026-09-24", "23:00")))
+    }
+
+    @Test
     fun `feriado com lista vazia fecha o dia inteiro`() {
         val horario = HorarioOperacional(
             regime = RegimeOperacao.CUSTOM,
