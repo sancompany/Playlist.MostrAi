@@ -142,6 +142,13 @@ servidor:
 - Evento individual ruim → `200` com `status: "item_invalido"`, que já está na
   lista de status definitivos do player.
 
+> **Atenção — quarentena é permanente.** Um evento que recebe `400` sozinho
+> (depois do split) vai para quarentena e **não é reenviado**, nem depois que
+> o backend for corrigido; expira em 7 dias. Um deploy que passe a responder
+> `400` para tudo, por uma validação nova ou um erro do servidor, põe em
+> quarentena toda a fila de toda TV que enviar nesse intervalo. Problema do
+> servidor responde `5xx`: esse o player retenta.
+
 ---
 
 ## 5. `contentHash` na playlist
