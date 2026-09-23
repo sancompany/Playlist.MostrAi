@@ -13,6 +13,12 @@ import android.database.sqlite.SQLiteOpenHelper
  * Sem dependência externa (Room) de propósito — o esquema é pequeno e as
  * consultas são simples; `SQLiteOpenHelper` já entrega a durabilidade que a
  * decisão exige sem esticar a árvore de dependências do projeto.
+ *
+ * **Migração é incremental, nunca destrutiva** (R6): a fila é a única cópia
+ * do comprovante de exibição de um anunciante até o servidor confirmar. Um
+ * `DROP TABLE` num bump de esquema apagaria receita já entregue, então
+ * [onUpgrade] aplica um passo por versão e [onDowngrade] prefere manter
+ * dados que não entende a recriar a tabela.
  */
 class ProofOfPlayDb(context: Context) :
     SQLiteOpenHelper(context.applicationContext, NOME_ARQUIVO, null, VERSAO) {
@@ -31,16 +37,53 @@ class ProofOfPlayDb(context: Context) :
                 terminado_em TEXT,
                 tentativas INTEGER NOT NULL DEFAULT 0,
                 proximo_envio_em INTEGER NOT NULL DEFAULT 0,
-                criado_em_ms INTEGER NOT NULL
+                criado_em_ms INTEGER NOT NULL,
+                quarentena_motivo TEXT
             )
             """.trimIndent()
         )
-        db.execSQL("CREATE INDEX idx_elegiveis ON $TABELA(terminado_em, proximo_envio_em)")
+        criarIndices(db)
     }
 
+    /**
+     * Um passo por versão, sem `DROP`. Cada bloco precisa ser idempotente o
+     * bastante para sobreviver a um upgrade interrompido no meio (a TV pode
+     * perder energia a qualquer momento).
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABELA")
-        onCreate(db)
+        if (oldVersion < 2) {
+            if (!temColuna(db, "quarentena_motivo")) {
+                db.execSQL("ALTER TABLE $TABELA ADD COLUMN quarentena_motivo TEXT")
+            }
+        }
+        criarIndices(db)
+    }
+
+    /**
+     * Banco de uma versão futura numa instalação mais antiga (downgrade do
+     * APK). Apagar seria pior que conviver: as colunas que este código
+     * conhece continuam lá, e as que ele não conhece são simplesmente
+     * ignoradas pelas consultas nomeadas.
+     */
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+
+    private fun criarIndices(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_elegiveis ON $TABELA" +
+                "(terminado_em, quarentena_motivo, proximo_envio_em)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_idade ON $TABELA(criado_em_ms)")
+    }
+
+    private fun temColuna(db: SQLiteDatabase, coluna: String): Boolean {
+        db.rawQuery("PRAGMA table_info($TABELA)", null).use { cursor ->
+            val indiceNome = cursor.getColumnIndex("name")
+            if (indiceNome < 0) return false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(indiceNome) == coluna) return true
+            }
+        }
+        return false
     }
 
     fun inserir(evento: EventoExibicao) {
@@ -52,6 +95,17 @@ class ProofOfPlayDb(context: Context) :
             put("terminado_em", terminadoEm)
             put("proximo_envio_em", 0L)
         }
+        writableDatabase.update(TABELA, valores, "execucao_id = ?", arrayOf(execucaoId))
+    }
+
+    /**
+     * Tira o evento da fila de envio sem apagá-lo: o servidor rejeitou o
+     * payload e nenhuma retentativa vai mudar isso, mas jogar fora em
+     * silêncio esconderia a falha justamente de quem precisa investigá-la
+     * (R4). A linha some sozinha pelo horizonte de [removerExpirados].
+     */
+    fun marcarQuarentena(execucaoId: String, motivo: String) {
+        val valores = ContentValues().apply { put("quarentena_motivo", motivo) }
         writableDatabase.update(TABELA, valores, "execucao_id = ?", arrayOf(execucaoId))
     }
 
@@ -74,7 +128,7 @@ class ProofOfPlayDb(context: Context) :
     fun elegiveisParaEnvio(agoraMs: Long, limite: Int): List<EventoExibicao> {
         readableDatabase.query(
             TABELA, null,
-            "terminado_em IS NOT NULL AND proximo_envio_em <= ?",
+            "terminado_em IS NOT NULL AND quarentena_motivo IS NULL AND proximo_envio_em <= ?",
             arrayOf(agoraMs.toString()),
             null, null,
             "criado_em_ms ASC",
@@ -94,19 +148,57 @@ class ProofOfPlayDb(context: Context) :
         writableDatabase.update(TABELA, valores, "execucao_id = ?", arrayOf(execucaoId))
     }
 
-    fun contarPendentes(): Int {
-        readableDatabase.rawQuery("SELECT COUNT(*) FROM $TABELA", null).use {
+    fun contarPendentes(): Int = contar(null)
+
+    /** Só o que ainda pode virar comprovante — é o número que interessa ao admin. */
+    fun contarAguardandoEnvio(): Int = contar("terminado_em IS NOT NULL AND quarentena_motivo IS NULL")
+
+    fun contarQuarentena(): Int = contar("quarentena_motivo IS NOT NULL")
+
+    private fun contar(onde: String?): Int {
+        val sql = if (onde == null) "SELECT COUNT(*) FROM $TABELA" else "SELECT COUNT(*) FROM $TABELA WHERE $onde"
+        readableDatabase.rawQuery(sql, null).use {
             it.moveToFirst()
             return it.getInt(0)
         }
     }
 
-    fun maisAntigoNaoEnviado(): String? {
+    /** `criado_em_ms` do evento mais antigo que ainda espera envio, ou null. */
+    fun maisAntigoAguardandoEnvioMs(): Long? {
         readableDatabase.query(
-            TABELA, arrayOf("execucao_id"), null, null, null, null, "criado_em_ms ASC", "1",
+            TABELA, arrayOf("criado_em_ms"),
+            "terminado_em IS NOT NULL AND quarentena_motivo IS NULL",
+            null, null, null, "criado_em_ms ASC", "1",
         ).use {
-            return if (it.moveToFirst()) it.getString(0) else null
+            return if (it.moveToFirst()) it.getLong(0) else null
         }
+    }
+
+    /**
+     * Quem sai primeiro quando a fila enche (R2). A ordem é de valor
+     * crescente, e não pode ser invertida: comprovante terminado é receita
+     * que o anunciante já consumiu e que só existe aqui até o servidor
+     * confirmar, então é o último a morrer.
+     *
+     * 1. Órfão — exibição que começou e nunca terminou (queda de energia,
+     *    reposicionamento). Nunca vai ser enviada; ocupa lugar à toa.
+     * 2. Quarentena — o servidor já rejeitou; fica só para diagnóstico.
+     * 3. Terminado — comprovante legítimo aguardando envio.
+     */
+    fun proximoADescartar(): String? {
+        val ordens = listOf(
+            "terminado_em IS NULL",
+            "quarentena_motivo IS NOT NULL",
+            null,
+        )
+        for (onde in ordens) {
+            readableDatabase.query(
+                TABELA, arrayOf("execucao_id"), onde, null, null, null, "criado_em_ms ASC", "1",
+            ).use {
+                if (it.moveToFirst()) return it.getString(0)
+            }
+        }
+        return null
     }
 
     /** Horizonte local de 7 dias (seção 6.5) — contabilidade, não decisão de crédito. */
@@ -125,6 +217,7 @@ class ProofOfPlayDb(context: Context) :
         put("tentativas", tentativas)
         put("proximo_envio_em", proximoEnvioElegivelEm)
         put("criado_em_ms", criadoEmMs)
+        put("quarentena_motivo", quarentenaMotivo)
     }
 
     private fun Cursor.paraEvento(): EventoExibicao = EventoExibicao(
@@ -139,6 +232,7 @@ class ProofOfPlayDb(context: Context) :
         tentativas = getInt(getColumnIndexOrThrow("tentativas")),
         proximoEnvioElegivelEm = getLong(getColumnIndexOrThrow("proximo_envio_em")),
         criadoEmMs = getLong(getColumnIndexOrThrow("criado_em_ms")),
+        quarentenaMotivo = stringOuNulo("quarentena_motivo"),
     )
 
     private fun Cursor.stringOuNulo(coluna: String): String? {
@@ -148,7 +242,9 @@ class ProofOfPlayDb(context: Context) :
 
     companion object {
         const val NOME_ARQUIVO = "mostrai_proof_of_play.db"
-        const val VERSAO = 1
+
+        /** 1 → 2: coluna `quarentena_motivo` (R4). */
+        const val VERSAO = 2
         const val TABELA = "evento_exibicao"
 
         /** Compartilhado com [FilaProofOfPlay] para o contador de perda. */

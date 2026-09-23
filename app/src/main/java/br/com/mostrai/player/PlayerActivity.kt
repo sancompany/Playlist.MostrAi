@@ -29,8 +29,16 @@ import androidx.media3.ui.PlayerView
 import br.com.mostrai.player.cache.CacheMidia
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.ConfigExterna
+import br.com.mostrai.player.config.MargensOverscan
+import br.com.mostrai.player.estado.DiarioBordo
+import br.com.mostrai.player.estado.EstadoPlayer
+import br.com.mostrai.player.kiosk.Kiosk
+import br.com.mostrai.player.kiosk.Watchdog
 import br.com.mostrai.player.network.EstadoRede
+import br.com.mostrai.player.network.HeartbeatJson
+import br.com.mostrai.player.network.HelloJson
 import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.network.SincronizacaoV2
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import br.com.mostrai.player.playlist.PlaylistRepositorio
@@ -43,7 +51,11 @@ import br.com.mostrai.player.ui.GestoPainel
 import br.com.mostrai.player.ui.PainelActivity
 import br.com.mostrai.player.ui.RotacaoTela
 import br.com.mostrai.player.ui.TelaInstitucional
+import br.com.mostrai.player.update.Atualizador
+import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,6 +77,9 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var repositorio: PlaylistRepositorio
     private lateinit var fila: FilaProofOfPlay
     private lateinit var cacheMidia: CacheMidia
+    private lateinit var diario: DiarioBordo
+    private lateinit var atualizador: Atualizador
+    private lateinit var sincronizacao: SincronizacaoV2
 
     private lateinit var playerView: PlayerView
     private lateinit var institucional: TelaInstitucional
@@ -92,6 +107,29 @@ class PlayerActivity : AppCompatActivity() {
 
     /** execucaoId da exibição em andamento, ou null se o item não conta. */
     private var execucaoAtualId: String? = null
+
+    /** criativoId do item no ar — vai no heartbeat. */
+    private var criativoAtualId: String? = null
+
+    private var estadoAtual: EstadoPlayer = EstadoPlayer.IDLE
+
+    /**
+     * Guarda o que já está aplicado na tela (R11). Trocar `layoutParams`
+     * dispara `requestLayout()` incondicionalmente, mesmo com valores
+     * idênticos — sem esta comparação, cada heartbeat forçaria uma passada de
+     * layout na hierarquia que contém o `TextureView` do vídeo, a cada 5
+     * minutos, para sempre e sem motivo.
+     */
+    private var margensAplicadas: MargensOverscan? = null
+    private var rotacaoAplicada: Int? = null
+
+    /**
+     * Impede dois GETs de playlist simultâneos (Parte 17): o poll periódico,
+     * a virada de hora e o `playlist.atualizar` do heartbeat podem coincidir,
+     * e duas respostas em voo aplicariam reposicionamento uma por cima da
+     * outra.
+     */
+    private val buscandoPlaylist = AtomicBoolean(false)
 
     /**
      * Incrementada a cada chamada de [tocarItemAtual]. `mostrarVideo` guarda a
@@ -122,20 +160,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private val heartbeatPeriodico = object : Runnable {
         override fun run() {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val margens = api.heartbeat()
-                // null é "sem novidade" (heartbeat falhou, ou o servidor não
-                // mandou margens) — nunca zera o que já estava configurado.
-                // Mesma precedência do player web: backend sobrescreve local
-                // só quando responde de verdade (PARA-O-BACKEND.md).
-                if (margens != null) {
-                    config.margemVminTopo = margens.topo
-                    config.margemVminBase = margens.base
-                    config.margemVminEsquerda = margens.esquerda
-                    config.margemVminDireita = margens.direita
-                    aplicarRotacaoEMargem()
-                }
-            }
+            dispararHeartbeat()
             handler.postDelayed(this, INTERVALO_HEARTBEAT_MS)
         }
     }
@@ -144,6 +169,14 @@ class PlayerActivity : AppCompatActivity() {
         override fun run() {
             lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
             handler.postDelayed(this, INTERVALO_FLUSH_MS)
+        }
+    }
+
+    /** Reavalia o horário de funcionamento sem depender de rede. */
+    private val checarHorario = object : Runnable {
+        override fun run() {
+            aplicarHorarioOperacional()
+            handler.postDelayed(this, INTERVALO_HORARIO_MS)
         }
     }
 
@@ -176,8 +209,10 @@ class PlayerActivity : AppCompatActivity() {
         setContentView(R.layout.activity_player)
 
         config = ConfigAparelho(this)
+        diario = DiarioBordo(this)
         // Ordem: build embutido (-PconfigDispositivo) primeiro — se já veio
         // configurado assim, nem chega a pedir permissão de armazenamento.
+        @Suppress("DEPRECATION")
         config.aplicarConfiguracaoEmbutidaSeNecessaria()
         if (!config.provisionado) pedirPermissaoOuAplicarConfigExterna()
 
@@ -185,6 +220,8 @@ class PlayerActivity : AppCompatActivity() {
         repositorio = PlaylistRepositorio(this, api)
         fila = FilaProofOfPlay(this, api)
         cacheMidia = CacheMidia(this)
+        atualizador = Atualizador(this, diario)
+        sincronizacao = SincronizacaoV2(config, api, diario, atualizador)
 
         raiz = findViewById(R.id.raiz)
         rotor = findViewById(R.id.rotor)
@@ -195,6 +232,9 @@ class PlayerActivity : AppCompatActivity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         aplicarRotacaoEMargem()
+
+        diario.registrar(DiarioBordo.Codigo.BOOT, "versão ${BuildConfig.VERSION_NAME}")
+        Kiosk.ativarLockTaskSePossivel(this)
     }
 
     private fun pedirPermissaoOuAplicarConfigExterna() {
@@ -228,14 +268,15 @@ class PlayerActivity : AppCompatActivity() {
     /**
      * Provisionamento de laboratório, por extras do Intent (adb).
      *
-     * PROVISÓRIO: como a chave do aparelho entra na TV no primeiro boot ainda é
-     * uma decisão em aberto do projeto. Serve para testar em bancada enquanto
-     * isso não fecha; não é o caminho de campo.
+     * Caminho de depuração em bancada; o caminho de campo é o
+     * `mostrai-config.json` no pendrive. Sobrescreve sempre, de propósito —
+     * é o que permite corrigir uma tela em bancada sem reinstalar nada.
      */
     private fun aplicarProvisionamentoProvisorio(origem: Intent?) {
         val extras = origem?.extras ?: return
         extras.getString(EXTRA_DISPOSITIVO)?.let { config.dispositivoId = it }
         extras.getString(EXTRA_CHAVE)?.let { config.chaveAparelho = it }
+        extras.getString(EXTRA_TOKEN)?.let { config.tokenProvisionamento = it }
         extras.getString(EXTRA_BASE_URL)?.let { config.baseUrl = it }
         extras.getString(EXTRA_PIN)?.let { config.pinPainel = it }
         if (extras.containsKey(EXTRA_MARGEM_TOPO)) {
@@ -259,6 +300,8 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        Watchdog.registrarSinalDeVida(this)
+        Watchdog.agendar(this)
         if (introJaTocou) iniciarCicloNormal() else tocarIntroducao()
     }
 
@@ -319,11 +362,16 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         criarPlayer()
+        aplicarHorarioOperacional()
 
         atualizarPlaylist(forcarReposicionamento = true)
+        // R10: o primeiro sinal sai agora, não daqui a 5 minutos — até aqui
+        // toda tela ficava invisível para o admin durante o boot inteiro.
+        dispararHeartbeat(primeiroDoBoot = true)
         handler.postDelayed(buscarPeriodicamente, INTERVALO_POLL_MS)
         handler.postDelayed(heartbeatPeriodico, INTERVALO_HEARTBEAT_MS)
         handler.postDelayed(flushFilaPeriodico, INTERVALO_FLUSH_MS)
+        handler.postDelayed(checarHorario, INTERVALO_HORARIO_MS)
         agendarViradaDeHora()
 
         lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
@@ -333,12 +381,17 @@ class PlayerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         esconderInterfaceDoSistema()
+        Watchdog.registrarSinalDeVida(this)
     }
 
     override fun onStop() {
         super.onStop()
         handler.removeCallbacksAndMessages(null)
         runCatching { conectividade().unregisterNetworkCallback(callbackConectividade) }
+        // R5: a exibição em andamento morre aqui. Sem cancelar o registro, a
+        // linha fica órfã na fila — nunca ganha terminadoEm, nunca é enviada,
+        // e ocupa o teto por 7 dias.
+        cancelarExibicaoEmAndamento()
         liberarPlayer()
         // Só libera — nunca chama encerrarIntroducao()/iniciarCicloNormal()
         // aqui, que iniciaria um ciclo novo de trabalho (rede, handlers)
@@ -361,29 +414,34 @@ class PlayerActivity : AppCompatActivity() {
      * frio/janela nova, modo degradado, reancoragem por `itemProgramacaoId`).
      */
     private fun atualizarPlaylist(forcarReposicionamento: Boolean) {
+        if (!buscandoPlaylist.compareAndSet(false, true)) return
         lifecycleScope.launch {
-            val resultado = withContext(Dispatchers.IO) { repositorio.buscar() }
+            try {
+                val resultado = withContext(Dispatchers.IO) { repositorio.buscar() }
 
-            val playlistAnterior = playlist
-            val indiceAnterior = indice
-            val trocouDeJanela = resultado.playlist.janelaId != janelaIdAtual
+                val playlistAnterior = playlist
+                val indiceAnterior = indice
+                val trocouDeJanela = resultado.playlist.janelaId != janelaIdAtual
 
-            playlist = resultado.playlist
-            relogioJanela = resultado.relogio
-            janelaIdAtual = resultado.playlist.janelaId
-            atualizarEstadoRede(resultado)
-            preAquecerCache(playlist)
+                playlist = resultado.playlist
+                relogioJanela = resultado.relogio
+                janelaIdAtual = resultado.playlist.janelaId
+                atualizarEstadoRede(resultado)
+                preAquecerCache(playlist)
 
-            val decisao = ReposicionamentoPlaylist.decidir(
-                playlistAnterior = playlistAnterior,
-                indiceAnterior = indiceAnterior,
-                playlistNova = playlist,
-                forcarReposicionamento = forcarReposicionamento,
-                trocouDeJanela = trocouDeJanela,
-                indiceInicialPorTempo = ::calcularIndiceInicial,
-            )
-            indice = decisao.indice
-            if (decisao.reiniciarAgora) reiniciarItemAgora()
+                val decisao = ReposicionamentoPlaylist.decidir(
+                    playlistAnterior = playlistAnterior,
+                    indiceAnterior = indiceAnterior,
+                    playlistNova = playlist,
+                    forcarReposicionamento = forcarReposicionamento,
+                    trocouDeJanela = trocouDeJanela,
+                    indiceInicialPorTempo = ::calcularIndiceInicial,
+                )
+                indice = decisao.indice
+                if (decisao.reiniciarAgora) reiniciarItemAgora()
+            } finally {
+                buscandoPlaylist.set(false)
+            }
         }
     }
 
@@ -400,8 +458,19 @@ class PlayerActivity : AppCompatActivity() {
     private fun reiniciarItemAgora() {
         handler.removeCallbacks(avancarPorTempo)
         player?.stop()
-        execucaoAtualId = null
+        cancelarExibicaoEmAndamento()
         tocarItemAtual()
+    }
+
+    /**
+     * Encerra o registro de uma exibição que não vai terminar (R5). Toda
+     * saída que abandona [execucaoAtualId] passa por aqui — reposicionamento,
+     * parada da Activity, fora do horário.
+     */
+    private fun cancelarExibicaoEmAndamento() {
+        val id = execucaoAtualId ?: return
+        execucaoAtualId = null
+        lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
     }
 
     private fun atualizarEstadoRede(resultado: PlaylistRepositorio.Resultado) {
@@ -410,6 +479,21 @@ class PlayerActivity : AppCompatActivity() {
         EstadoRede.ultimoErroAparelho = resultado.erroAparelho
         EstadoRede.ultimaFalhaTransitoria = resultado.falhaTransitoria
         ultimaOrigemFetch = resultado.origem
+
+        when {
+            resultado.origem == PlaylistRepositorio.Origem.SERVIDOR -> {
+                config.ultimaPlaylistOkEm = OffsetDateTime.now().toString()
+                diario.limparErros()
+            }
+            resultado.erroAparelho != null -> diario.registrar(
+                DiarioBordo.Codigo.AUTH_FALHOU,
+                "playlist recusada (HTTP ${resultado.erroAparelho})",
+            )
+            resultado.origem == PlaylistRepositorio.Origem.INSTITUCIONAL -> diario.registrar(
+                DiarioBordo.Codigo.PLAYLIST_FALHOU,
+                resultado.falhaTransitoria ?: "sem playlist utilizável",
+            )
+        }
     }
 
     /**
@@ -446,6 +530,36 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) { cacheMidia.preAquecer(playlist.itens) }
     }
 
+    // ---------------------------------------------------------------- horário
+
+    /**
+     * Fora do horário do ponto a tela para de vender: nenhum item comercial
+     * toca e nenhum proof-of-play nasce. O regime vive inteiro no aparelho
+     * porque a loja continua abrindo e fechando quando a internet cai.
+     */
+    private fun aplicarHorarioOperacional() {
+        val dentro = config.horarioOperacional().estaDentro(Instant.now())
+        if (dentro) {
+            if (estadoAtual == EstadoPlayer.OUT_OF_SCHEDULE) {
+                estadoAtual = EstadoPlayer.IDLE
+                atualizarPlaylist(forcarReposicionamento = true)
+            }
+            return
+        }
+
+        if (estadoAtual == EstadoPlayer.OUT_OF_SCHEDULE) return
+
+        estadoAtual = EstadoPlayer.OUT_OF_SCHEDULE
+        diario.registrar(DiarioBordo.Codigo.FORA_DO_HORARIO)
+        handler.removeCallbacks(avancarPorTempo)
+        player?.stop()
+        cancelarExibicaoEmAndamento()
+        criativoAtualId = null
+        mostrarInstitucionalSimples(EstadoInstitucional.PADRAO)
+    }
+
+    private fun foraDoHorario(): Boolean = estadoAtual == EstadoPlayer.OUT_OF_SCHEDULE
+
     // ---------------------------------------------------------------- player
 
     private fun criarPlayer() {
@@ -461,6 +575,8 @@ class PlayerActivity : AppCompatActivity() {
                     Log.w(TAG, "falha ao reproduzir item $indice", error)
                     val id = execucaoAtualId
                     execucaoAtualId = null
+                    estadoAtual = EstadoPlayer.PLAYBACK_ERROR
+                    diario.registrar(DiarioBordo.Codigo.PLAYBACK_FALHOU, error.errorCodeName)
                     // Falha de reprodução NÃO é exibição: a linha nunca teve
                     // terminadoEm, não é uma alegação de exibição completa.
                     if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
@@ -479,6 +595,8 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun tocarItemAtual() {
         handler.removeCallbacks(avancarPorTempo)
+        if (foraDoHorario()) return
+
         val minhaGeracao = ++geracaoReproducao
         val item = playlist.itens.getOrNull(indice) ?: run {
             indice = 0
@@ -486,12 +604,12 @@ class PlayerActivity : AppCompatActivity() {
         } ?: return
 
         // Só a url decide, não a flag institucional: um item institucional
-        // com url (vídeo de fundo servido pelo backend, ainda sem contrato
-        // — PARA-O-BACKEND.md) toca normalmente, sem esperar outra versão
-        // deste app. Sem url — o caso de hoje — cai na tela institucional
-        // local, institucional ou não (proteção contra dado incompleto).
+        // com url (vídeo de fundo servido pelo backend) toca normalmente.
+        // Sem url cai na tela institucional local, institucional ou não
+        // (proteção contra dado incompleto).
         if (item.url.isNullOrBlank()) {
             execucaoAtualId = null
+            criativoAtualId = null
             mostrarInstitucional(item)
         } else {
             mostrarVideo(item, minhaGeracao)
@@ -503,9 +621,7 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             // A linha da fila nasce ANTES do play() (decisão 3, seção 4) — só
             // toca depois que o execucaoId está persistido. Resolve o arquivo
-            // do cache local na mesma ida à thread de fundo (bloco 4 do MVP);
-            // se não conseguir (sem cache e download falhou), cai para tocar
-            // direto da URL remota — nunca trava a exibição por causa do cache.
+            // do cache local na mesma ida à thread de fundo (bloco 4 do MVP).
             val (id, arquivoLocal) = withContext(Dispatchers.IO) {
                 fila.registrarInicio(item, playlistDoItem) to cacheMidia.resolver(item)
             }
@@ -519,7 +635,20 @@ class PlayerActivity : AppCompatActivity() {
                 return@launch
             }
 
+            // Hash divergente é mídia comprovadamente errada: tocar a URL
+            // remota seria servir exatamente o arquivo que acabou de ser
+            // rejeitado. Pula o item (R3).
+            if (arquivoLocal == null && !cacheMidia.deveTocarDaUrlRemota()) {
+                if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
+                estadoAtual = EstadoPlayer.DOWNLOAD_ERROR
+                diario.registrar(DiarioBordo.Codigo.MIDIA_HASH_DIVERGENTE, item.criativoId)
+                avancar()
+                return@launch
+            }
+
             execucaoAtualId = id
+            criativoAtualId = item.criativoId
+            estadoAtual = EstadoPlayer.PLAYING
 
             institucional.visibility = View.GONE
             playerView.visibility = View.VISIBLE
@@ -533,10 +662,19 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun mostrarInstitucional(item: ItemPlaylist) {
+        mostrarInstitucionalSimples(estadoInstitucional())
+        if (estadoAtual != EstadoPlayer.PLAYBACK_ERROR && estadoAtual != EstadoPlayer.DOWNLOAD_ERROR) {
+            estadoAtual = if (config.provisionado) EstadoPlayer.IDLE else EstadoPlayer.NOT_PROVISIONED
+        }
+
+        val duracao = if (item.duracaoSegundos > 0) item.duracaoSegundos else 10
+        handler.postDelayed(avancarPorTempo, duracao * 1000L)
+    }
+
+    private fun mostrarInstitucionalSimples(estado: EstadoInstitucional) {
         playerView.visibility = View.GONE
         player?.stop()
 
-        val estado = estadoInstitucional()
         institucional.estado = estado
         // Legenda só é desenhada no estado PADRAO — os outros três têm texto
         // embutido na própria arte (ver TelaInstitucional).
@@ -544,19 +682,15 @@ class PlayerActivity : AppCompatActivity() {
             institucional.legenda = getString(R.string.institucional_sem_programacao)
         }
         institucional.visibility = View.VISIBLE
-
-        val duracao = if (item.duracaoSegundos > 0) item.duracaoSegundos else 10
-        handler.postDelayed(avancarPorTempo, duracao * 1000L)
     }
 
     /**
      * Três estados são do aparelho, nunca do backend: sem provisionamento
      * (config local incompleta), erro de carregamento (nem servidor nem
-     * cache — [PlaylistRepositorio.Origem.INSTITUCIONAL]) ou carregando
-     * (tratado à parte, em [iniciarCicloNormal]). Qualquer outra coisa é o
-     * item institucional que o próprio backend manda quando não há
-     * programação pra aquela hora — isso é conteúdo da playlist, não
-     * decisão local (PADRAO, com a legenda desenhada em runtime).
+     * cache) ou carregando (tratado à parte, em [iniciarCicloNormal]).
+     * Qualquer outra coisa é o item institucional que o próprio backend
+     * manda quando não há programação pra aquela hora — isso é conteúdo da
+     * playlist, não decisão local.
      */
     private fun estadoInstitucional(): EstadoInstitucional = when {
         !config.provisionado -> EstadoInstitucional.NAO_PROVISIONADO
@@ -574,13 +708,90 @@ class PlayerActivity : AppCompatActivity() {
                 fila.tentarEnviar()
             }
         }
+        // Janela segura: nenhuma exibição paga no ar entre um item e o
+        // próximo. É aqui, e só aqui, que a confirmação de instalação pode
+        // aparecer sem cortar o anúncio de ninguém.
+        if (tentarInstalarAtualizacao()) return
         avancar()
     }
 
     private fun avancar() {
+        if (foraDoHorario()) return
         if (playlist.itens.isEmpty()) return
         indice = (indice + 1) % playlist.itens.size
         tocarItemAtual()
+    }
+
+    // --------------------------------------------------------------- heartbeat
+
+    private fun dispararHeartbeat(primeiroDoBoot: Boolean = false) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            if (sincronizacao.provisionarSeNecessario()) {
+                withContext(Dispatchers.Main) { atualizarPlaylist(forcarReposicionamento = true) }
+            }
+            if (primeiroDoBoot) {
+                sincronizacao.helloSeNecessario(HelloJson.coletar(this@PlayerActivity))
+            }
+
+            val resumo = fila.resumo()
+            if (resumo.aguardandoEnvio >= FilaProofOfPlay.LIMIAR_ALERTA) {
+                diario.registrar(DiarioBordo.Codigo.FILA_LIMIAR, "${resumo.aguardandoEnvio} eventos na fila")
+            }
+            val erro = diario.ultimoErro()
+
+            val efeitos = sincronizacao.heartbeat(
+                HeartbeatJson.Corpo(
+                    estado = estadoAtual,
+                    configVersionAplicada = config.configVersionAplicada,
+                    criativoId = criativoAtualId,
+                    ultimaPlaylistOkEm = config.ultimaPlaylistOkEm,
+                    filaPendentes = resumo.aguardandoEnvio,
+                    filaMaisAntigoEm = resumo.maisAntigoMs?.let {
+                        OffsetDateTime.ofInstant(Instant.ofEpochMilli(it), ZoneId.systemDefault()).toString()
+                    },
+                    erroCodigo = erro?.codigo,
+                    erroEm = erro?.emIso,
+                    erroMensagem = erro?.mensagem,
+                    desvioRelogioMs = desvioRelogioMs(),
+                    updateEstado = atualizador.estado.name,
+                )
+            )
+
+            withContext(Dispatchers.Main) { aplicarEfeitos(efeitos) }
+        }
+    }
+
+    /**
+     * Diferença entre o relógio de parede da TV e o do servidor, quando há
+     * âncora válida. É de graça: [RelogioJanela] já mantém essa referência
+     * para a reentrada por posição temporal.
+     */
+    private fun desvioRelogioMs(): Long? {
+        val relogio = relogioJanela?.takeIf { it.valida() } ?: return null
+        return System.currentTimeMillis() - relogio.agoraDoServidorMs()
+    }
+
+    private fun aplicarEfeitos(efeitos: SincronizacaoV2.Efeitos) {
+        if (efeitos.autenticacaoFalhou) estadoAtual = EstadoPlayer.AUTH_ERROR
+        if (efeitos.margens != null || efeitos.rotacao != null) {
+            efeitos.margens?.let { config.margensOverscan = it }
+            efeitos.rotacao?.let { config.rotacaoTela = it }
+            aplicarRotacaoEMargem()
+        }
+        aplicarHorarioOperacional()
+        if (efeitos.atualizarPlaylist) atualizarPlaylist(forcarReposicionamento = false)
+    }
+
+    /**
+     * Pede a instalação se houver uma pronta. Devolve true quando o diálogo
+     * foi aberto — aí o ciclo de exibição para por aqui; se o operador
+     * cancelar, [Atualizador] agenda a próxima tentativa e o player volta ao
+     * normal no próximo item.
+     */
+    private fun tentarInstalarAtualizacao(): Boolean {
+        if (!atualizador.podePedirInstalacao()) return false
+        estadoAtual = EstadoPlayer.UPDATE_PENDING
+        return atualizador.pedirInstalacao()
     }
 
     // ------------------------------------------------------------------- tela
@@ -589,9 +800,19 @@ class PlayerActivity : AppCompatActivity() {
      * Margem de overscan e rotação de tela só fazem sentido depois que
      * `raiz` foi medida — por isso o `post`. Lógica compartilhada com
      * `PainelActivity` em [RotacaoTela] (mesmo padrão raiz/rotor nas duas).
+     *
+     * R11: só reaplica se algo mudou de verdade. `setLayoutParams` chama
+     * `requestLayout()` mesmo com valores idênticos, e essa passada de
+     * layout atravessa o `TextureView` que está exibindo o vídeo.
      */
     private fun aplicarRotacaoEMargem() {
-        raiz.post { RotacaoTela.aplicar(raiz, rotor, config.margensOverscan, config.rotacaoTela) }
+        val margens = config.margensOverscan
+        val rotacao = config.rotacaoTela
+        if (margens == margensAplicadas && rotacao == rotacaoAplicada) return
+
+        margensAplicadas = margens
+        rotacaoAplicada = rotacao
+        raiz.post { RotacaoTela.aplicar(raiz, rotor, margens, rotacao) }
     }
 
     @Suppress("DEPRECATION")
@@ -634,6 +855,7 @@ class PlayerActivity : AppCompatActivity() {
 
         const val EXTRA_DISPOSITIVO = "dispositivoId"
         const val EXTRA_CHAVE = "chaveAparelho"
+        const val EXTRA_TOKEN = "tokenProvisionamento"
         const val EXTRA_BASE_URL = "baseUrl"
         const val EXTRA_PIN = "pin"
         const val EXTRA_MARGEM_TOPO = "margemVminTopo"
@@ -645,5 +867,6 @@ class PlayerActivity : AppCompatActivity() {
         const val INTERVALO_POLL_MS = 15 * 60_000L
         const val INTERVALO_HEARTBEAT_MS = 5 * 60_000L
         const val INTERVALO_FLUSH_MS = 60_000L
+        const val INTERVALO_HORARIO_MS = 60_000L
     }
 }

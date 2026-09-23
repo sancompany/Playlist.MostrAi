@@ -1,4 +1,5 @@
 import groovy.json.JsonSlurper
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -54,6 +55,29 @@ fun paraLiteralJava(valor: String): String =
 
 val configDispositivo = lerConfigDispositivo()
 
+/**
+ * Credenciais de assinatura, lidas de `keystore.properties` na raiz do
+ * projeto — arquivo que **nunca** entra no Git (ver `.gitignore`).
+ *
+ * Ausente, o build de release sai sem `signingConfig` e o Gradle recusa
+ * gerar o APK assinado. Isso é intencional: um release assinado com a chave
+ * de depuração instalado numa TV não poderia mais ser atualizado pela chave
+ * de verdade depois — o Android recusa a troca de assinatura, e a única
+ * saída seria desinstalar, perdendo identidade e fila de proof-of-play.
+ * Falhar aqui custa um minuto; descobrir em campo custa uma visita por tela.
+ *
+ * Ver `RUNBOOK.md`, "Chave de assinatura".
+ */
+fun lerPropriedadesDeAssinatura(): Properties? {
+    val arquivo = rootProject.file("keystore.properties")
+    if (!arquivo.exists()) return null
+    val propriedades = Properties()
+    arquivo.inputStream().use { propriedades.load(it) }
+    return propriedades
+}
+
+val propriedadesAssinatura = lerPropriedadesDeAssinatura()
+
 android {
     namespace = "br.com.mostrai.player"
     compileSdk = 35
@@ -62,8 +86,10 @@ android {
         applicationId = "br.com.mostrai.player"
         minSdk = 26
         targetSdk = 26
-        versionCode = 1
-        versionName = "0.1.0"
+        // Toda atualização OTA compara `versionCode`. Subir aqui é o que faz
+        // um player em campo reconhecer que existe versão nova.
+        versionCode = 2
+        versionName = "1.0.0"
 
         buildConfigField("String", "DISPOSITIVO_ID_EMBUTIDO", paraLiteralJava(configDispositivo.dispositivoId))
         buildConfigField("String", "CHAVE_APARELHO_EMBUTIDA", paraLiteralJava(configDispositivo.chaveAparelho))
@@ -84,9 +110,23 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        if (propriedadesAssinatura != null) {
+            create("release") {
+                storeFile = rootProject.file(propriedadesAssinatura.getProperty("storeFile"))
+                storePassword = propriedadesAssinatura.getProperty("storePassword")
+                keyAlias = propriedadesAssinatura.getProperty("keyAlias")
+                keyPassword = propriedadesAssinatura.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Sem keystore.properties o release fica sem assinatura de
+            // produção de propósito — ver lerPropriedadesDeAssinatura().
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

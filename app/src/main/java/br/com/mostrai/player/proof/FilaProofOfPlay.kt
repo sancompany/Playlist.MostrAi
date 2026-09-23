@@ -13,8 +13,8 @@ import kotlin.math.min
  * Fila durável de proof-of-play: cria a linha antes do play(), envia em lote
  * quando o item termina de verdade, e só remove a linha quando o servidor
  * responde um status definitivo — ou nos outros dois casos fechados na
- * seção 6.5: payload malformado (400) e expiração local de 7 dias. Nunca por
- * timeout, 5xx, erro de socket ou reinício do app (seção 6.5).
+ * seção 6.5: payload malformado (400, isolado item a item) e expiração local
+ * de 7 dias. Nunca por timeout, 5xx, erro de socket ou reinício do app.
  *
  * Chamar sempre de uma thread de fundo — faz E/S de disco e de rede.
  */
@@ -25,6 +25,17 @@ class FilaProofOfPlay(
     private val db = ProofOfPlayDb(context)
     private val prefsPerdas = context.applicationContext
         .getSharedPreferences(ProofOfPlayDb.PREFS_PERDAS, Context.MODE_PRIVATE)
+
+    /** Fotografia da fila para o heartbeat e para o painel. */
+    data class Resumo(val aguardandoEnvio: Int, val total: Int, val quarentena: Int, val maisAntigoMs: Long?)
+
+    @Synchronized
+    fun resumo(): Resumo = Resumo(
+        aguardandoEnvio = db.contarAguardandoEnvio(),
+        total = db.contarPendentes(),
+        quarentena = db.contarQuarentena(),
+        maisAntigoMs = db.maisAntigoAguardandoEnvioMs(),
+    )
 
     /**
      * Cria a linha ANTES do play(), com o execucaoId já definido (decisão 3,
@@ -63,17 +74,19 @@ class FilaProofOfPlay(
     }
 
     /**
-     * Reprodução falhou antes de terminar: a linha nunca teve terminadoEm,
-     * então nunca foi uma alegação de exibição completa. Descartá-la é
-     * correto, não é perda de comprovante — não havia comprovante nenhum
-     * ainda para perder.
+     * Reprodução falhou ou foi interrompida antes de terminar: a linha nunca
+     * teve terminadoEm, então nunca foi uma alegação de exibição completa.
+     * Descartá-la é correto, não é perda de comprovante — não havia
+     * comprovante nenhum ainda para perder. Chamar isto em TODO caminho que
+     * abandona uma exibição (R5), senão a linha fica órfã ocupando a fila até
+     * expirar em 7 dias.
      */
     @Synchronized
     fun registrarFalha(execucaoId: String) {
         db.remover(execucaoId)
     }
 
-    fun pendentes(): Int = db.contarPendentes()
+    fun pendentes(): Int = db.contarAguardandoEnvio()
 
     fun perdas(): Int = prefsPerdas.getInt(ProofOfPlayDb.CHAVE_PERDAS, 0)
 
@@ -112,12 +125,7 @@ class FilaProofOfPlay(
                 }
                 db.removerLote(paraRemover)
             }
-            is MostraiApi.RespostaPlayed.ErroPayload -> {
-                // Definitivo: esse payload nunca vai virar válido (seção 6.5).
-                Log.e(TAG, "lote rejeitado como malformado (400), descartando ${eventos.size} evento(s)")
-                db.removerLote(eventos.map { it.execucaoId })
-                incrementarPerdas(eventos.size)
-            }
+            is MostraiApi.RespostaPlayed.ErroPayload -> isolarPayloadRejeitado(eventos)
             is MostraiApi.RespostaPlayed.ErroAparelho -> {
                 Log.w(TAG, "erro do aparelho (${resposta.codigo}) ao enviar proof-of-play, fila mantida")
                 // Não descarta nada — problema do aparelho, fica visível no painel.
@@ -131,17 +139,44 @@ class FilaProofOfPlay(
         }
     }
 
+    /**
+     * Busca binária pelo evento que o servidor rejeita (R4).
+     *
+     * Um 400 num lote não diz QUAL evento está malformado. A versão anterior
+     * descartava os 50 de uma vez — jogava fora até 49 comprovantes bons por
+     * causa de um ruim, sem deixar rastro. Aqui o lote é partido ao meio e
+     * reenviado até sobrar um único evento; só esse vai para quarentena, e
+     * os irmãos saudáveis voltam pela porta normal.
+     *
+     * Custo: no pior caso ~2·log2(50) ≈ 12 requisições, uma vez, para salvar
+     * o resto do lote. Um lote de tamanho 1 que leva 400 é conclusivo: o
+     * problema é aquele evento.
+     */
+    private fun isolarPayloadRejeitado(eventos: List<EventoExibicao>) {
+        if (eventos.size == 1) {
+            val evento = eventos.first()
+            Log.e(TAG, "evento ${evento.execucaoId} rejeitado como malformado (400), em quarentena")
+            db.marcarQuarentena(evento.execucaoId, MOTIVO_QUARENTENA)
+            incrementarPerdas(1)
+            return
+        }
+
+        val meio = eventos.size / 2
+        enviarLoteNovo(eventos.subList(0, meio))
+        enviarLoteNovo(eventos.subList(meio, eventos.size))
+    }
+
     private fun enviarUmLegado(evento: EventoExibicao) {
         val anuncianteId = evento.anuncianteId
         if (anuncianteId == null) {
-            db.remover(evento.execucaoId)
+            db.marcarQuarentena(evento.execucaoId, "sem anuncianteId no formato legado")
             incrementarPerdas(1)
             return
         }
         when (val resposta = api.enviarLegado(anuncianteId)) {
             is MostraiApi.RespostaPlayed.SucessoLegado -> db.remover(evento.execucaoId)
             is MostraiApi.RespostaPlayed.ErroPayload -> {
-                db.remover(evento.execucaoId)
+                db.marcarQuarentena(evento.execucaoId, MOTIVO_QUARENTENA)
                 incrementarPerdas(1)
             }
             is MostraiApi.RespostaPlayed.ErroAparelho -> Unit // fila mantida
@@ -161,10 +196,17 @@ class FilaProofOfPlay(
         db.adiarReenvio(evento.execucaoId, System.currentTimeMillis() + atrasoMs, tentativas)
     }
 
-    /** Fila limitada: no estouro, descarta o mais antigo e conta a perda (decisão 6.4). */
+    /**
+     * Fila limitada: no estouro, descarta na ordem de menor valor primeiro
+     * (órfão → quarentena → comprovante), nunca o mais antigo cegamente (R2).
+     *
+     * O teto de [TAMANHO_MAXIMO_FILA] cobre ~5,8 dias de tela 24h com
+     * criativos de 10s — o cenário real de "loja fechou no feriado com a
+     * internet caída". O teto anterior (5.000) saturava em menos de 14h.
+     */
     private fun limitarTamanho() {
         if (db.contarPendentes() < TAMANHO_MAXIMO_FILA) return
-        db.maisAntigoNaoEnviado()?.let {
+        db.proximoADescartar()?.let {
             db.remover(it)
             incrementarPerdas(1)
         }
@@ -180,11 +222,24 @@ class FilaProofOfPlay(
         prefsPerdas.edit().putInt(ProofOfPlayDb.CHAVE_PERDAS, perdas() + quantidade).apply()
     }
 
-    private companion object {
-        const val TAG = "FilaProofOfPlay"
+    companion object {
+        private const val TAG = "FilaProofOfPlay"
         const val LIMITE_LOTE = 50
-        const val TAMANHO_MAXIMO_FILA = 5_000
+
+        /**
+         * ~5,8 dias de tela 24h com criativos de 10s. Cada linha ocupa ~200
+         * bytes, então o teto inteiro é ~10 MB de SQLite — irrelevante para o
+         * aparelho, e é o que separa "ficou sem internet no feriado" de
+         * "perdeu a receita do feriado".
+         */
+        const val TAMANHO_MAXIMO_FILA = 50_000
         const val HORIZONTE_EXPIRACAO_MS = 7L * 24 * 60 * 60 * 1000
+
+        /** Acima disto o admin mostra atenção; ver docs/player-v2-contract.md. */
+        const val LIMIAR_ATENCAO = 2_000
+        const val LIMIAR_ALERTA = 10_000
+
+        const val MOTIVO_QUARENTENA = "rejeitado pelo servidor (400)"
 
         val STATUS_DEFINITIVOS = setOf(
             "contabilizado", "duplicado", "teto_atingido",

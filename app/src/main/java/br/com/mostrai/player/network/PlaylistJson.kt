@@ -39,6 +39,7 @@ object PlaylistJson {
                 autoanuncio = item.optBoolean("autoanuncio", false),
                 institucional = item.optBoolean("institucional", false),
                 contabiliza = item.optBoolean("contabiliza", false),
+                contentHash = item.stringOuNulo("contentHash")?.lowercase(),
             )
         }
         return Playlist(

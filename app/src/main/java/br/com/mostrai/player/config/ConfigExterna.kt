@@ -26,6 +26,14 @@ object ConfigExterna {
     data class Dados(
         val dispositivoId: String? = null,
         val chaveAparelho: String? = null,
+        /**
+         * Formato preferencial: em vez do segredo definitivo, um token que o
+         * servidor queima na primeira troca. Um pendrive esquecido numa loja
+         * ou perdido no caminho expõe um token já inutilizado, não a
+         * credencial permanente de uma tela em operação — e o mesmo pendrive
+         * não provisiona duas TVs por engano.
+         */
+        val tokenProvisionamento: String? = null,
         val baseUrl: String? = null,
         val pin: String? = null,
         val margemVminTopo: Float? = null,
@@ -41,6 +49,7 @@ object ConfigExterna {
         Dados(
             dispositivoId = json.optString("dispositivoId").ifBlank { null },
             chaveAparelho = json.optString("chaveAparelho").ifBlank { null },
+            tokenProvisionamento = json.optString("tokenProvisionamento").ifBlank { null },
             baseUrl = json.optString("baseUrl").ifBlank { null },
             pin = json.optString("pin").ifBlank { null },
             margemVminTopo = json.margemVmin("margemVminTopo"),
@@ -71,6 +80,9 @@ object ConfigExterna {
 
     fun procurarEAplicar(context: Context, config: ConfigAparelho) {
         if (config.provisionado) return
+        // Token já lido e ainda não trocado: reler o pendrive não adianta, e
+        // sobrescrever poderia reintroduzir um token que o servidor queimou.
+        if (!config.tokenProvisionamento.isNullOrBlank()) return
 
         val arquivo = localizarArquivo(context)
         if (arquivo == null) {
@@ -122,6 +134,9 @@ object ConfigExterna {
     private fun aplicar(dados: Dados, config: ConfigAparelho) {
         dados.dispositivoId?.let { config.dispositivoId = it }
         dados.chaveAparelho?.let { config.chaveAparelho = it }
+        // Guardado, não trocado aqui: a troca por credencial exige rede, e
+        // este método roda em onCreate. Quem resolve é SincronizacaoV2.
+        dados.tokenProvisionamento?.let { config.tokenProvisionamento = it }
         dados.baseUrl?.let { config.baseUrl = it }
         dados.pin?.let { config.pinPainel = it }
         dados.margemVminTopo?.let { config.margemVminTopo = it }
