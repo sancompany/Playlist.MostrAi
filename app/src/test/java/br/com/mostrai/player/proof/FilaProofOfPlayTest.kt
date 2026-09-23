@@ -143,7 +143,11 @@ class FilaProofOfPlayTest {
 
         fila.tentarEnviar()
 
-        // continua pendente: nunca ficou elegível porque não terminou.
-        assertEquals(1, fila.pendentes())
+        // A linha continua no banco, mas não conta como "aguardando envio":
+        // sem terminadoEm ela nunca foi uma alegação de exibição completa, e
+        // é justamente esse número que vai ao admin pelo heartbeat.
+        val resumo = fila.resumo()
+        assertEquals(1, resumo.total)
+        assertEquals(0, resumo.aguardandoEnvio)
     }
 }

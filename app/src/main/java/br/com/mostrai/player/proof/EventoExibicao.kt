@@ -22,4 +22,10 @@ data class EventoExibicao(
     val tentativas: Int,
     val proximoEnvioElegivelEm: Long,
     val criadoEmMs: Long,
+    /**
+     * Preenchido quando o servidor rejeitou este evento de forma definitiva
+     * (HTTP 400 isolado por [br.com.mostrai.player.proof.FilaProofOfPlay]).
+     * Sai da fila de envio mas continua visível no diagnóstico até expirar.
+     */
+    val quarentenaMotivo: String? = null,
 )

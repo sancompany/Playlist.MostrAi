@@ -13,7 +13,7 @@ não há URL nem tela no sentido de página — "tela" aqui é estado visual do
 - **Operador de manutenção** (funcionário do comércio ou técnico do
   Mostraí) — abre o painel para checar se a tela está funcionando ou para
   trocar a margem de overscan. Sabe usar um controle remoto de TV; não
-  necessariamente sabe o que é um PIN de 4 dígitos até alguém explicar.
+  necessariamente sabe o que é um PIN até alguém explicar.
 - **Backend `sancompany/mostrai`** — não é papel humano, mas é quem manda:
   decide playlist, janela, e o que conta como comprovante. O app nunca age
   sem ele (ou sem a última resposta dele em cache).
@@ -39,12 +39,18 @@ não há interação nenhuma prevista para o espectador.
 4. PIN errado → mensagem de erro, campo limpo, tenta de novo.
 5. `VOLTAR` → fecha o painel, volta à reprodução normal sem interromper o
    vídeo em andamento (o player continua rodando por trás).
+6. Sem nenhuma tecla por 3 minutos, o painel fecha sozinho — o player segue
+   contando exibição por trás dele, então um painel esquecido aberto não
+   pode cobrir a tela por dias.
+7. Na tela do player (fora do painel), `VOLTAR` não faz nada: um toque
+   acidental no controle da loja não interrompe o anúncio. Para sair do app,
+   use as teclas HOME ou de configurações do controle.
 
 ## 3. Telas
 
 | Tela | Quem acessa | O que mostra | O que dá pra fazer | Para onde leva |
 |---|---|---|---|---|
-| Player (tela cheia) | Espectador (passivo) | Vídeo do anunciante em laço, ou peça institucional desenhada no aparelho | Nada (sem interação prevista) | Painel, via gesto |
+| Player (tela cheia) | Espectador (passivo) | Vídeo do anunciante em laço, ou peça institucional desenhada no aparelho (inclusive quando a playlist vem vazia) | Nada (sem interação prevista; `VOLTAR` é ignorado) | Painel, via gesto |
 | Painel — PIN | Operador | Teclado numérico 0–9, máscara do PIN digitado | Digitar PIN | Painel — informações (PIN certo) ou continua aqui (PIN errado) |
 | Painel — informações | Operador | Tela, chave (truncada), servidor, provisionado, margem, atraso da virada, modo de contrato, origem da playlist, erro do aparelho, fila de proof-of-play | Ler (somente leitura na v1) | Player, via `VOLTAR` |
 
@@ -53,14 +59,25 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
 ## 4. Estados de cada tela
 
 **Player:**
+- Abertura: no boot do processo (nunca ao voltar do painel), toca o vídeo
+  de marca uma vez, mudo, num player próprio separado do player normal —
+  não é exibição de anunciante, não entra na fila de proof-of-play.
+  `PlayerActivity.tocarIntroducao`.
 - Vazio (playlist sem itens): não se aplica — `Playlist.somenteInstitucional()`
   garante que sempre há pelo menos um item institucional.
-- Carregando: enquanto a primeira playlist não chega, mostra o item
-  institucional (com legenda "aparelho ainda não provisionado" ou
-  "sem programação para esta hora", conforme o caso).
-- Erro (rede caiu, aparelho sem chave, servidor rejeitou): cai para a
-  playlist em cache; sem cache, cai para a tela institucional — nunca tela
-  preta, nunca crash visível.
+- Carregando: depois do vídeo de abertura, enquanto a primeira playlist não
+  chega, mostra a arte "Atualizando conteúdo…" — só se o aparelho já está
+  provisionado (sem provisionamento, já mostra direto o estado abaixo).
+- Aparelho não provisionado: arte "Aparelho não conectado" — configuração
+  local (`ConfigAparelho.provisionado`) incompleta, não depende de rede.
+- Erro ao carregar (rede caiu, aparelho sem chave, servidor rejeitou, **e**
+  não há cache pra cair): arte "Não foi possível carregar a programação".
+  Com cache disponível, usa o cache normalmente, sem mostrar erro nenhum —
+  nunca tela preta, nunca crash visível.
+- Sem programação para esta hora: item institucional que o próprio backend
+  manda (sem `url`) — desenhado em runtime (degradê + legenda), não é arte
+  fixa; não é uma decisão deste app, é conteúdo da playlist
+  (`docs/pendencias.md`).
 - Sucesso: vídeo tocando, tela cheia.
 - Sem permissão: não se aplica — não há controle de acesso na tela do
   player, é sempre visível (é uma TV pública).
@@ -150,7 +167,9 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   "Gerar um APK já configurado por tela") nunca sobrescreve um
   provisionamento já existente — nem o de uma instalação anterior, nem o
   que o provisionamento de bancada por `adb` aplicar depois (esse último
-  sempre sobrescreve, é o caminho de depuração). Quem vê: ninguém
+  sobrescreve sempre no APK de depuração; no de release, só provisiona
+  aparelho ainda não provisionado — qualquer app da TV pode abrir o player
+  com extras). Quem vê: ninguém
   diretamente — é o que faz o app subir sozinho no primeiro boot quando o
   APK já veio configurado, sem tela de erro nem intervenção.
   `ConfigAparelho.aplicarConfiguracaoEmbutidaSeNecessaria`.
@@ -165,13 +184,76 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   deste app). `ConfigExterna.procurarEAplicar`,
   `PlayerActivity.pedirPermissaoOuAplicarConfigExterna`.
 
+- **RN-12 — Rotação de tela só aceita {0, 90, 180, 270}.** Compensa um
+  painel montado fisicamente de lado (comum em sinalização digital em
+  espaço estreito) — o Android não sabe disso sozinho, o app gira o próprio
+  conteúdo em runtime. Qualquer valor fora desse conjunto, vindo de
+  qualquer um dos três caminhos de provisionamento, vira 0 — nunca gira a
+  esmo. Quem vê: o espectador (player) e o operador (painel), ambos
+  compensados juntos, mesma configuração. `ConfigAparelho.rotacaoTela`,
+  `RotacaoTela.aplicar`.
+
+- **RN-13 — PIN do painel só aceita exatamente 4 dígitos numéricos**, o
+  tamanho que o teclado do painel consegue digitar de volta — um PIN fora
+  desse formato, vindo de qualquer provisionamento, nunca poderia ser
+  digitado de volta e trancaria o painel de manutenção para sempre.
+  Violada: o valor é ignorado, mantém o PIN anterior (o provisório de
+  fábrica, se ainda não houver nenhum) — nunca lança exceção nem trava o
+  app. `ConfigAparelho.pinPainel`.
+
+- **RN-14 — Institucional de decisão local nunca usa o desenho do PADRAO,
+  e vice-versa.** As três artes fixas (não provisionado, erro ao carregar,
+  carregando) só aparecem por uma condição do próprio aparelho
+  (`ConfigAparelho.provisionado`, `PlaylistRepositorio.Origem`) — nunca
+  porque o backend mandou um item institucional. O item institucional que
+  vem do backend (sem `url`, "sem programação para esta hora") sempre usa
+  o desenho em runtime (degradê + legenda), nunca uma das três artes fixas.
+  Violada: não se aplica — é decisão pura em
+  `PlayerActivity.estadoInstitucional`, os dois casos não se sobrepõem.
+  `TelaInstitucional`, `EstadoInstitucional`.
+
+- **RN-15 — Só a presença de `url` decide se um item toca vídeo, nunca a
+  flag `institucional`.** Um item com `institucional: true` **e** `url`
+  preenchida toca essa `url` normalmente — é o caminho pensado para um
+  futuro vídeo de fundo institucional servido pelo backend
+  (`PARA-O-BACKEND.md`). Sem `url` (o único caso que existe hoje), cai na
+  tela institucional local, institucional ou não — proteção contra item
+  malformado, não um caminho normal. Violada: não se aplica, é uma
+  condição única (`item.url.isNullOrBlank()`) sem ramo especial pra
+  `institucional`. `PlayerActivity.tocarItemAtual`.
+
+- **RN-16 — Margem de overscan é assimétrica (4 lados independentes) e
+  sempre em termos visuais.** `margemVminTopo/Base/Esquerda/Direita`
+  descrevem o que o operador vê olhando pra tela já montada — nunca a
+  borda física do painel. Isso importa porque o padding é aplicado em
+  `rotor` (que já representa o quadro visual, depois de compensada
+  `rotacaoTela`), não em `raiz`: aplicar em `raiz` não sobrevive a uma
+  rotação de 90°/270°, que troca largura por altura antes do padding
+  "chegar" no lado visual certo. Violada: não se aplica — é a única forma
+  de aplicar que `RotacaoTela.aplicar` implementa.
+  `ConfigAparelho.margensOverscan`, `RotacaoTela.aplicar`.
+
+- **RN-17 — Margem que o backend manda no heartbeat sobrescreve a local,
+  nunca a zera.** `POST /player/:dispositivoId/heartbeat` (migration 069 de
+  `sancompany/mostrai`) devolve `{margens: {superior, direita, inferior,
+  esquerda}}` em vmin; `MostraiApi.heartbeat()` devolve `MargensOverscan?`
+  (`null` pra heartbeat que falhou ou resposta sem `margens`). Só quando não
+  é `null` é que `ConfigAparelho` é atualizado e `RotacaoTela.aplicar`
+  reaplicado — um heartbeat que falha (rede caiu, servidor fora) mantém a
+  última margem conhecida, nunca volta pro valor de provisionamento local
+  nem zera. Violada: não se aplica — `PlayerActivity.heartbeatPeriodico` só
+  escreve em `ConfigAparelho` dentro do `if (margens != null)`.
+  `network.HeartbeatJson`, `PlayerActivity.heartbeatPeriodico`.
+
 ## 6. Textos que o sistema diz
 
 | Texto | Onde | Arquivo |
 |---|---|---|
-| "Mostraí" (marca, institucional) | Tela institucional | `TelaInstitucional.kt` |
-| "Aparelho ainda não provisionado" | Institucional, antes do 1º provisionamento | `strings.xml` |
-| "Sem programação para esta hora" | Institucional, provisionado mas sem itens | `strings.xml` |
+| "Mostraí" (marca, institucional) | Tela institucional, estado PADRAO | `TelaInstitucional.kt` |
+| "Sem programação para esta hora" | Institucional PADRAO, provisionado mas sem itens | `strings.xml` |
+| "Aparelho não conectado / configure o aparelho corretamente" | Institucional, antes do 1º provisionamento — texto embutido na arte | `drawable-nodpi/institucional_nao_provisionado.png` |
+| "Não foi possível carregar a programação" | Institucional, erro de carregamento sem cache — texto embutido na arte | `drawable-nodpi/institucional_erro.png` |
+| "Atualizando conteúdo…" | Institucional, carregando a primeira playlist — texto embutido na arte | `drawable-nodpi/institucional_carregando.png` |
 | "Painel de manutenção" | Título do painel | `strings.xml` |
 | "PIN incorreto" | Erro de PIN | `strings.xml` |
 | "Pressione VOLTAR para sair" | Dica no painel | `strings.xml` |
@@ -253,3 +335,8 @@ Duas garantias que este app depende do backend manter:
   do índice do array da resposta (RN-09 depende disso).
 - `criativoId → url` é imutável — criativo trocado é `criativoId` novo (usa-se
   como chave de cache de mídia sem revalidar, ver bloco de cache local).
+
+`POST /player/:dispositivoId/heartbeat` (chamado a cada 5 min, já rodava
+antes por outro motivo) ganhou `margens` na resposta em 22/09/2026 —
+migration 069 do backend — fechando a pendência de `margemVmin` por lado
+(RN-17, `PARA-O-BACKEND.md`).

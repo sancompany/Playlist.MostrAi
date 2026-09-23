@@ -105,15 +105,75 @@ class ProofOfPlayDbTest {
     }
 
     @Test
-    fun `maisAntigoNaoEnviado devolve o de menor criadoEmMs`() {
+    fun `proximoADescartar devolve o de menor criadoEmMs quando todos sao iguais em valor`() {
         db.inserir(evento("b").copy(criadoEmMs = 5_000))
         db.inserir(evento("a").copy(criadoEmMs = 1_000))
 
-        assertEquals("a", db.maisAntigoNaoEnviado())
+        assertEquals("a", db.proximoADescartar())
     }
 
     @Test
-    fun `fila vazia nao tem mais antigo`() {
-        assertNull(db.maisAntigoNaoEnviado())
+    fun `fila vazia nao tem nada a descartar`() {
+        assertNull(db.proximoADescartar())
+    }
+
+    // ------------------------------------------------------------------- R2
+
+    @Test
+    fun `descarta orfao antes de comprovante, mesmo que o comprovante seja mais antigo`() {
+        // O comprovante é MAIS velho — pela regra anterior (só criado_em_ms)
+        // ele sairia primeiro, e era esse o defeito: jogava fora receita
+        // faturável e mantinha uma linha que nunca seria enviada.
+        db.inserir(evento("comprovante").copy(criadoEmMs = 1_000, terminadoEm = "2026-01-01T00:00:00Z"))
+        db.inserir(evento("orfao").copy(criadoEmMs = 9_000, terminadoEm = null))
+
+        assertEquals("orfao", db.proximoADescartar())
+    }
+
+    @Test
+    fun `descarta quarentena antes de comprovante`() {
+        db.inserir(evento("comprovante").copy(criadoEmMs = 1_000, terminadoEm = "2026-01-01T00:00:00Z"))
+        db.inserir(evento("ruim").copy(criadoEmMs = 9_000, terminadoEm = "2026-01-01T00:00:00Z"))
+        db.marcarQuarentena("ruim", "rejeitado")
+
+        assertEquals("ruim", db.proximoADescartar())
+    }
+
+    @Test
+    fun `so descarta comprovante quando nao ha mais nada`() {
+        db.inserir(evento("velho").copy(criadoEmMs = 1_000, terminadoEm = "2026-01-01T00:00:00Z"))
+        db.inserir(evento("novo").copy(criadoEmMs = 9_000, terminadoEm = "2026-01-01T00:00:00Z"))
+
+        assertEquals("velho", db.proximoADescartar())
+    }
+
+    // ------------------------------------------------------------------- R4
+
+    @Test
+    fun `evento em quarentena sai da fila de envio mas continua contado`() {
+        db.inserir(evento("a").copy(terminadoEm = "2026-01-01T00:00:00Z"))
+        db.marcarQuarentena("a", "rejeitado pelo servidor (400)")
+
+        assertEquals(0, db.elegiveisParaEnvio(agoraMs = Long.MAX_VALUE, limite = 10).size)
+        assertEquals(1, db.contarQuarentena())
+        assertEquals(1, db.contarPendentes())
+        assertEquals(0, db.contarAguardandoEnvio())
+    }
+
+    @Test
+    fun `contarAguardandoEnvio ignora orfaos`() {
+        db.inserir(evento("terminado").copy(terminadoEm = "2026-01-01T00:00:00Z"))
+        db.inserir(evento("orfao"))
+
+        assertEquals(2, db.contarPendentes())
+        assertEquals(1, db.contarAguardandoEnvio())
+    }
+
+    @Test
+    fun `maisAntigoAguardandoEnvio considera so o que pode ser enviado`() {
+        db.inserir(evento("orfao").copy(criadoEmMs = 1_000))
+        db.inserir(evento("bom").copy(criadoEmMs = 7_000, terminadoEm = "2026-01-01T00:00:00Z"))
+
+        assertEquals(7_000L, db.maisAntigoAguardandoEnvioMs())
     }
 }

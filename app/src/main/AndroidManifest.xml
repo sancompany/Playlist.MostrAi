@@ -8,6 +8,9 @@
          aparelho ainda não está provisionado (README, "Configurar por um
          arquivo no pendrive"). Pedida em runtime, só nesse caso. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <!-- OTA fase 1: sem Device Owner o Android sempre mostra o diálogo de
+         confirmação, mas sem esta permissão nem o diálogo abre. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -30,13 +33,32 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!--
+                 Torna o player elegível a launcher padrão. Não força nada: o
+                 Android só o usa se alguém escolher "sempre" uma vez, na
+                 instalação. É o quiosque possível sem Device Owner — com ele,
+                 a tecla Home volta para o player em vez de sair dele.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
+        <!--
+             Sem screenOrientation de propósito: no Android 8.0 (o do parque
+             instalado), uma Activity translúcida que pede orientação fixa
+             derruba o app com IllegalStateException("Only fullscreen opaque
+             activities can request orientation") logo no onCreate. Não faz
+             falta — janela translúcida herda a orientação da Activity opaca
+             de trás (PlayerActivity, já travada em landscape).
+             Ver docs/erros/2026-09-21-painel-translucido-com-orientacao-fixa-derrubava-o-app.md
+        -->
         <activity
             android:name=".ui.PainelActivity"
             android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.MostraiPlayer" />
+            android:theme="@style/Theme.MostraiPlayer.Translucido" />
 
         <receiver
             android:name=".BootReceiver"
@@ -47,5 +69,15 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!-- Reabre o player se ele sumir da frente. Só o sistema aciona. -->
+        <receiver
+            android:name=".kiosk.Watchdog$Receptor"
+            android:exported="false" />
+
+        <!-- Resultado do diálogo de instalação do PackageInstaller. -->
+        <receiver
+            android:name=".update.ReceptorInstalacao"
+            android:exported="false" />
     </application>
 </manifest>

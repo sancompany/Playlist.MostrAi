@@ -77,6 +77,60 @@ alto e sem queda): checar `X-Aparelho-Id` (chave pode ter sido revogada no
 admin → erro 401/403, fila fica intacta e visível no painel) e conectividade
 de rede do comércio.
 
+## Chave de assinatura
+
+**Passo manual obrigatório antes da primeira instalação definitiva.**
+
+Toda atualização futura do player precisa ser assinada com **a mesma chave**
+do APK já instalado. O Android recusa a troca de assinatura: um APK assinado
+com outra chave não atualiza, só instala por cima de uma desinstalação — e
+desinstalar apaga a identidade da tela e a fila de proof-of-play inteira.
+
+Ou seja: se a primeira leva de TVs sair com assinatura de depuração, ou com
+uma chave que se perca depois, **essas telas nunca poderão ser atualizadas
+remotamente**. Cada uma vira uma visita presencial, para sempre.
+
+### Gerar
+
+```sh
+keytool -genkeypair -v \
+  -keystore mostrai-release.jks \
+  -alias mostrai \
+  -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Validade longa de propósito: uma chave que expira é uma frota que para de
+atualizar.
+
+### Configurar o build
+
+`keystore.properties` na raiz do repositório (já está no `.gitignore`):
+
+```properties
+storeFile=/caminho/absoluto/para/mostrai-release.jks
+storePassword=...
+keyAlias=mostrai
+keyPassword=...
+```
+
+Sem esse arquivo o build de release sai **sem assinatura de produção**, de
+propósito — falhar aqui custa um minuto; descobrir em campo custa uma visita
+por tela.
+
+### Guardar
+
+- O `.jks` **nunca** entra no Git.
+- Guardar em pelo menos dois lugares, um deles offline.
+- Guardar as senhas separadas do arquivo.
+- Perder a chave é irreversível: não há recuperação, e a frota inteira fica
+  sem caminho de atualização.
+
+### Conferir qual chave assinou um APK
+
+```sh
+apksigner verify --print-certs app-release.apk
+```
+
 ## O que só o dono faz
 
 Ver `docs/pendencias.md`, seção "Só o dono faz".

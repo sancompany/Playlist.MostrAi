@@ -30,7 +30,8 @@ object PlayedJson {
         val resultados = json.optJSONArray("resultados") ?: JSONArray()
         val mapa = mutableMapOf<String, String>()
         for (i in 0 until resultados.length()) {
-            val item = resultados.getJSONObject(i)
+            // ROB-006: um elemento que não é objeto não invalida os outros.
+            val item = resultados.optJSONObject(i) ?: continue
             val id = item.optString("execucaoId", "")
             val status = item.optString("status", "")
             if (id.isNotEmpty() && status.isNotEmpty()) mapa[id] = status

@@ -78,14 +78,132 @@ Fechadas:
   no pendrive, lido em runtime com permissão de armazenamento pedida só
   quando necessário). 47 → 53 testes (`ConfigExternaTest`, 5 casos) ·
   evidência: build local verde, a confirmar no CI.
-- Validação de PIN — pedido do dono, 21/09/2026: nenhum dos três caminhos de
-  provisionamento validava o formato do PIN antes de gravar; um PIN fora de
-  4 dígitos numéricos (o único formato que o teclado do painel consegue
-  digitar de volta) travaria o painel de manutenção para sempre. Centralizado
-  no setter de `ConfigAparelho.pinPainel` — valor inválido é ignorado, mantém
-  o anterior. 53 → 59 testes (`ConfigAparelhoTest`, 6 casos, Robolectric) ·
-  evidência: build + testes locais verdes.
+- Retorno de campo (vídeo do dono, 21/09/2026), pontos 1/2/4/5 — 4 correções:
+  (1/4) a TV está montada fisicamente de lado; o Android não sabe disso
+  sozinho, então o app compensa em runtime girando o próprio conteúdo
+  (`RotacaoTela`, par raiz/rotor, compartilhado entre `PlayerActivity` e
+  `PainelActivity`), configurável (0/90/180/270) nos três caminhos de
+  provisionamento. `PlayerView` trocado de `SurfaceView` para `TextureView`
+  (necessário para a rotação, e suspeito de também resolver o vídeo
+  bugado). (2) tela institucional trocada de cor chapada por degradê
+  radial. (5) PIN do painel confirmado em exatamente 4 dígitos (não 4-6 —
+  ver lição abaixo). Ponto 3 (ícone/arte de marca) é do dono. Ponto 6
+  (atualização OTA pelo site) ainda sem proposta — decisão arquitetural
+  maior, pendente. Testes: `ConfigAparelhoTest` (rotação e PIN),
+  `rotacaoTela` em `ConfigExternaTest` · evidência: build + testes locais
+  verdes, a confirmar no CI.
+- Correção de rumo, mesma sessão: o dono descreveu a montagem física
+  ("logo virada para a direita, lateral esquerda da TV fica embaixo") —
+  geometria consistente com a borda esquerda nativa migrando para baixo,
+  ou seja, o painel foi montado fisicamente 90° anti-horário; o app
+  compensa girando o conteúdo 90° horário (`rotacaoTela: 90`, o padrão já
+  sugerido) — a confirmar visualmente pelo dono no aparelho. Nessa mesma
+  mensagem o dono também confirmou que o PIN é para ficar em exatamente 4
+  dígitos (não 4-6, como uma leitura anterior do pedido original tinha
+  entendido) — revertido de volta ao que a outra sessão concorrente já
+  tinha implementado (`TAMANHO_PIN = 4`), com o aviso via `Log.w` mantido.
+- Assets de marca do dono (21/09/2026) — ícone/banner real (substitui o
+  placeholder gerado), vídeo de abertura (`res/raw/video_abertura.mp4`,
+  player próprio, só no boot do processo, nunca ao voltar do painel), e
+  três artes institucionais fixas (não provisionado, erro ao carregar,
+  carregando) que substituem o degradê programático nesses três casos —
+  o degradê continua valendo só para o item institucional que o próprio
+  backend manda ("sem programação para esta hora", RN-14, decisão do
+  dono: isso é conteúdo da playlist, não uma arte fixa do app).
+  `TelaInstitucional`, `EstadoInstitucional` (novo), `PlayerActivity`.
+- Revisão do app inteiro (skill `revisar`, pedido do dono, 21/09/2026) — 6
+  ciclos, os 3 primeiros com achado, os 3 últimos limpos:
+  1. `TelaInstitucional` decodificava o PNG do estado institucional dentro
+     de `onDraw` (thread de UI) — movido pra uma thread de fundo, guardado
+     por geração (mesmo padrão de `PlayerActivity.geracaoReproducao`).
+  2. `CacheMidia.baixarPara`/`HttpCliente.chamar`: `openConnection() as
+     HttpURLConnection` lança `ClassCastException` (não `IOException`)
+     pra uma URL com esquema inesperado (não http/s) — escapava do catch
+     de quem chama e derrubava o app; convertido pra `IOException` na
+     origem. `MostraiApi.enviarLote`/`enviarLegado`/`heartbeat` também
+     ganharam o mesmo catch amplo que `buscarPlaylist` já tinha (corpo de
+     resposta malformado lança `JSONException`, não capturada antes).
+     Cobertos por `HttpClienteTest` e `CacheMidiaTest` (novos).
+  3. **`PainelActivity` não era translúcida** — achado de correção alta:
+     `docs/funcional.md` sempre documentou "o player continua rodando por
+     trás" ao abrir o painel, e o fundo semi-opaco (`#E6000000`) só faz
+     sentido como sobreposição, mas nenhum tema declarava
+     `windowIsTranslucent`. Abrir o painel era uma troca de Activity
+     opaca — `PlayerActivity.onStop()` liberava o ExoPlayer e cancelava
+     todos os temporizadores, interrompendo uma exibição paga no meio.
+     Corrigido com `Theme.MostraiPlayer.Translucido`, só em
+     `PainelActivity`. Sem como testar sem aparelho real — nova pendência
+     em `docs/pendencias.md`. Detalhe em
+     `docs/erros/2026-09-21-painel-parava-o-player-em-vez-de-so-cobrir.md`.
+  4. `.gitignore` não cobria `mostrai-config.json` (só `dispositivos/*.json`)
+     apesar de `CLAUDE.md` já dizer que os dois ficam fora do Git — corrigido.
+  67 testes (62 → 67). Handoff consolidado pro backend em `PARA-O-BACKEND.md`
+  (novo).
+- Preparo pro backend (21/09/2026) — `margemVmin` virou 4 valores
+  independentes por lado (`MargensOverscan`; `RotacaoTela` passou a aplicar
+  o padding em `rotor`, o quadro visual, não em `raiz` — só assim margem
+  assimétrica sobrevive a `rotacaoTela` de 90°/270°), e o player passou a
+  decidir vídeo × tela institucional só pela presença de `url`, não pela
+  flag `institucional` — o vídeo de fundo servido pelo backend já toca sem
+  outra versão do app. RN-15 e RN-16 em `docs/funcional.md`. 67 → 70 testes.
+- Revisão de acompanhamento (foco no caminho de vídeo, pedido do dono,
+  21/09/2026) — 4 ciclos, 1 achado de correção **alta**, os 2 últimos
+  limpos: `PainelActivity` juntava tema translúcido (correção do ciclo
+  anterior) com o `screenOrientation="landscape"` que já tinha no
+  manifesto. No Android 8.0 — versão exata do parque instalado, com
+  `targetSdk = 26` — essa combinação faz `Activity.onCreate` lançar
+  `IllegalStateException("Only fullscreen opaque activities can request
+  orientation")`: abrir o painel derrubaria o app inteiro na loja, matando
+  o player e a exibição paga em andamento. `screenOrientation` removido
+  (janela translúcida herda a orientação da Activity opaca de trás).
+  `docs/erros/2026-09-21-painel-translucido-com-orientacao-fixa-derrubava-o-app.md`.
+- **Lote V1 de lançamento + contrato V2 (23/09/2026)** — auditoria técnica
+  completa do player pedida pelo dono (com o GPT-5.6 revisando a
+  arquitetura) achou 11 riscos reais; todos corrigidos antes de qualquer
+  feature nova. Os quatro mais graves: fila de proof-of-play saturava em
+  13,9h offline (teto 5.000 → 50.000); o descarte no estouro jogava fora
+  comprovante faturável e preservava linha órfã; um HTTP 400 apagava até 50
+  comprovantes de uma vez (agora split binário + quarentena); e o cache
+  dependia da promessa não verificável de `criativoId → url` imutável
+  (agora endereçado por `contentHash` com SHA-256 conferido). Junto,
+  implementado o contrato Player V2 inteiro com degradação automática — 404
+  numa rota V2 é lido como backend V1, e nada quebra: `hello`, heartbeat V2
+  com erro durável em SQLite, `GET /config` versionado, horário operacional
+  local, OTA fase 1, kiosk (`CATEGORY_HOME` + watchdog + Device Owner
+  opcional), PIN com rate limit, token de provisionamento e rotação de
+  credencial. 74 → 209 testes. Contrato e checklist para a sessão do backend
+  em `docs/player-v2-contract.md` e `docs/player-v2-mostrai-checklist.md`.
+  versionCode 1 → 2, versionName 1.0.0, assinatura de release via
+  `keystore.properties` fora do Git.
+- **Auditoria de confiabilidade iterativa e adversarial (23/09/2026)** —
+  pedida pelo dono (com o GPT-5.6 revisando). Ciclos 0–19 (Auditoria A) e
+  rodadas B–J até **duas rodadas completas consecutivas sem bug novo
+  reproduzível** (I e J). 38 bugs (11 HIGH, 16 MEDIUM, 11 LOW) e 8 itens de
+  robustez corrigidos, cada um com teste que falhava antes; 2 dos bugs
+  (BUG-029, BUG-035) eram regressões das próprias correções, achadas nas
+  rodadas seguintes. Testes
+  209 → 283; mutação de 27 guardas críticas, todas mortas pela suíte. Contrato
+  e checklist do backend alinhados ao código. Relatório completo, riscos não
+  resolvíveis sem TV e checklist físico em
+  `docs/auditoria-confiabilidade-2026-09-23.md`. **Não** declara o player
+  sem defeitos nem o hardware validado.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
+- **`margemVmin` por lado, fechado com o backend (22/09/2026, sessão do
+  backend `sancompany/mostrai`)** — o pedido pendente em `PARA-O-BACKEND.md`
+  item 1 foi resolvido: migration 069 lá deu 4 colunas por tela, editáveis
+  na aba Telas do admin, entregues a cada heartbeat
+  (`{margens: {superior, direita, inferior, esquerda}}`, vmin, termos
+  visuais — mesmo formato que o player web já consumia). Aqui:
+  `network.HeartbeatJson.parseMargens` (novo) lê essa resposta;
+  `MostraiApi.heartbeat()` passou de `Boolean` pra `MargensOverscan?`
+  (`null` = sem novidade, nunca zera o que já estava configurado);
+  `PlayerActivity.heartbeatPeriodico` grava em `ConfigAparelho` e reaplica
+  `RotacaoTela.aplicar` a cada resposta com valor. Precedência: backend
+  sobrescreve o local assim que a tela responde online — local continua
+  sendo o valor até o primeiro heartbeat bem-sucedido. 70 → 74 testes
+  (`HeartbeatJsonTest`). Verificado só por teste unitário — sem hardware
+  real, não dá pra confirmar visualmente que a margem aplicada bate com o
+  que o admin gravou (mesma limitação de sempre desta sessão).
 - **"A versão inicial no ar"** — pendente. Para um app sideloaded isso
   significa instalado e rodando num aparelho real; esta sessão não tem
   hardware Android TV nem emulador viável (`CONSTRAINTS.md`). Único item que
@@ -100,10 +218,15 @@ que o dono confirmar o app rodando em aparelho real.
 - Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi`, `HttpCliente`, `PlaylistJson`, `PlayedJson`)
 - Playlist e reposicionamento: `app/src/main/java/br/com/mostrai/player/playlist/`
 - Proof-of-play (fila durável): `app/src/main/java/br/com/mostrai/player/proof/`
-- Configuração do aparelho: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda; `ConfigExterna` lê `mostrai-config.json` do pendrive)
-- Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt`
+- Configuração do aparelho: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda; `ConfigExterna` lê `mostrai-config.json` do pendrive; `ConfigRemota` é a config versionada do backend; `HorarioOperacional` é o regime, puro e testável)
+- Contrato V2 e degradação para V1: `app/src/main/java/br/com/mostrai/player/network/` (`SincronizacaoV2` decide, `ResultadoHttp` separa as famílias de falha, `HelloJson`/`HeartbeatJson` são os corpos)
+- Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer`)
+- Atualização remota: `app/src/main/java/br/com/mostrai/player/update/`
+- Kiosk: `app/src/main/java/br/com/mostrai/player/kiosk/` (`Watchdog`, `Kiosk` com Device Owner opcional)
+- Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt` — **só diagnóstico**, nunca configuração cotidiana
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`
-- Variáveis/segredos: nenhum `.env` — três caminhos de provisionamento, nesta ordem de precedência: build embutido (`-PconfigDispositivo`, README "Gerar um APK já configurado por tela") → arquivo externo (`mostrai-config.json` no pendrive, README "Configurar por um arquivo no pendrive") → extras de Intent por `adb` (sempre sobrescreve, é o caminho de depuração, README "Instalar e provisionar em bancada"). Nenhum dos três versiona segredo — `dispositivos/*.json` e `mostrai-config.json` ficam de fora do Git.
+- Variáveis/segredos: nenhum `.env` — três caminhos de provisionamento, nesta ordem de precedência: build embutido (`-PconfigDispositivo`, README "Gerar um APK já configurado por tela") → arquivo externo (`mostrai-config.json` no pendrive, README "Configurar por um arquivo no pendrive") → extras de Intent por `adb` (caminho de depuração: sobrescreve sempre no APK debug; no release só provisiona aparelho ainda não provisionado, porque qualquer app da TV pode abrir o player com extras — README "Instalar e provisionar em bancada"). Nenhum dos três versiona segredo — `dispositivos/*.json` e `mostrai-config.json` ficam de fora do Git.
+- Handoff pro backend (`sancompany/mostrai`): `docs/player-v2-contract.md` (o contrato exato implementado) e `docs/player-v2-mostrai-checklist.md` (a lista de trabalho do lado de lá). `PARA-O-BACKEND.md` continua como resumo curto de entrada.
 
 ## Conformidade
 

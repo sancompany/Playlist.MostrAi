@@ -13,23 +13,35 @@ import java.net.URL
  * que um cliente HTTP maior ofereceria, e cada dependência a menos é uma
  * fonte a menos de problema de resolução numa TV com internet de comércio.
  */
-class HttpCliente(
+// open: os testes de MostraiApi substituem o transporte para exercitar a
+// classificação de HTTP (R8) sem servidor de verdade.
+open class HttpCliente(
     private val timeoutConexaoMs: Int = 10_000,
     private val timeoutLeituraMs: Int = 15_000,
 ) {
     data class Resposta(val codigo: Int, val corpo: String, val cabecalhos: Map<String, List<String>>)
 
     @Throws(IOException::class)
-    fun get(url: String, cabecalhos: Map<String, String>): Resposta =
+    open fun get(url: String, cabecalhos: Map<String, String>): Resposta =
         chamar("GET", url, cabecalhos, null)
 
     @Throws(IOException::class)
-    fun post(url: String, cabecalhos: Map<String, String>, corpo: String): Resposta =
+    open fun post(url: String, cabecalhos: Map<String, String>, corpo: String): Resposta =
         chamar("POST", url, cabecalhos + ("Content-Type" to "application/json; charset=utf-8"), corpo)
 
     @Throws(IOException::class)
     private fun chamar(metodo: String, url: String, cabecalhos: Map<String, String>, corpo: String?): Resposta {
-        val conexao = URL(url).openConnection() as HttpURLConnection
+        // openConnection() não valida o esquema — uma baseUrl mal configurada
+        // (ex.: sem "http"/"https", ou outro esquema qualquer) devolve uma
+        // conexão de outro tipo, e o cast falha com ClassCastException, não
+        // IOException. Sem converter aqui, isso escaparia do catch de quem
+        // chama e derrubaria o app — errado para um aparelho que precisa
+        // nunca travar por causa de configuração ruim.
+        val conexao = try {
+            URL(url).openConnection() as HttpURLConnection
+        } catch (e: ClassCastException) {
+            throw IOException("URL não é http(s): $url", e)
+        }
         try {
             conexao.requestMethod = metodo
             conexao.connectTimeout = timeoutConexaoMs

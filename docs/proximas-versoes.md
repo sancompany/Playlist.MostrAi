@@ -42,7 +42,14 @@ Ideias para depois. Entrada aqui não autoriza construir nada.
 - **Quando vale a pena**: se a métrica de "cache miss" (a criar) mostrar
   descarte de criativo que volta a ser pedido em menos de 24h.
 
-## `margemVmin` configurada pelo admin, não pelo arquivo local
+## `margemVmin` configurada pelo admin, não pelo arquivo local — CONCLUÍDO em 22/09/2026
+
+Backend (`sancompany/mostrai`, migration 069) e app fechados: heartbeat
+devolve `margens` por lado, `PlayerActivity` aplica em runtime e
+sobrescreve o valor local assim que a tela responde online — precedência
+exatamente como o "quando vale a pena" abaixo previa. Detalhe em
+`CLAUDE.md` (estado na esteira) e `PARA-O-BACKEND.md`. Registro original
+mantido abaixo por histórico.
 
 - **O quê**: a margem de overscan deixa de vir só do provisionamento local
   (build embutido, `mostrai-config.json` ou `adb`) e passa a poder ser
@@ -63,20 +70,74 @@ Ideias para depois. Entrada aqui não autoriza construir nada.
   ideia registrada do lado do backend, com o histórico completo, em
   `sancompany/mostrai`, `docs/proximas-versoes.md`, seção "Margem e
   orientação por tela configuráveis no admin, não só na URL".
-- **O que toca**: precisa de suporte do backend primeiro — 4 campos (um por
-  lado) em algum contrato (`sancompany/mostrai`, outra sessão) que o app
-  ainda não consome. Do lado deste app: `ConfigAparelho.margemVmin` (hoje um
-  `Float` único) precisaria virar 4 valores com origem remota (buscados e
-  cacheados, como a playlist), além ou no lugar dos locais;
-  `PlayerActivity.aplicarMargemOverscan()` hoje chama
-  `raiz.setPadding(px, px, px, px)` com o mesmo valor nos 4 lados — passaria
-  a receber 4 valores distintos, um por parâmetro do `setPadding`.
+- **O que toca**: **lado deste app já pronto (21/09/2026)** —
+  `ConfigAparelho.margemVmin` virou 4 propriedades independentes
+  (`margemVminTopo/Base/Esquerda/Direita`, expostas juntas como
+  `margensOverscan`), já lidas dos três caminhos de provisionamento locais
+  e já aplicadas corretamente por `RotacaoTela.aplicar` (que passou a
+  colocar o padding em `rotor`, não em `raiz` — só assim uma margem
+  assimétrica sobrevive a uma tela com `rotacaoTela` de 90°/270°, ver
+  `RotacaoTela.kt`). Falta só o contrato do backend: 4 campos por tela
+  (`sancompany/mostrai`, outra sessão), e o app buscar/cachear esses
+  valores (provavelmente junto do cadastro da tela ou da resposta de
+  `/playlist`, como a playlist já faz) em vez de/além dos locais.
 - **Quando vale a pena**: quando o contrato do backend definir onde esses 4
-  campos moram. Até lá, o campo `margemVmin` continua existindo, como valor
-  único, nos arquivos de provisionamento local (`dispositivos/*.json`,
-  `mostrai-config.json`) — é o único caminho disponível por enquanto.
+  campos moram — a única peça que falta agora. Até lá, os 4 campos
+  continuam vindo só dos arquivos de provisionamento local
+  (`dispositivos/*.json`, `mostrai-config.json`) — é o único caminho
+  disponível por enquanto.
 
 ## Atualização remota (OTA)
 
 Já está em `README.md`, "Em aberto", item 2 — mantido lá porque é decisão
 que precisa ser tomada antes de virar item de próxima versão ou de v1.
+
+**Pergunta do dono, 21/09/2026**: dá para lançar atualização pelo próprio
+painel admin do backend, em vez de sempre trocar o pendrive? Resposta
+técnica, sem código ainda — duas fases independentes:
+
+- **Fase 1 — sem enrollment, funciona em qualquer aparelho.** O admin
+  publica um `.apk` novo e um manifesto de versão (versionCode, URL de
+  download, talvez checksum). O player (que já faz poll a cada 15 min e
+  heartbeat a cada 5 min) compara sua própria versão
+  (`BuildConfig.VERSION_CODE`) com a do manifesto, baixa o APK em segundo
+  plano se houver novidade, e dispara a instalação via
+  `PackageInstaller`/`REQUEST_INSTALL_PACKAGES`. **Limite físico do
+  Android**: essa instalação sempre mostra um diálogo de confirmação do
+  sistema — alguém precisa estar na loja e tocar "Instalar" no controle
+  remoto. Não elimina a visita presencial, mas elimina o pendrive/laptop:
+  troca "levar um pendrive configurado" por "apertar OK na TV quando
+  aparecer o aviso".
+- **Fase 2 — instalação silenciosa, precisa de Device Owner.** Se o
+  aparelho for inscrito como Device Owner (Android Enterprise, feito uma
+  vez no provisionamento — o aparelho precisa estar "de fábrica", sem
+  conta nenhuma, ver `adb shell dpm set-device-owner`), o app ganha
+  permissão de instalar pacotes sem diálogo nenhum — atualização
+  verdadeiramente sem ninguém na loja. **Não dá para confirmar sem
+  hardware real**: não se sabe se o SEMP TCL 32S6500S (Android TV 8,
+  fabricante fechado) aceita Device Owner sem alguma trava do fabricante —
+  só um teste físico decide, e normalmente exige refazer o provisionamento
+  do zero (reset de fábrica) para inscrever.
+
+  **Pesquisa (21/09/2026, sem hardware — sinal, não confirmação):** um
+  relato real de usuário (XDA Forums) tentando `dpm set-device-owner` numa
+  TCL Android TV (modelo TCL32A5, Android 9 — não o mesmo modelo nem a
+  mesma versão do Mostraí, mas mesmo fabricante e mesma categoria de
+  produto) bateu em `"Can't set package as device owner"` — o mesmo
+  comando funcionou sem problema em Sony TV e em aparelhos móveis. Isso
+  não prova que o SEMP TCL 32S6500S vai falhar da mesma forma (modelo e
+  versão de Android diferentes, e é uma amostra de um usuário só), mas é
+  um sinal real contra a Fase 2, não hipotético — TCL como fabricante tem
+  pelo menos um caso documentado de travar esse caminho num aparelho de
+  TV. Eleva a prioridade do teste físico antes de investir qualquer linha
+  de código na Fase 2. Fontes: [thread original](https://xdaforums.com/t/how-to-set-device-owner-in-tcl-android-tv.4590837/)
+  (bloqueado pra fetch automatizado, resumo via busca).
+
+**Recomendação**: começar pela Fase 1 se/quando isso for priorizado —
+funciona em qualquer aparelho, sem risco, e já corta a dependência do
+pendrive para o caso comum (trocar app, não trocar tela). Fase 2 agora tem
+um motivo concreto a mais pra não ser a aposta principal: além de precisar
+de teste físico de qualquer forma, já existe um relato real de falha em
+TV TCL (fabricante diferente do celular/tablet onde esse caminho é mais
+testado). Não vale desenhar o resto em cima de uma suposição não testada
+— e essa suposição já tem um dado contra ela.

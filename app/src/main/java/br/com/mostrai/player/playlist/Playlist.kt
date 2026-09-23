@@ -17,6 +17,15 @@ data class ItemPlaylist(
     val institucional: Boolean,
     /** Institucional e autoanúncio não geram evento de exibição. */
     val contabiliza: Boolean,
+    /**
+     * SHA-256 do arquivo de mídia, hexadecimal minúsculo, quando o backend o
+     * fornece (contrato V2). É a **identidade física** do conteúdo: o cache
+     * guarda por hash e verifica o download contra ele, e com isso deixa de
+     * depender da promessa não verificável de que `criativoId → url` nunca
+     * muda. `criativoId` segue sendo a identidade de domínio, usada no
+     * proof-of-play. Nulo em playlist V1 — ver `cache.ChaveCache`.
+     */
+    val contentHash: String? = null,
 )
 
 /**

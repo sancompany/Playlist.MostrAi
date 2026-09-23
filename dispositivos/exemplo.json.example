@@ -3,5 +3,9 @@
   "chaveAparelho": "chave-revogavel-emitida-no-admin",
   "baseUrl": "https://exemplo.com/api",
   "pin": "4821",
-  "margemVmin": 2.5
+  "margemVminTopo": 2.5,
+  "margemVminBase": 2.5,
+  "margemVminEsquerda": 2.5,
+  "margemVminDireita": 2.5,
+  "rotacaoTela": 0
 }

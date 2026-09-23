@@ -98,16 +98,20 @@ O que já está no APK:
   envio quando ganha `terminadoEm` no `STATE_ENDED`, e só sai da fila nos três
   casos fechados na seção 6.5 — nunca por timeout, `5xx` ou reinício do app.
   Envio em lote de até 50, backoff exponencial com jitter (5s → 30min, teto,
-  nunca desistência), fila limitada a 5.000 linhas com contador de perda
-  visível no painel.
+  nunca desistência), fila limitada a **50.000 linhas** — ~5,8 dias de tela
+  24h com criativos de 10s — com contador de perda visível no painel. No
+  estouro, descarta por valor (órfão → quarentena → comprovante), nunca
+  jogando fora prova faturável antes de linha inútil.
 - Painel de manutenção agora mostra o modo de contrato, a origem da última
   playlist (servidor/cache/institucional), erro do aparelho, e o estado da
   fila de proof-of-play (pendentes e perdas).
 **Fatia 3 — cache de mídia**
 
-- Cache local por `criativoId` (bloco 4 do MVP): a imutabilidade
-  `criativoId → url` do contrato novo permite usar o `criativoId` como chave
-  sem revalidar nada; em modo degradado cai para hash da própria URL.
+- Cache **endereçado por conteúdo**: quando a playlist traz `contentHash`
+  (SHA-256 do arquivo), ele é a identidade física e o download é verificado
+  antes de virar cache. Sem ele, cai para `criativoId` (contrato V1) e depois
+  para hash da URL. Hash que não confere faz o item ser **pulado**, nunca
+  tocado da URL remota — seria servir exatamente o arquivo rejeitado.
 - Pré-aquecimento sequencial a cada playlist nova — baixa o que falta em
   segundo plano, sem atrasar a reprodução em andamento nem saturar a
   internet de um comércio pequeno.
@@ -118,14 +122,29 @@ O que já está no APK:
 
 **Testes e revisão**
 
-39 testes automatizados (`./gradlew testDebugUnitTest`), cobrindo as duas
-formas do contrato, a regra de reposicionamento, o cache e — com
-Robolectric, SQLite real, sem emulador — o ciclo de vida completo da fila
-de proof-of-play. CI (`.github/workflows/ci.yml`) roda build + testes a
-cada push e pull request.
+209 testes automatizados (`./gradlew testDebugUnitTest`), cobrindo as duas
+formas do contrato, a regra de reposicionamento, o cache com verificação de
+hash, o horário operacional, a classificação de erro HTTP, a rotação de
+credencial e — com Robolectric, SQLite real, sem emulador — o ciclo de vida
+completo da fila de proof-of-play, incluindo migração de esquema. CI
+(`.github/workflows/ci.yml`) roda build + testes a cada push e pull request.
 
-Todos os blocos do MVP (seção 3 do escopo original) estão implementados. O
-que falta para o projeto avançar na esteira san-co é a verificação em
+**Fatia 4 — frota (contrato V2)**
+
+- `POST /hello` no boot com os dados técnicos que não mudam; heartbeat V2
+  com estado, fila, erro durável e desvio de relógio; `GET /config`
+  versionado com aplicação atômica e último-válido preservado.
+- Horário operacional local (24h / segue o ponto / personalizado), com
+  feriados e fuso. Fora do horário nenhum proof-of-play nasce.
+- Atualização remota fase 1: manifesto, download, SHA-256 conferido,
+  confirmação pedida só entre itens.
+- Kiosk: elegível a launcher padrão, watchdog com backoff, Device Owner
+  detectado e usado se houver — nunca exigido.
+- **Tudo degrada sozinho:** `404` numa rota V2 é lido como backend V1. O
+  player roda contra o backend de hoje sem nenhuma mudança do lado de lá.
+  Contrato exato em `docs/player-v2-contract.md`.
+
+O que falta para o projeto avançar na esteira san-co é a verificação em
 hardware real (`docs/pendencias.md`, "Só o dono faz") — esta sessão não tem
 acesso a um aparelho Android TV nem a um emulador viável.
 
@@ -159,7 +178,14 @@ echo "sdk.dir=/caminho/para/android-sdk" > local.properties
 O APK sai em `app/build/outputs/apk/debug/app-debug.apk`, assinado com a chave
 de debug — suficiente para sideload de teste.
 
-## Gerar um APK já configurado por tela
+## Gerar um APK já configurado por tela (depreciado)
+
+> **Depreciado desde 23/09/2026.** O caminho oficial é **um APK universal**
+> configurado por `mostrai-config.json` no pendrive (seção seguinte). Um APK
+> por tela dobra a manutenção — toda atualização precisaria ser recompilada
+> N vezes — e é incompatível com a atualização remota, que distribui um
+> binário só para a frota inteira. Continua funcionando para não quebrar
+> APKs já gerados; será removido quando não houver nenhum em campo.
 
 Quando você já sabe, antes de gravar o pendrive, qual `dispositivoId` e
 `chaveAparelho` vão para qual TV, não precisa de `adb` depois de instalar: dá
@@ -179,9 +205,25 @@ primeiro boot.
      "chaveAparelho": "chave-revogavel-emitida-no-admin",
      "baseUrl": "https://exemplo.com/api",
      "pin": "4821",
-     "margemVmin": 2.5
+     "margemVminTopo": 2.5,
+     "margemVminBase": 2.5,
+     "margemVminEsquerda": 2.5,
+     "margemVminDireita": 2.5,
+     "rotacaoTela": 0
    }
    ```
+
+   `rotacaoTela` compensa uma TV montada fisicamente de lado (comum em
+   sinalização digital em espaço estreito) — só `0`, `90`, `180` ou `270`;
+   qualquer outro valor é ignorado e vira `0`. Se a tela está montada
+   virada, é preciso testar no aparelho real qual dos dois sentidos (`90`
+   ou `270`) corrige a imagem — não dá pra saber isso só olhando o
+   cadastro.
+
+   `margemVmin*` são 4 valores independentes, um por lado — a folga de
+   overscan varia por lado, não só por tela. Sempre em termos visuais (o
+   que você vê olhando pra tela já montada): "topo" é sempre o topo como
+   você enxerga, mesmo numa tela com `rotacaoTela` diferente de `0`.
 
 2. Compile passando o arquivo:
 
@@ -202,7 +244,7 @@ primeiro boot.
    sobe funcionando.
 
 Sem `-PconfigDispositivo`, o build volta a ser exatamente o de sempre (os
-cinco campos ficam vazios, nada muda) — é seguro rodar `./gradlew
+nove campos ficam vazios, nada muda) — é seguro rodar `./gradlew
 assembleDebug` normalmente a qualquer momento.
 
 **O que isso não resolve**: o provisionamento verdadeiramente "sem
@@ -211,11 +253,41 @@ este caminho pede que alguém decida, num computador, qual tela é qual antes
 de gravar o pendrive. Para quem já opera assim (uma pessoa prepara os APKs,
 outra só troca o pendrive na loja), resolve completamente.
 
-## Configurar por um arquivo no pendrive (sem recompilar)
+## Configurar por um arquivo no pendrive (caminho oficial)
 
-Alternativa ao build por tela acima: **um único APK genérico** para todas
-as telas, e um arquivo `mostrai-config.json` no mesmo pendrive usado para
-instalar. No primeiro boot, se o aparelho ainda não estiver provisionado, o
+**Um único APK genérico** para todas as telas, e um arquivo
+`mostrai-config.json` no mesmo pendrive usado para instalar.
+
+### Formato preferencial: token de uso único
+
+Quando o backend expuser `POST /player/provisionar`
+(`docs/player-v2-contract.md`, seção 2), o arquivo passa a ser só isto:
+
+```json
+{
+  "baseUrl": "https://exemplo.com/api",
+  "tokenProvisionamento": "tok_a1b2c3d4",
+  "rotacaoTela": 90
+}
+```
+
+O player troca o token por `dispositivoId` + `chaveAparelho` no primeiro
+boot com rede, e apaga o token. Um pendrive perdido expõe um token que o
+servidor já queimou, não a credencial permanente de uma tela em operação — e
+o mesmo pendrive não provisiona duas TVs por engano.
+
+Se o endpoint ainda não existir, o token fica guardado e o player tenta de
+novo a cada heartbeat; nada se perde. Se o token não servir (expirou, ou foi
+recusado), gere outro no admin, grave num pendrive e reinicie a TV com ele
+plugado: um token **diferente** do gravado, ou credencial completa no
+formato legado, substitui o anterior. O mesmo token não é reaplicado. `rotacaoTela` fica no arquivo de
+propósito: é exatamente o que costuma estar errado na primeira instalação, e
+precisa ser corrigível sem internet.
+
+### Formato legado: credencial direta
+
+Continua suportado sem nenhuma mudança no backend — é o caminho para lançar
+o primeiro ponto antes do endpoint de provisionamento existir. No primeiro boot, se o aparelho ainda não estiver provisionado, o
 app procura esse arquivo em qualquer volume montado (o próprio pendrive,
 inclusive) e se configura sozinho. Você edita esse JSON toda vez que muda a
 tela — sem recompilar nada.
@@ -229,7 +301,11 @@ tela — sem recompilar nada.
      "chaveAparelho": "chave-revogavel-emitida-no-admin",
      "baseUrl": "https://exemplo.com/api",
      "pin": "4821",
-     "margemVmin": 2.5
+     "margemVminTopo": 2.5,
+     "margemVminBase": 2.5,
+     "margemVminEsquerda": 2.5,
+     "margemVminDireita": 2.5,
+     "rotacaoTela": 0
    }
    ```
 
@@ -260,13 +336,37 @@ testar rápido sem preparar um arquivo por tela):
 ```sh
 adb install -r app-debug.apk
 
-# PROVISÓRIO: só para bancada. Sempre sobrescreve, mesmo por cima de uma
-# configuração já embutida no build — é o caminho de depuração.
+# PROVISÓRIO: só para bancada. No APK de depuração sempre sobrescreve,
+# mesmo por cima de uma configuração já embutida no build. No APK de
+# release só vale para aparelho AINDA NÃO provisionado: a PlayerActivity é
+# aberta por qualquer app da TV, e aceitar extras numa tela em operação
+# deixaria outro app trocar o servidor e levar a chave do aparelho.
 adb shell am start -n br.com.mostrai.player/.PlayerActivity \
   -e dispositivoId "<id-da-tela>" \
   -e chaveAparelho "<chave-revogavel>" \
   -e baseUrl "https://<servidor>" \
-  -e pin "<pin>"
+  -e pin "<pin>" \
+  --ef margemVminTopo <margem-em-vmin> \
+  --ef margemVminBase <margem-em-vmin> \
+  --ef margemVminEsquerda <margem-em-vmin> \
+  --ef margemVminDireita <margem-em-vmin> \
+  --ei rotacaoTela <0|90|180|270>
+```
+
+## Assinar o release
+
+Antes da primeira instalação definitiva, gere a chave de assinatura e crie
+`keystore.properties` na raiz — passo a passo em `RUNBOOK.md`, "Chave de
+assinatura". Sem esse arquivo o build de release sai sem assinatura de
+produção, de propósito.
+
+Isso não é detalhe de empacotamento: toda atualização remota precisa ser
+assinada com a mesma chave do APK instalado, e o Android recusa a troca. Uma
+TV instalada com assinatura de depuração nunca poderá ser atualizada
+remotamente.
+
+```sh
+./gradlew assembleRelease
 ```
 
 ## Contrato com o backend

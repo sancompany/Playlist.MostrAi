@@ -26,30 +26,64 @@ object ConfigExterna {
     data class Dados(
         val dispositivoId: String? = null,
         val chaveAparelho: String? = null,
+        /**
+         * Formato preferencial: em vez do segredo definitivo, um token que o
+         * servidor queima na primeira troca. Um pendrive esquecido numa loja
+         * ou perdido no caminho expõe um token já inutilizado, não a
+         * credencial permanente de uma tela em operação — e o mesmo pendrive
+         * não provisiona duas TVs por engano.
+         */
+        val tokenProvisionamento: String? = null,
         val baseUrl: String? = null,
         val pin: String? = null,
-        val margemVmin: Float? = null,
+        val margemVminTopo: Float? = null,
+        val margemVminBase: Float? = null,
+        val margemVminEsquerda: Float? = null,
+        val margemVminDireita: Float? = null,
+        val rotacaoTela: Int? = null,
     )
 
     /** Função pura — testável sem Android, sem arquivo, sem permissão. */
     fun parse(textoJson: String): Dados? = runCatching {
         val json = JSONObject(textoJson)
         Dados(
-            dispositivoId = json.optString("dispositivoId").ifBlank { null },
-            chaveAparelho = json.optString("chaveAparelho").ifBlank { null },
-            baseUrl = json.optString("baseUrl").ifBlank { null },
-            pin = json.optString("pin").ifBlank { null },
-            margemVmin = if (json.has("margemVmin") && !json.isNull("margemVmin")) {
-                // optDouble devolve NaN se o valor não for numérico (ex.: uma
-                // string) — nunca propaga isso pra frente: NaN sobrevive a
-                // coerceIn() sem ser pego (NaN < x e NaN > x são sempre
-                // falsos) e vira padding silenciosamente zerado lá na frente.
-                json.optDouble("margemVmin").toFloat().takeUnless { it.isNaN() }
+            dispositivoId = json.texto("dispositivoId"),
+            chaveAparelho = json.texto("chaveAparelho"),
+            tokenProvisionamento = json.texto("tokenProvisionamento"),
+            baseUrl = json.texto("baseUrl"),
+            pin = json.texto("pin"),
+            margemVminTopo = json.margemVmin("margemVminTopo"),
+            margemVminBase = json.margemVmin("margemVminBase"),
+            margemVminEsquerda = json.margemVmin("margemVminEsquerda"),
+            margemVminDireita = json.margemVmin("margemVminDireita"),
+            // Só 0/90/180/270 — qualquer outra coisa (string, número fora do
+            // conjunto) vira null aqui, e ConfigAparelho.rotacaoTela também
+            // barra de novo na escrita. Duas guardas, mesma regra.
+            rotacaoTela = if (json.has("rotacaoTela") && !json.isNull("rotacaoTela")) {
+                json.optInt("rotacaoTela", -1).takeIf { it in ConfigAparelho.ROTACOES_VALIDAS }
             } else {
                 null
             },
         )
     }.getOrNull()
+
+    /**
+     * Sem espaço nem quebra de linha nas pontas (BUG-038): valor copiado e
+     * colado no JSON virava URL inválida ou header de credencial errado — a
+     * TV parecia provisionada e nunca autenticava.
+     */
+    private fun JSONObject.texto(chave: String): String? = optString(chave).trim().ifBlank { null }
+
+    private fun JSONObject.margemVmin(chave: String): Float? =
+        if (has(chave) && !isNull(chave)) {
+            // optDouble devolve NaN se o valor não for numérico (ex.: uma
+            // string) — nunca propaga isso pra frente: NaN sobrevive a
+            // coerceIn() sem ser pego (NaN < x e NaN > x são sempre
+            // falsos) e vira padding silenciosamente zerado lá na frente.
+            optDouble(chave).toFloat().takeUnless { it.isNaN() }
+        } else {
+            null
+        }
 
     fun procurarEAplicar(context: Context, config: ConfigAparelho) {
         if (config.provisionado) return
@@ -69,6 +103,18 @@ object ConfigExterna {
         val dados = parse(texto)
         if (dados == null) {
             Log.w(TAG, "${arquivo.absolutePath} encontrado, mas não é JSON válido")
+            return
+        }
+
+        // O mesmo token que já está gravado e ainda não virou credencial:
+        // reaplicar não adianta. Mas um token DIFERENTE, ou credencial
+        // completa, é o técnico trazendo um pendrive novo porque o anterior
+        // não serviu (expirou, ou foi queimado sem a resposta chegar). Antes,
+        // qualquer token gravado fazia o pendrive ser ignorado para sempre, e
+        // a TV só voltava limpando os dados do app (BUG-033).
+        val tokenGravado = config.tokenProvisionamento
+        if (!tokenGravado.isNullOrBlank() && dados.tokenProvisionamento == tokenGravado && dados.chaveAparelho == null) {
+            Log.i(TAG, "mesmo token do pendrive já gravado; aguardando a troca")
             return
         }
 
@@ -104,9 +150,16 @@ object ConfigExterna {
     private fun aplicar(dados: Dados, config: ConfigAparelho) {
         dados.dispositivoId?.let { config.dispositivoId = it }
         dados.chaveAparelho?.let { config.chaveAparelho = it }
+        // Guardado, não trocado aqui: a troca por credencial exige rede, e
+        // este método roda em onCreate. Quem resolve é SincronizacaoV2.
+        dados.tokenProvisionamento?.let { config.tokenProvisionamento = it }
         dados.baseUrl?.let { config.baseUrl = it }
         dados.pin?.let { config.pinPainel = it }
-        dados.margemVmin?.let { config.margemVmin = it }
+        dados.margemVminTopo?.let { config.margemVminTopo = it }
+        dados.margemVminBase?.let { config.margemVminBase = it }
+        dados.margemVminEsquerda?.let { config.margemVminEsquerda = it }
+        dados.margemVminDireita?.let { config.margemVminDireita = it }
+        dados.rotacaoTela?.let { config.rotacaoTela = it }
     }
 
     private const val TAG = "ConfigExterna"
