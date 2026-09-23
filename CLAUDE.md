@@ -175,6 +175,17 @@ Fechadas:
   em `docs/player-v2-contract.md` e `docs/player-v2-mostrai-checklist.md`.
   versionCode 1 → 2, versionName 1.0.0, assinatura de release via
   `keystore.properties` fora do Git.
+- **Auditoria de confiabilidade iterativa e adversarial (23/09/2026)** —
+  pedida pelo dono (com o GPT-5.6 revisando). Ciclos 0–19 (Auditoria A) e
+  rodadas B–J até **duas rodadas completas consecutivas sem bug novo
+  reproduzível** (I e J). 38 bugs (10 HIGH, 17 MEDIUM, 11 LOW) e 8 itens de
+  robustez corrigidos, cada um com teste que falhava antes; 3 dos bugs eram
+  regressões das próprias correções, achados nas rodadas seguintes. Testes
+  209 → 283; mutação de 27 guardas críticas, todas mortas pela suíte. Contrato
+  e checklist do backend alinhados ao código. Relatório completo, riscos não
+  resolvíveis sem TV e checklist físico em
+  `docs/auditoria-confiabilidade-2026-09-23.md`. **Não** declara o player
+  sem defeitos nem o hardware validado.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **`margemVmin` por lado, fechado com o backend (22/09/2026, sessão do
   backend `sancompany/mostrai`)** — o pedido pendente em `PARA-O-BACKEND.md`

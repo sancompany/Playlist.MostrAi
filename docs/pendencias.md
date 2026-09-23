@@ -2,6 +2,16 @@
 
 ## Só o dono faz
 
+- **Rodar o checklist físico da auditoria de confiabilidade** —
+  `docs/auditoria-confiabilidade-2026-09-23.md`, seção 8 (13 itens). A
+  auditoria só verificou o que roda sem a TV; abertura, rotação no primeiro
+  boot, relógio após falta de energia, `BOOT_COUNT`, watchdog, OTA e teclas
+  do controle dependem do aparelho.
+- **Decidir os riscos de produto da auditoria** (mesmo documento, seção 7):
+  duração mínima de exibição para contar comprovante (RSK-008), primeira
+  exibição esperando download (RSK-001), prazo de segurança para o vídeo de
+  abertura (RSK-005).
+
 - **Verificar o app rodando em hardware real.** Esta sessão não tem acesso a
   um aparelho Android TV nem a um emulador viável (ambiente sem `/dev/kvm`,
   sem aceleração de virtualização). Instalar o APK (`README.md`, "Instalar e
