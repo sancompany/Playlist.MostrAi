@@ -322,4 +322,26 @@ class SincronizacaoV2Test {
         assertFalse(sync.provisionarSeNecessario())
         assertNotNull(config.tokenProvisionamento)
     }
+
+    @Test
+    fun `atualizacao retirada pelo servidor nao e reoferecida depois da espera`() {
+        // Auditoria B: INSTALL_REQUESTED sem resposta volta a ser oferecido
+        // após 6h (BUG-015). Se nesse meio-tempo o backend retirou a versão
+        // (release quebrada), o heartbeat sem `update` precisa limpar antes
+        // que a tela ofereça de novo o APK retirado. Depende da ordem
+        // reavaliarAdiamento → considerar em aplicarResposta.
+        contexto.getSharedPreferences(Atualizador.ARQUIVO_PREFS, Context.MODE_PRIVATE).edit()
+            .putString("estado", br.com.mostrai.player.update.EstadoUpdate.INSTALL_REQUESTED.name)
+            .putInt("build_alvo", 99)
+            .putLong("proxima_tentativa_ms", 1L)
+            .commit()
+        java.io.File(contexto.cacheDir, "update").apply { mkdirs() }.resolve("99.apk").writeBytes(byteArrayOf(1))
+        api.respostaHeartbeat = ResultadoHttp.Ok(HeartbeatJson.Resposta(update = null))
+
+        sync.heartbeat(corpo)
+
+        val atualizador = Atualizador(contexto, diario)
+        assertFalse(atualizador.podePedirInstalacao())
+        assertEquals(br.com.mostrai.player.update.EstadoUpdate.NONE, atualizador.estado)
+    }
 }
