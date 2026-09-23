@@ -1,0 +1,116 @@
+package br.com.mostrai.player.ciclo
+
+import android.content.Context
+import android.os.SystemClock
+import br.com.mostrai.player.PlayerActivity
+import br.com.mostrai.player.cache.ServidorDeTeste
+import br.com.mostrai.player.kiosk.Watchdog
+import java.util.concurrent.CountDownLatch
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.LooperMode
+
+/** Ciclo 1 — lifecycle do orquestrador, contra servidor e SQLite de verdade. */
+@RunWith(RobolectricTestRunner::class)
+@LooperMode(LooperMode.Mode.PAUSED)
+class CicloDeVidaTest {
+
+    private lateinit var h: Harness
+
+    @Before
+    fun preparar() {
+        h = Harness()
+    }
+
+    @After
+    fun encerrar() = h.encerrar()
+
+    private fun geracao(atividade: PlayerActivity): Int {
+        val campo = PlayerActivity::class.java.getDeclaredField("geracaoReproducao")
+        campo.isAccessible = true
+        return campo.getInt(atividade)
+    }
+
+    private fun vivoEm(): Long =
+        h.contexto.getSharedPreferences("mostrai_watchdog", Context.MODE_PRIVATE).getLong("vivo_em", 0L)
+
+    // ------------------------------------------------------------ BUG-003
+
+    @Test
+    fun `player rodando normalmente nao e dado como morto pelo watchdog`() {
+        // Em operação normal a Activity fica RESUMED por dias sem nenhum
+        // callback de lifecycle. Se o sinal de vida só for renovado em
+        // onStart/onResume, depois de 5 min o watchdog conclui que o player
+        // sumiu e o "reabre" — o que fecha o painel de manutenção de quem
+        // estiver nele e esconde o diálogo de instalação do OTA.
+        h.subir()
+
+        h.avancar(10 * 60_000L)
+
+        val decisao = Watchdog.decidir(vivoEm(), SystemClock.elapsedRealtime(), tentativas = 0)
+        assertFalse("watchdog reabriria um player saudável", decisao.abrirPlayer)
+    }
+
+    // ------------------------------------------------------------ BUG-001
+
+    @Test
+    fun `parar a activity com video resolvendo nao deixa linha orfa na fila`() {
+        h.provisionar()
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
+        val midia = CountDownLatch(1)
+        h.servidor.travas["/midia"] = midia
+        h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(corpo = "bytes".toByteArray())
+
+        val controle = h.subir()
+        // registrarInicio já gravou a linha; o download está preso.
+        h.esperar { h.orfaos() == 1 }
+
+        controle.pause().stop()
+        midia.countDown()
+        repeat(25) {
+            Thread.sleep(20)
+            h.idle()
+        }
+
+        assertEquals("exibição abandonada ficou órfã na fila", 0, h.orfaos())
+    }
+
+    // ------------------------------------------------------------ BUG-002
+
+    @Test
+    fun `voltar ao primeiro plano com busca em voo ainda reinicia a exibicao`() {
+        h.provisionar()
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
+        // Mídia presa: o item nunca chega ao ExoPlayer, o que isola o teste
+        // do comportamento de decoder (inexistente no Robolectric).
+        h.servidor.travas["/midia"] = CountDownLatch(1)
+
+        val controle = h.subir()
+        val atividade = controle.get()
+        h.esperar { geracao(atividade) >= 1 }
+
+        // Uma busca NÃO forçada fica em voo (o poll periódico de 15 min).
+        val playlist = CountDownLatch(1)
+        h.servidor.travas["/playlist"] = playlist
+        h.avancar(15 * 60_000L + 1_000L)
+        h.esperar { h.servidor.contar("/playlist") >= 2 }
+
+        // Sai e volta: onStart pede uma busca forçada enquanto a outra ainda
+        // não voltou.
+        controle.pause().stop()
+        controle.start().resume()
+        h.idle()
+        val depoisDeVoltar = geracao(atividade)
+
+        playlist.countDown()
+        h.esperar(timeoutMs = 5_000) { geracao(atividade) > depoisDeVoltar }
+
+        assertTrue(geracao(atividade) > depoisDeVoltar)
+    }
+}

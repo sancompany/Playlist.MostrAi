@@ -138,6 +138,15 @@ android {
         jvmTarget = "17"
     }
 
+    lint {
+        // Regra de política da Play Store. Este app é sideload e nunca vai à
+        // loja; targetSdk 26 é decisão deliberada (README, "Alvo"): subir
+        // traria restrições de background e foreground service que só
+        // atrapalham um player de quiosque. Desligar só esta regra mantém o
+        // lint útil como sinal para todo o resto.
+        disable += "ExpiredTargetSdkVersion"
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true

@@ -132,6 +132,27 @@ class PlayerActivity : AppCompatActivity() {
     private val buscandoPlaylist = AtomicBoolean(false)
 
     /**
+     * Pedido que chegou com uma busca já em voo. **Não pode ser descartado**
+     * (BUG-002): se o pedido era forçado — o `onStart` voltando do segundo
+     * plano — e a busca em voo não era, a resposta dela decide "mesma
+     * janela, mesmo item, não reinicia", e a tela fica sem nada tocando até a
+     * próxima virada de janela. Então ele é guardado e roda assim que a busca
+     * atual termina, preservando o "forçado" mais forte que chegou.
+     */
+    private var buscaPendente = false
+    private var buscaPendenteForcada = false
+
+    /**
+     * Verdadeiro entre `onStart` e `onStop`. Corrotinas que terminam depois de
+     * `onStop` (heartbeat, busca de playlist, download) não podem iniciar
+     * exibição: o player já foi liberado, e a linha de proof-of-play que
+     * nasceria ficaria órfã (BUG-001). Flag própria em vez do estado do
+     * `Lifecycle` porque a ordem de despacho daquele em relação ao callback
+     * varia entre versões do AndroidX.
+     */
+    private var iniciada = false
+
+    /**
      * Incrementada a cada chamada de [tocarItemAtual]. `mostrarVideo` guarda a
      * geração com que foi chamado e confere antes de aplicar o resultado —
      * sem isso, uma corrotina de um item anterior que ainda está resolvendo
@@ -169,6 +190,22 @@ class PlayerActivity : AppCompatActivity() {
         override fun run() {
             lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
             handler.postDelayed(this, INTERVALO_FLUSH_MS)
+        }
+    }
+
+    /**
+     * Renova o sinal de vida do watchdog enquanto a Activity está iniciada
+     * (BUG-003). Em operação normal a tela fica RESUMED por dias sem nenhum
+     * callback de lifecycle; renovar só em `onStart`/`onResume` fazia o
+     * watchdog concluir, 5 minutos depois do boot, que o player tinha sumido
+     * — e "reabrir" um player saudável fecha o painel de manutenção e esconde
+     * o diálogo de instalação do OTA. Roda no mesmo handler que `onStop`
+     * limpa, então para exatamente quando o player deixa de estar na frente.
+     */
+    private val renovarSinalDeVida = object : Runnable {
+        override fun run() {
+            Watchdog.registrarSinalDeVida(this@PlayerActivity)
+            handler.postDelayed(this, INTERVALO_SINAL_DE_VIDA_MS)
         }
     }
 
@@ -300,8 +337,10 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        iniciada = true
         Watchdog.registrarSinalDeVida(this)
         Watchdog.agendar(this)
+        handler.postDelayed(renovarSinalDeVida, INTERVALO_SINAL_DE_VIDA_MS)
         if (introJaTocou) iniciarCicloNormal() else tocarIntroducao()
     }
 
@@ -386,6 +425,11 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        iniciada = false
+        // Invalida qualquer mostrarVideo ainda resolvendo cache: ao voltar,
+        // ele confere a geração, vê que ficou para trás e libera a própria
+        // linha em vez de tentar tocar num player que já não existe.
+        geracaoReproducao++
         handler.removeCallbacksAndMessages(null)
         runCatching { conectividade().unregisterNetworkCallback(callbackConectividade) }
         // R5: a exibição em andamento morre aqui. Sem cancelar o registro, a
@@ -414,7 +458,11 @@ class PlayerActivity : AppCompatActivity() {
      * frio/janela nova, modo degradado, reancoragem por `itemProgramacaoId`).
      */
     private fun atualizarPlaylist(forcarReposicionamento: Boolean) {
-        if (!buscandoPlaylist.compareAndSet(false, true)) return
+        if (!buscandoPlaylist.compareAndSet(false, true)) {
+            buscaPendente = true
+            buscaPendenteForcada = buscaPendenteForcada || forcarReposicionamento
+            return
+        }
         lifecycleScope.launch {
             try {
                 val resultado = withContext(Dispatchers.IO) { repositorio.buscar() }
@@ -441,6 +489,14 @@ class PlayerActivity : AppCompatActivity() {
                 if (decisao.reiniciarAgora) reiniciarItemAgora()
             } finally {
                 buscandoPlaylist.set(false)
+                // Uma rodada só por pedido acumulado: o que chegou durante a
+                // busca roda uma vez, e só se alguém de fato pediu — sem laço.
+                if (buscaPendente) {
+                    val forcada = buscaPendenteForcada
+                    buscaPendente = false
+                    buscaPendenteForcada = false
+                    atualizarPlaylist(forcada)
+                }
             }
         }
     }
@@ -595,6 +651,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun tocarItemAtual() {
         handler.removeCallbacks(avancarPorTempo)
+        if (!iniciada) return
         if (foraDoHorario()) return
 
         val minhaGeracao = ++geracaoReproducao
@@ -646,6 +703,13 @@ class PlayerActivity : AppCompatActivity() {
                 return@launch
             }
 
+            // Sem player não há exibição: a linha que acabou de nascer precisa
+            // ser liberada aqui, antes de virar a exibição "em andamento".
+            val exo = player ?: run {
+                if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
+                return@launch
+            }
+
             execucaoAtualId = id
             criativoAtualId = item.criativoId
             estadoAtual = EstadoPlayer.PLAYING
@@ -653,7 +717,6 @@ class PlayerActivity : AppCompatActivity() {
             institucional.visibility = View.GONE
             playerView.visibility = View.VISIBLE
 
-            val exo = player ?: return@launch
             val uri = if (arquivoLocal != null) Uri.fromFile(arquivoLocal) else Uri.parse(item.url!!)
             exo.setMediaItem(MediaItem.fromUri(uri))
             exo.prepare()
@@ -868,5 +931,8 @@ class PlayerActivity : AppCompatActivity() {
         const val INTERVALO_HEARTBEAT_MS = 5 * 60_000L
         const val INTERVALO_FLUSH_MS = 60_000L
         const val INTERVALO_HORARIO_MS = 60_000L
+
+        /** Bem abaixo de [Watchdog.TOLERANCIA_MS], com folga para atraso do looper. */
+        const val INTERVALO_SINAL_DE_VIDA_MS = 60_000L
     }
 }
