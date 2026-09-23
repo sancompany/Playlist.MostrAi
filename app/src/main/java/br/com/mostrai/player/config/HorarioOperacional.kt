@@ -22,11 +22,14 @@ data class FaixaHoraria(val inicioMinutos: Int, val fimMinutos: Int) {
     companion object {
         /** `"08:30"` → 510. Devolve null para qualquer coisa que não seja HH:MM válido. */
         fun deTexto(texto: String): Int? {
+            // HH:MM, ou HH:MM:SS com os segundos ignorados — é assim que uma
+            // coluna `time` do Postgres sai em JSON (BUG-021).
             val partes = texto.trim().split(":")
-            if (partes.size != 2) return null
+            if (partes.size !in 2..3) return null
             val hora = partes[0].toIntOrNull() ?: return null
             val minuto = partes[1].toIntOrNull() ?: return null
-            if (hora !in 0..24 || minuto !in 0..59) return null
+            val segundo = partes.getOrNull(2)?.let { it.toIntOrNull() ?: return null } ?: 0
+            if (hora !in 0..24 || minuto !in 0..59 || segundo !in 0..59) return null
             return hora * 60 + minuto
         }
     }

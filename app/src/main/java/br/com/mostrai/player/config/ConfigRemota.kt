@@ -119,6 +119,11 @@ object ConfigRemotaJson {
             val fim = faixa.textoOuNulo("fim")?.let(FaixaHoraria::deTexto) ?: continue
             lista += FaixaHoraria(inicio, fim)
         }
+        // Havia faixas, e nenhuma pôde ser lida: é dado ruim, não "fechado".
+        // Lista vazia apagaria a tela o dia inteiro em toda tela com esta
+        // config; o contrato (§7) manda acender quando o horário não é
+        // utilizável (BUG-021). Fechado continua sendo a lista vazia explícita.
+        if (lista.isEmpty() && array.length() > 0) return listOf(FaixaHoraria(0, 24 * 60))
         return lista
     }
 
