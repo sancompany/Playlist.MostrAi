@@ -162,6 +162,9 @@ class PlayerActivity : AppCompatActivity() {
      */
     private var geracaoReproducao = 0
 
+    /** Itens seguidos que não conseguiram tocar — zera a cada exibição que termina. */
+    private var falhasSeguidas = 0
+
     /** Origem da última busca de playlist — decide se a institucional mostra erro. */
     private var ultimaOrigemFetch: PlaylistRepositorio.Origem = PlaylistRepositorio.Origem.INSTITUCIONAL
 
@@ -636,7 +639,7 @@ class PlayerActivity : AppCompatActivity() {
                     // Falha de reprodução NÃO é exibição: a linha nunca teve
                     // terminadoEm, não é uma alegação de exibição completa.
                     if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
-                    avancar()
+                    avancarAposFalha()
                 }
             })
             playerView.player = exo
@@ -700,7 +703,7 @@ class PlayerActivity : AppCompatActivity() {
                 if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
                 estadoAtual = EstadoPlayer.DOWNLOAD_ERROR
                 diario.registrar(DiarioBordo.Codigo.MIDIA_HASH_DIVERGENTE, item.criativoId)
-                avancar()
+                avancarAposFalha()
                 return@launch
             }
 
@@ -726,6 +729,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun mostrarInstitucional(item: ItemPlaylist) {
+        falhasSeguidas = 0
         mostrarInstitucionalSimples(estadoInstitucional())
         if (estadoAtual != EstadoPlayer.PLAYBACK_ERROR && estadoAtual != EstadoPlayer.DOWNLOAD_ERROR) {
             estadoAtual = if (config.provisionado) EstadoPlayer.IDLE else EstadoPlayer.NOT_PROVISIONED
@@ -764,6 +768,7 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Chamado apenas no STATE_ENDED: é aqui que a exibição vira comprovante. */
     private fun concluirExibicao() {
+        falhasSeguidas = 0
         val id = execucaoAtualId
         execucaoAtualId = null
         if (id != null) {
@@ -777,6 +782,28 @@ class PlayerActivity : AppCompatActivity() {
         // aparecer sem cortar o anúncio de ninguém.
         if (tentarInstalarAtualizacao()) return
         avancar()
+    }
+
+    /**
+     * Pula o item que não tocou — mas não em laço (BUG-005). Falha de
+     * reprodução e hash divergente em silêncio acontecem na hora; com a
+     * playlist inteira nesse estado, cada falha chamava avancar() direto e a
+     * TV girava o laço sem parar: CPU cheia, uma linha criada e apagada na
+     * fila e um evento no diário por volta (o anel de 200 era tomado inteiro
+     * pela mesma falha em menos de um segundo). Depois de uma volta completa
+     * sem nenhuma exibição, mostra a tela institucional e espera antes de
+     * tentar de novo.
+     */
+    private fun avancarAposFalha() {
+        falhasSeguidas++
+        if (falhasSeguidas < playlist.itens.size) {
+            avancar()
+            return
+        }
+        falhasSeguidas = 0
+        handler.removeCallbacks(avancarPorTempo)
+        mostrarInstitucionalSimples(estadoInstitucional())
+        handler.postDelayed(avancarPorTempo, ESPERA_APOS_VOLTA_SEM_EXIBICAO_MS)
     }
 
     private fun avancar() {
@@ -935,5 +962,8 @@ class PlayerActivity : AppCompatActivity() {
 
         /** Bem abaixo de [Watchdog.TOLERANCIA_MS], com folga para atraso do looper. */
         const val INTERVALO_SINAL_DE_VIDA_MS = 60_000L
+
+        /** Pausa depois de uma volta inteira da playlist sem nenhuma exibição. */
+        const val ESPERA_APOS_VOLTA_SEM_EXIBICAO_MS = 10_000L
     }
 }
