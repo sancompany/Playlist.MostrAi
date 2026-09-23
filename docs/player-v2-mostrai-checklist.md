@@ -47,6 +47,12 @@ Corpo vazio (player V1) continua válido: atualize só `last_seen_at`.
 `erro: null` é **informação**, não ausência — significa "o player diz que
 está sem erro". Limpe `last_error_*` quando vier `null`.
 
+Dois limites do lado do player (contrato §4.1): o erro é limpo quando a
+playlist volta a ser buscada com sucesso — inclusive logo no boot — e crash
+do app não é registrado. Um erro pontual pode aparecer só por alguns
+minutos; se quiser histórico, **guarde** os `last_error_*` recebidos em vez
+de só sobrescrever.
+
 ### Estados derivados
 
 Ver seção 10 do contrato. Tolerância sugerida para "Sem sinal": 3 ciclos
@@ -101,11 +107,16 @@ evoluir a config sem coordenar release do player.
 | `timezone` | IANA, ex. `America/Sao_Paulo` |
 | `schedule` | jsonb, faixas por dia da semana |
 | `holidays` | jsonb, data → faixas (lista vazia = fechado) |
-| `min_build` | `versionCode` mínimo |
+| `min_build` | `versionCode` mínimo — o player lê, mas hoje **não age** sobre ele |
 | `admin_pin` | 4 dígitos |
 
 `FOLLOW_POINT` deve resolver as faixas do ponto no servidor e entregá-las
 já materializadas — o player não conhece o conceito de "ponto".
+
+Formato das faixas (contrato §7): `HH:MM` ou `HH:MM:SS`. Uma faixa que cruza
+a meia-noite pertence ao dia em que **começa** (`"sex": 22:00–02:00` vale até
+sábado 02:00). Para fechar um dia, mande a lista vazia explícita; faixa que
+o player não consegue ler deixa o dia **aceso**.
 
 ### Onde ficam as margens
 
@@ -139,6 +150,9 @@ Campo opcional por item: SHA-256 do arquivo, hexadecimal, 64 caracteres.
 - Calcular no upload do criativo e persistir junto.
 - Entregar em `GET /playlist/:dispositivoId`.
 - Player sem o campo continua no comportamento antigo.
+- Servir a mídia com `Content-Type` de mídia e em `https` direto: resposta
+  textual (HTML/JSON) nunca vira cache, e redirecionamento `http → https` não
+  é seguido pelo player.
 
 **O que isso resolve:** hoje o cache usa `criativoId` como identidade física e
 depende da promessa de que `criativoId → url` é imutável. Se a promessa for
@@ -179,6 +193,11 @@ em operação — e o mesmo pendrive não provisiona duas TVs por engano.
 
 O formato legado continua suportado pelo player; não há pressa.
 
+**Pedido:** aceite o mesmo token de novo por alguns minutos depois da troca,
+devolvendo as mesmas credenciais. Se a resposta se perder na rede depois de
+o servidor queimar o token, o aparelho não tem outro jeito de se recuperar
+sem visita.
+
 ---
 
 ## 7. Rotação de credencial
@@ -188,8 +207,10 @@ O formato legado continua suportado pelo player; não há pressa.
 - Aposentar a antiga no primeiro uso confirmado da nova.
 - Rejeitar credencial vazia explicitamente.
 
-O player só promove a chave nova depois de uma resposta bem-sucedida com
-ela; em `401` volta para a antiga. Sem a janela de sobreposição do lado do
+O player só promove a chave nova depois de uma resposta bem-sucedida de uma
+requisição **que levou** a chave nova; em `401` dessa requisição volta para a
+antiga. Respostas de requisições que saíram com a chave antiga não decidem
+nada. Sem a janela de sobreposição do lado do
 servidor, uma tela que perca a rede no meio da troca fica sem credencial.
 
 | Coluna | Observação |
@@ -219,6 +240,12 @@ valor. O backend pode migrar quando quiser.
 
 Admin precisa mostrar `update_state` por tela (vem no heartbeat) e permitir
 segurar/liberar uma versão.
+
+Comportamento do player a considerar na UI: um build cujo download falhou
+fica `FAILED` e só é tentado de novo depois de 6h (publicar um build novo
+passa direto); a janela após o operador cancelar vem de
+`update.horasEntreTentativas` na config; um diálogo sem resposta é coberto
+pelo player depois de ~5 min e reoferecido depois.
 
 **Limite do Android:** sem Device Owner a instalação sempre pede confirmação
 no controle. O backend não muda isso; o que muda é que ninguém precisa mais

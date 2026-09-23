@@ -39,12 +39,18 @@ não há interação nenhuma prevista para o espectador.
 4. PIN errado → mensagem de erro, campo limpo, tenta de novo.
 5. `VOLTAR` → fecha o painel, volta à reprodução normal sem interromper o
    vídeo em andamento (o player continua rodando por trás).
+6. Sem nenhuma tecla por 3 minutos, o painel fecha sozinho — o player segue
+   contando exibição por trás dele, então um painel esquecido aberto não
+   pode cobrir a tela por dias.
+7. Na tela do player (fora do painel), `VOLTAR` não faz nada: um toque
+   acidental no controle da loja não interrompe o anúncio. Para sair do app,
+   use as teclas HOME ou de configurações do controle.
 
 ## 3. Telas
 
 | Tela | Quem acessa | O que mostra | O que dá pra fazer | Para onde leva |
 |---|---|---|---|---|
-| Player (tela cheia) | Espectador (passivo) | Vídeo do anunciante em laço, ou peça institucional desenhada no aparelho | Nada (sem interação prevista) | Painel, via gesto |
+| Player (tela cheia) | Espectador (passivo) | Vídeo do anunciante em laço, ou peça institucional desenhada no aparelho (inclusive quando a playlist vem vazia) | Nada (sem interação prevista; `VOLTAR` é ignorado) | Painel, via gesto |
 | Painel — PIN | Operador | Teclado numérico 0–9, máscara do PIN digitado | Digitar PIN | Painel — informações (PIN certo) ou continua aqui (PIN errado) |
 | Painel — informações | Operador | Tela, chave (truncada), servidor, provisionado, margem, atraso da virada, modo de contrato, origem da playlist, erro do aparelho, fila de proof-of-play | Ler (somente leitura na v1) | Player, via `VOLTAR` |
 
