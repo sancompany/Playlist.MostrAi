@@ -91,4 +91,25 @@ class ReproducaoTest {
         assertTrue("tela ficou em ${tela.estado}", tela.estado != br.com.mostrai.player.ui.EstadoInstitucional.CARREGANDO)
         assertEquals(android.view.View.VISIBLE, tela.visibility)
     }
+
+    @Test
+    fun `sem playlist do servidor nem cache o estado reportado e NO_PLAYLIST`() {
+        // Contrato §4.2: NO_PLAYLIST = sem playlist utilizável, nem do
+        // servidor nem do cache. O player reportava IDLE, e o badge que o
+        // admin montasse para esse estado nunca acenderia.
+        h.provisionar()
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(codigo = 503)
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+
+        val atividade = h.subir().get()
+        h.esperar { h.servidor.contar("/playlist") > 0 }
+        repeat(25) {
+            Thread.sleep(20)
+            h.idle()
+        }
+
+        val campo = PlayerActivity::class.java.getDeclaredField("estadoAtual")
+        campo.isAccessible = true
+        assertEquals(br.com.mostrai.player.estado.EstadoPlayer.NO_PLAYLIST, campo.get(atividade))
+    }
 }

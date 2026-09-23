@@ -249,11 +249,11 @@ mudo e `erro` vai `null`; a tela continua tocando (auditoria, BUG-004).
 | `IDLE` | provisionado, sem erro, sem item comercial no ar |
 | `OUT_OF_SCHEDULE` | fora do horário operacional (ver seção 7) |
 | `NO_PLAYLIST` | sem playlist utilizável, nem do servidor nem do cache |
-| `DOWNLOAD_ERROR` | mídia não baixou, ou baixou e o hash não conferiu |
+| `DOWNLOAD_ERROR` | a mídia baixou e o hash não conferiu (falha de rede no download não muda o estado: o item toca direto da URL) |
 | `PLAYBACK_ERROR` | o player falhou ao reproduzir |
 | `AUTH_ERROR` | credencial recusada pelo servidor |
 | `NOT_PROVISIONED` | aparelho sem identidade |
-| `CONFIG_ERROR` | config recebida não pôde ser aplicada |
+| `CONFIG_ERROR` | **reservado — o player hoje não o reporta.** Falha de config chega em `erro` (`CONFIG_FALHOU`) |
 | `UPDATE_PENDING` | atualização baixada e verificada, esperando confirmação |
 
 ### 4.3 Resposta

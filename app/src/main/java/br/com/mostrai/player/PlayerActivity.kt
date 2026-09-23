@@ -819,7 +819,13 @@ class PlayerActivity : AppCompatActivity() {
         falhasSeguidas = 0
         mostrarInstitucionalSimples(estadoInstitucional())
         if (estadoAtual != EstadoPlayer.PLAYBACK_ERROR && estadoAtual != EstadoPlayer.DOWNLOAD_ERROR) {
-            estadoAtual = if (config.provisionado) EstadoPlayer.IDLE else EstadoPlayer.NOT_PROVISIONED
+            estadoAtual = when {
+                !config.provisionado -> EstadoPlayer.NOT_PROVISIONED
+                // BUG-031: contrato §4.2 — nem servidor nem cache. Antes saía
+                // IDLE, e o estado documentado nunca chegava ao admin.
+                ultimaOrigemFetch == PlaylistRepositorio.Origem.INSTITUCIONAL -> EstadoPlayer.NO_PLAYLIST
+                else -> EstadoPlayer.IDLE
+            }
         }
 
         val duracao = if (item.duracaoSegundos > 0) item.duracaoSegundos else 10
