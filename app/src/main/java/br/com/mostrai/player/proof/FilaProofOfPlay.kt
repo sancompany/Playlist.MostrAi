@@ -162,7 +162,7 @@ class FilaProofOfPlay(
                 // Não descarta nada — problema do aparelho, fica visível no painel.
             }
             is MostraiApi.RespostaPlayed.RespeitarEspera -> {
-                val proximo = System.currentTimeMillis() + resposta.segundos * 1000L
+                val proximo = fimDaEspera(resposta.segundos)
                 eventos.forEach { db.adiarReenvio(it.execucaoId, proximo, it.tentativas + 1) }
             }
             is MostraiApi.RespostaPlayed.Transitorio -> eventos.forEach { adiarComBackoff(it) }
@@ -212,13 +212,20 @@ class FilaProofOfPlay(
             }
             is MostraiApi.RespostaPlayed.ErroAparelho -> Unit // fila mantida
             is MostraiApi.RespostaPlayed.RespeitarEspera -> {
-                val proximo = System.currentTimeMillis() + resposta.segundos * 1000L
-                db.adiarReenvio(evento.execucaoId, proximo, evento.tentativas + 1)
+                db.adiarReenvio(evento.execucaoId, fimDaEspera(resposta.segundos), evento.tentativas + 1)
             }
             is MostraiApi.RespostaPlayed.Transitorio -> adiarComBackoff(evento)
             is MostraiApi.RespostaPlayed.Sucesso -> Unit // não ocorre no envio legado
         }
     }
+
+    /**
+     * `Retry-After` obedecido, mas com teto (BUG-018). Um 429 com espera
+     * absurda — proxy ou CDN mal configurado — adiava o lote para além do
+     * horizonte de 7 dias, e o comprovante expirava sem nunca ser reenviado.
+     */
+    private fun fimDaEspera(segundos: Int): Long =
+        System.currentTimeMillis() + segundos.coerceIn(0, ESPERA_MAXIMA_SEGUNDOS) * 1000L
 
     /** execucaoId jamais é regerado numa retentativa (decisão 6.4) — só reagenda. */
     private fun adiarComBackoff(evento: EventoExibicao) {
@@ -277,6 +284,9 @@ class FilaProofOfPlay(
          */
         const val TAMANHO_MAXIMO_FILA = 50_000
         const val HORIZONTE_EXPIRACAO_MS = 7L * 24 * 60 * 60 * 1000
+
+        /** Teto do `Retry-After` — igual ao maior degrau do backoff. */
+        const val ESPERA_MAXIMA_SEGUNDOS = 30 * 60
 
         /** Acima disto o admin mostra atenção; ver docs/player-v2-contract.md. */
         const val LIMIAR_ATENCAO = 2_000

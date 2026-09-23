@@ -97,6 +97,22 @@ class FilaPerdasTest {
     }
 
     @Test
+    fun `retry-after absurdo nao empurra o comprovante para alem da expiracao`() {
+        // Um proxy/CDN mal configurado responde 429 com Retry-After enorme.
+        // Obedecer cegamente adia o lote para depois do horizonte de 7 dias:
+        // o comprovante expira sem nunca ter sido reenviado.
+        val id = fila.registrarInicio(item, playlist)!!
+        fila.registrarFim(id)
+        api.resposta = MostraiApi.RespostaPlayed.RespeitarEspera(1_000_000_000)
+
+        fila.tentarEnviar()
+
+        val daquiAUmDia = System.currentTimeMillis() + 24 * 60 * 60 * 1000L
+        val elegiveis = ProofOfPlayDb(contexto).elegiveisParaEnvio(daquiAUmDia, 10)
+        assertEquals("evento adiado para além de um dia", 1, elegiveis.size)
+    }
+
+    @Test
     fun `comprovante terminado que expira sem envio conta como perda`() {
         val id = fila.registrarInicio(item, playlist)!!
         fila.registrarFim(id)
