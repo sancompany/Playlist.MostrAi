@@ -178,9 +178,10 @@ Fechadas:
 - **Auditoria de confiabilidade iterativa e adversarial (23/09/2026)** —
   pedida pelo dono (com o GPT-5.6 revisando). Ciclos 0–19 (Auditoria A) e
   rodadas B–J até **duas rodadas completas consecutivas sem bug novo
-  reproduzível** (I e J). 38 bugs (10 HIGH, 17 MEDIUM, 11 LOW) e 8 itens de
-  robustez corrigidos, cada um com teste que falhava antes; 3 dos bugs eram
-  regressões das próprias correções, achados nas rodadas seguintes. Testes
+  reproduzível** (I e J). 38 bugs (11 HIGH, 16 MEDIUM, 11 LOW) e 8 itens de
+  robustez corrigidos, cada um com teste que falhava antes; 2 dos bugs
+  (BUG-029, BUG-035) eram regressões das próprias correções, achadas nas
+  rodadas seguintes. Testes
   209 → 283; mutação de 27 guardas críticas, todas mortas pela suíte. Contrato
   e checklist do backend alinhados ao código. Relatório completo, riscos não
   resolvíveis sem TV e checklist físico em
