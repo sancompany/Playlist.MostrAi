@@ -142,7 +142,11 @@ class Atualizador(
         }
 
         synchronized(TRAVA) {
-            buildBaixandoNesteProcesso = 0
+            // Só apaga a marca se ela ainda for deste download (BUG-035): um
+            // download superado que termina depois de o build novo começar
+            // zerava a marca do outro, e o heartbeat seguinte disparava um
+            // segundo download do mesmo arquivo em paralelo.
+            if (buildBaixandoNesteProcesso == alvo.build) buildBaixandoNesteProcesso = 0
             if (buildAlvo != alvo.build) {
                 // Superado por um manifesto mais novo durante o download: este
                 // arquivo não é mais o alvo e não pode virar READY.

@@ -131,4 +131,36 @@ class AtualizadorConcorrenciaTest {
         assertTrue(efeitos.atualizarPlaylist)
         assertTrue("heartbeat esperou ${esperouMs}ms pelo download do APK", esperouMs < 2_000)
     }
+
+    @Test
+    fun `download superado nao apaga a marca do download que esta em curso`() {
+        // Auditoria F: o build 3 ainda baixando quando o 4 começa (internet
+        // lenta, heartbeat de 5 min). Ao terminar, o 3 zerava a marca de
+        // "baixando neste processo" que pertencia ao 4; o heartbeat seguinte
+        // via DOWNLOADING sem dono e disparava um segundo download do mesmo
+        // 4.apk.tmp em paralelo.
+        val trava3 = CountDownLatch(1)
+        val trava4 = CountDownLatch(1)
+        servidor.travas["/v3.apk"] = trava3
+        servidor.travas["/v4.apk"] = trava4
+        servidor.rotas["/v3.apk"] = ServidorDeTeste.Resposta(corpo = "apk3".toByteArray())
+        servidor.rotas["/v4.apk"] = ServidorDeTeste.Resposta(corpo = "apk4".toByteArray())
+        val m3 = manifesto(BuildConfig.VERSION_CODE + 1, "/v3.apk")
+        val m4 = manifesto(BuildConfig.VERSION_CODE + 2, "/v4.apk")
+
+        atualizador.considerar(m3)
+        val a = thread { atualizador.baixarSeNecessario(m3) }
+        while (servidor.contar("/v3.apk") == 0) Thread.sleep(10)
+        atualizador.considerar(m4)
+        val b = thread { atualizador.baixarSeNecessario(m4) }
+        while (servidor.contar("/v4.apk") == 0) Thread.sleep(10)
+
+        trava3.countDown()
+        a.join(5_000)
+        atualizador.considerar(m4) // heartbeat seguinte
+
+        assertEquals(EstadoUpdate.DOWNLOADING, atualizador.estado)
+        trava4.countDown()
+        b.join(5_000)
+    }
 }
