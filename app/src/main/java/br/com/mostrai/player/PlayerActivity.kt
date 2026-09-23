@@ -315,16 +315,29 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun aplicarConfigExternaSeNecessaria(retomarSeProvisionou: Boolean) {
         ConfigExterna.procurarEAplicar(this, config)
-        if (retomarSeProvisionou && config.provisionado) {
-            atualizarPlaylist(forcarReposicionamento = true)
+        if (retomarSeProvisionou) retomarAposProvisionamentoLocal()
+    }
+
+    /**
+     * Provisionamento que chega com o ciclo já rodando (permissão concedida
+     * depois do boot, bancada por onNewIntent). Credencial completa: busca a
+     * playlist já. Só o token: troca já, em vez de esperar o heartbeat
+     * periódico — até 5 min de "não provisionado" com tudo pronto (ROB-002).
+     */
+    private fun retomarAposProvisionamentoLocal() {
+        when {
+            config.provisionado -> atualizarPlaylist(forcarReposicionamento = true)
+            !config.tokenProvisionamento.isNullOrBlank() -> dispararHeartbeat()
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val estavaProvisionado = config.provisionado
         aplicarProvisionamentoProvisorio(intent)
         aplicarRotacaoEMargem()
+        if (!estavaProvisionado && iniciada) retomarAposProvisionamentoLocal()
     }
 
     /**

@@ -1,11 +1,15 @@
 package br.com.mostrai.player.ciclo
 
+import android.content.Intent
 import br.com.mostrai.player.PlayerActivity
+import br.com.mostrai.player.cache.ServidorDeTeste
+import br.com.mostrai.player.config.ConfigAparelho
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.LooperMode
 
 /**
  * Ciclo 7/15 — o Intent que abre o player vem de qualquer app instalado.
@@ -15,6 +19,7 @@ import org.robolectric.RobolectricTestRunner
  * mas o Android não diz quem mandou o Intent.
  */
 @RunWith(RobolectricTestRunner::class)
+@LooperMode(LooperMode.Mode.PAUSED)
 class SegurancaLocalTest {
 
     @Test
@@ -33,5 +38,26 @@ class SegurancaLocalTest {
     @Test
     fun `em depuracao, extras continuam sobrescrevendo`() {
         assertTrue(PlayerActivity.aceitaExtrasDeProvisionamento(ehDepuracao = true, provisionado = true))
+    }
+
+    @Test
+    fun `token recebido depois do boot e trocado na hora, nao no proximo heartbeat`() {
+        // Bancada (onNewIntent) ou permissão de armazenamento concedida
+        // depois do boot: o token chega com o ciclo já rodando. Esperar o
+        // heartbeat periódico deixava a TV até 5 min na tela "não
+        // provisionado" com tudo pronto para funcionar.
+        val h = Harness()
+        try {
+            ConfigAparelho(h.contexto).baseUrl = h.servidor.baseUrl
+            h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+            val controle = h.subir()
+
+            controle.newIntent(
+                Intent(h.contexto, PlayerActivity::class.java).putExtra(PlayerActivity.EXTRA_TOKEN, "tok_1"),
+            )
+            h.esperar(timeoutMs = 3_000) { h.servidor.contar("/player/provisionar") > 0 }
+        } finally {
+            h.encerrar()
+        }
     }
 }
