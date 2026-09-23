@@ -23,7 +23,11 @@ import kotlin.concurrent.thread
  */
 class ServidorDeTeste {
 
-    data class Resposta(val codigo: Int = 200, val corpo: ByteArray = ByteArray(0))
+    data class Resposta(
+        val codigo: Int = 200,
+        val corpo: ByteArray = ByteArray(0),
+        val tipo: String? = null,
+    )
 
     @Volatile
     var corpo: ByteArray = ByteArray(0)
@@ -91,6 +95,7 @@ class ServidorDeTeste {
                 val cabecalho = buildString {
                     append("HTTP/1.1 ${resposta.codigo} ${if (resposta.codigo in 200..299) "OK" else "Erro"}\r\n")
                     append("Content-Length: ${resposta.corpo.size}\r\n")
+                    resposta.tipo?.let { append("Content-Type: $it\r\n") }
                     append("Connection: close\r\n\r\n")
                 }
                 cliente.getOutputStream().apply {

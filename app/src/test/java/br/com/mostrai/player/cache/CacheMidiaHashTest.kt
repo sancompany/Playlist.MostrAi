@@ -158,6 +158,22 @@ class CacheMidiaHashTest {
     }
 
     @Test
+    fun `pagina html de portal cativo nao vira cache de midia`() {
+        // Wi-Fi de loja com portal cativo, ou proxy, responde 200 com uma
+        // página HTML para qualquer URL. Sem contentHash (V1) nada mais
+        // confere o conteúdo: a página ficava gravada com o nome do criativo
+        // e o caminho rápido a servia para sempre — o criativo falhava em
+        // toda exibição e nunca era baixado de novo.
+        servidor.rotas["/midia.mp4"] = ServidorDeTeste.Resposta(
+            corpo = "<html>faça login no Wi-Fi</html>".toByteArray(),
+            tipo = "text/html; charset=utf-8",
+        )
+
+        assertNull(cache.resolver(item(null)))
+        assertEquals(0, cache.arquivos())
+    }
+
+    @Test
     fun `url com esquema invalido nao derruba o app`() {
         val itemRuim = item(null).copy(url = "ftp://exemplo.com/v.mp4")
 

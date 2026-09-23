@@ -183,6 +183,13 @@ class CacheMidia(context: Context) {
             if (conexao.responseCode !in 200..299) {
                 throw IOException("HTTP ${conexao.responseCode} ao baixar mídia")
             }
+            // BUG-020: portal cativo de Wi-Fi e proxy respondem 200 com uma
+            // página para qualquer URL. Sem contentHash (V1), nada mais
+            // confere o conteúdo, e a página virava o "vídeo" do criativo
+            // para sempre. Mídia nunca é texto, HTML ou JSON.
+            if (naoEhMidia(conexao.contentType)) {
+                throw IOException("resposta não é mídia (${conexao.contentType})")
+            }
 
             val digest = MessageDigest.getInstance("SHA-256")
             DigestInputStream(conexao.inputStream, digest).use { entrada ->
@@ -210,6 +217,11 @@ class CacheMidia(context: Context) {
             conexao.disconnect()
             temporario.delete() // sobra só se o rename falhou ou deu exceção no meio
         }
+    }
+
+    private fun naoEhMidia(tipo: String?): Boolean {
+        val t = tipo?.lowercase() ?: return false
+        return t.startsWith("text/") || "html" in t || "json" in t
     }
 
     fun tamanhoBytes(): Long = diretorio.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
