@@ -1,7 +1,5 @@
 package br.com.mostrai.player.cache
 
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -65,17 +63,35 @@ class ServidorDeTeste {
     private fun atender(conexao: java.net.Socket) {
         runCatching {
             conexao.use { cliente ->
-                val leitor = BufferedReader(InputStreamReader(cliente.getInputStream()))
-                val primeira = leitor.readLine() ?: return
-                var tamanhoCorpo = 0
-                while (true) {
-                    val linha = leitor.readLine() ?: break
-                    if (linha.isEmpty()) break
-                    if (linha.startsWith("Content-Length:", ignoreCase = true)) {
-                        tamanhoCorpo = linha.substringAfter(':').trim().toIntOrNull() ?: 0
+                // Bytes, não caracteres: Content-Length conta bytes, e um
+                // corpo com acento (o heartbeat leva a mensagem do diário)
+                // deixava um Reader esperando caracteres que nunca chegavam.
+                val entrada = cliente.getInputStream()
+                fun linha(): String? {
+                    val bytes = java.io.ByteArrayOutputStream()
+                    while (true) {
+                        val b = entrada.read()
+                        if (b < 0) return if (bytes.size() == 0) null else bytes.toString(Charsets.UTF_8.name())
+                        if (b == '\n'.code) return bytes.toString(Charsets.UTF_8.name()).trimEnd('\r')
+                        bytes.write(b)
                     }
                 }
-                repeat(tamanhoCorpo) { leitor.read() }
+                val primeira = linha() ?: return
+                var tamanhoCorpo = 0
+                while (true) {
+                    val cabecalho = linha() ?: break
+                    if (cabecalho.isEmpty()) break
+                    if (cabecalho.startsWith("Content-Length:", ignoreCase = true)) {
+                        tamanhoCorpo = cabecalho.substringAfter(':').trim().toIntOrNull() ?: 0
+                    }
+                }
+                var restante = tamanhoCorpo
+                val descarte = ByteArray(4096)
+                while (restante > 0) {
+                    val lidos = entrada.read(descarte, 0, minOf(restante, descarte.size))
+                    if (lidos < 0) break
+                    restante -= lidos
+                }
 
                 val partes = primeira.split(" ")
                 val metodo = partes.getOrElse(0) { "" }
