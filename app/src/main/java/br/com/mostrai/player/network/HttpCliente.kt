@@ -13,18 +13,20 @@ import java.net.URL
  * que um cliente HTTP maior ofereceria, e cada dependência a menos é uma
  * fonte a menos de problema de resolução numa TV com internet de comércio.
  */
-class HttpCliente(
+// open: os testes de MostraiApi substituem o transporte para exercitar a
+// classificação de HTTP (R8) sem servidor de verdade.
+open class HttpCliente(
     private val timeoutConexaoMs: Int = 10_000,
     private val timeoutLeituraMs: Int = 15_000,
 ) {
     data class Resposta(val codigo: Int, val corpo: String, val cabecalhos: Map<String, List<String>>)
 
     @Throws(IOException::class)
-    fun get(url: String, cabecalhos: Map<String, String>): Resposta =
+    open fun get(url: String, cabecalhos: Map<String, String>): Resposta =
         chamar("GET", url, cabecalhos, null)
 
     @Throws(IOException::class)
-    fun post(url: String, cabecalhos: Map<String, String>, corpo: String): Resposta =
+    open fun post(url: String, cabecalhos: Map<String, String>, corpo: String): Resposta =
         chamar("POST", url, cabecalhos + ("Content-Type" to "application/json; charset=utf-8"), corpo)
 
     @Throws(IOException::class)
