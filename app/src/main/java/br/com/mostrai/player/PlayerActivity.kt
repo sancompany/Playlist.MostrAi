@@ -522,7 +522,14 @@ class PlayerActivity : AppCompatActivity() {
                     indiceInicialPorTempo = ::calcularIndiceInicial,
                 )
                 indice = decisao.indice
-                if (decisao.reiniciarAgora) reiniciarItemAgora()
+                if (decisao.reiniciarAgora) {
+                    reiniciarItemAgora()
+                } else if (playlist.itens.isEmpty() && execucaoAtualId == null) {
+                    // Nada pago no ar: a lista vazia vira tela institucional
+                    // já (BUG-022). Com anúncio no ar, ele termina e avancar()
+                    // cuida do resto.
+                    tocarItemAtual()
+                }
             } finally {
                 buscandoPlaylist.set(false)
                 // Uma rodada só por pedido acumulado: o que chegou durante a
@@ -694,7 +701,16 @@ class PlayerActivity : AppCompatActivity() {
         val item = playlist.itens.getOrNull(indice) ?: run {
             indice = 0
             playlist.itens.firstOrNull()
-        } ?: return
+        } ?: run {
+            // Lista vazia do servidor (V1 sem anúncio cadastrado responde
+            // `[]`): sem isto nada era desenhado e a arte "carregando" do
+            // boot ficava na tela até alguém cadastrar conteúdo (BUG-022).
+            execucaoAtualId = null
+            criativoAtualId = null
+            mostrarInstitucionalSimples(estadoInstitucional())
+            if (estadoAtual == EstadoPlayer.PLAYING) estadoAtual = EstadoPlayer.IDLE
+            return
+        }
 
         // Só a url decide, não a flag institucional: um item institucional
         // com url (vídeo de fundo servido pelo backend) toca normalmente.
@@ -845,7 +861,10 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun avancar() {
         if (foraDoHorario()) return
-        if (playlist.itens.isEmpty()) return
+        if (playlist.itens.isEmpty()) {
+            tocarItemAtual() // mostra a institucional (BUG-022)
+            return
+        }
         indice = (indice + 1) % playlist.itens.size
         tocarItemAtual()
     }

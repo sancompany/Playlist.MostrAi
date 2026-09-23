@@ -4,6 +4,7 @@ import br.com.mostrai.player.PlayerActivity
 import br.com.mostrai.player.cache.ServidorDeTeste
 import br.com.mostrai.player.estado.DiarioBordo
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -65,5 +66,29 @@ class ReproducaoTest {
         val antes = geracao(atividade)
         h.avancar(10_000L) // PlayerActivity.ESPERA_APOS_VOLTA_SEM_EXIBICAO_MS
         h.esperar { geracao(atividade) > antes }
+    }
+
+    @Test
+    fun `playlist vazia do servidor mostra a tela institucional, nao o carregando para sempre`() {
+        // Backend sem anúncio cadastrado para a tela pode responder lista
+        // vazia (V1: `[]`). tocarItemAtual() saía sem desenhar nem agendar
+        // nada: a arte "carregando" do boot ficava até alguém cadastrar
+        // conteúdo — o operador via uma TV "travada carregando".
+        h.provisionar()
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = "[]".toByteArray())
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+
+        val atividade = h.subir().get()
+        h.esperar { h.servidor.contar("/playlist") > 0 }
+        repeat(25) {
+            Thread.sleep(20)
+            h.idle()
+        }
+
+        val campo = PlayerActivity::class.java.getDeclaredField("institucional")
+        campo.isAccessible = true
+        val tela = campo.get(atividade) as br.com.mostrai.player.ui.TelaInstitucional
+        assertTrue("tela ficou em ${tela.estado}", tela.estado != br.com.mostrai.player.ui.EstadoInstitucional.CARREGANDO)
+        assertEquals(android.view.View.VISIBLE, tela.visibility)
     }
 }
