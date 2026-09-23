@@ -150,9 +150,10 @@ Campo opcional por item: SHA-256 do arquivo, hexadecimal, 64 caracteres.
 - Calcular no upload do criativo e persistir junto.
 - Entregar em `GET /playlist/:dispositivoId`.
 - Player sem o campo continua no comportamento antigo.
-- Servir a mídia com `Content-Type` de mídia e em `https` direto: resposta
-  textual (HTML/JSON) nunca vira cache, e redirecionamento `http → https` não
-  é seguido pelo player.
+- Servir a mídia em `https` direto, de preferência com `Content-Type`
+  `video/*` (no upload para o Storage, informe o tipo — sem ele o padrão é
+  `text/plain`, aceito pelo player, mas enganoso). Resposta HTML/JSON nunca
+  vira cache, e redirecionamento `http → https` não é seguido pelo player.
 
 **O que isso resolve:** hoje o cache usa `criativoId` como identidade física e
 depende da promessa de que `criativoId → url` é imutável. Se a promessa for

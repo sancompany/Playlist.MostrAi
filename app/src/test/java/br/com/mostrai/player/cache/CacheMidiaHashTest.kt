@@ -174,6 +174,21 @@ class CacheMidiaHashTest {
     }
 
     @Test
+    fun `video servido como text plain continua indo para o cache`() {
+        // Auditoria B (BUG-029): Supabase Storage e outros gravam
+        // "text/plain;charset=UTF-8" quando o upload não informa o tipo.
+        // Recusar todo text/* desligava o cache da frota inteira — cada
+        // exibição rebaixando o vídeo.
+        servidor.rotas["/midia.mp4"] = ServidorDeTeste.Resposta(
+            corpo = "video-bom".toByteArray(),
+            tipo = "text/plain;charset=UTF-8",
+        )
+
+        assertNotNull(cache.resolver(item(null)))
+        assertEquals(1, cache.arquivos())
+    }
+
+    @Test
     fun `url com esquema invalido nao derruba o app`() {
         val itemRuim = item(null).copy(url = "ftp://exemplo.com/v.mp4")
 

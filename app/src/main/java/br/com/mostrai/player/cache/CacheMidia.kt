@@ -186,7 +186,10 @@ class CacheMidia(context: Context) {
             // BUG-020: portal cativo de Wi-Fi e proxy respondem 200 com uma
             // página para qualquer URL. Sem contentHash (V1), nada mais
             // confere o conteúdo, e a página virava o "vídeo" do criativo
-            // para sempre. Mídia nunca é texto, HTML ou JSON.
+            // para sempre. Mídia nunca é HTML ou JSON. `text/plain` NÃO entra
+            // (BUG-029): é o padrão de armazenamentos como o Supabase Storage
+            // quando o upload não informa o tipo, e recusá-lo desligava o
+            // cache da frota inteira.
             if (naoEhMidia(conexao.contentType)) {
                 throw IOException("resposta não é mídia (${conexao.contentType})")
             }
@@ -221,7 +224,7 @@ class CacheMidia(context: Context) {
 
     private fun naoEhMidia(tipo: String?): Boolean {
         val t = tipo?.lowercase() ?: return false
-        return t.startsWith("text/") || "html" in t || "json" in t
+        return "html" in t || "json" in t
     }
 
     fun tamanhoBytes(): Long = diretorio.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L

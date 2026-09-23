@@ -418,10 +418,12 @@ minutos** (em memória): o item não é rebaixado a cada vez que aparece na
 playlist, e depois disso o player tenta de novo, para pegar a correção
 quando vier (auditoria, BUG-006).
 
-Sem `contentHash`, uma resposta `2xx` cujo `Content-Type` seja texto, HTML
-ou JSON **não** vira cache — é o caso do portal cativo de Wi-Fi que responde
-uma página para qualquer URL (auditoria, BUG-020). Sirva mídia com um tipo
-de mídia (`video/*` ou `application/octet-stream`).
+Sem `contentHash`, uma resposta `2xx` cujo `Content-Type` seja HTML ou JSON
+**não** vira cache — é o caso do portal cativo de Wi-Fi que responde uma
+página para qualquer URL (auditoria, BUG-020). `text/plain` é aceito: é o
+padrão de armazenamentos como o Supabase Storage quando o upload não
+informa o tipo (auditoria, BUG-029). Ainda assim, prefira servir mídia como
+`video/*`.
 
 Redirecionamento de `http` para `https` não é seguido pelo cliente HTTP do
 Android nem pelo ExoPlayer: sirva as URLs de mídia já em `https`.
