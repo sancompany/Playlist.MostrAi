@@ -671,6 +671,10 @@ class PlayerActivity : AppCompatActivity() {
 
         estadoAtual = EstadoPlayer.OUT_OF_SCHEDULE
         diario.registrar(DiarioBordo.Codigo.FORA_DO_HORARIO)
+        // BUG-025: um mostrarVideo ainda resolvendo o cache voltaria depois
+        // disto, gravaria PLAYING por cima de OUT_OF_SCHEDULE e tocaria o
+        // anúncio com a loja fechada. Mesma invalidação de onStop.
+        geracaoReproducao++
         handler.removeCallbacks(avancarPorTempo)
         player?.stop()
         cancelarExibicaoEmAndamento()
