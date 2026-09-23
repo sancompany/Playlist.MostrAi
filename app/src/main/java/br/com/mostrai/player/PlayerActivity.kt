@@ -246,6 +246,19 @@ class PlayerActivity : AppCompatActivity() {
     private val callbackConectividade = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
+            // BUG-030: queda que atravessa a virada de hora deixa a TV na
+            // playlist em cache da janela anterior. Sem rebuscar ao
+            // reconectar, seguia até 15 min (o próximo poll) com anúncios
+            // da hora errada. Só quando a playlist atual não veio do servidor
+            // e não há busca em voo — onAvailable também dispara no registro
+            // do callback, no boot, com a primeira busca já saindo.
+            handler.post {
+                if (iniciada && !buscandoPlaylist.get() &&
+                    ultimaOrigemFetch != PlaylistRepositorio.Origem.SERVIDOR
+                ) {
+                    atualizarPlaylist(forcarReposicionamento = false)
+                }
+            }
         }
     }
 

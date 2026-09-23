@@ -195,4 +195,48 @@ class CicloDeVidaTest {
         }
         assertEquals(2, h.servidor.contar("/playlist"))
     }
+
+    @Test
+    fun `rede que volta rebusca a playlist se a atual nao veio do servidor`() {
+        // Queda atravessando a virada de hora: a busca da virada falha e a
+        // TV segue na playlist em cache da janela anterior. Sem rebuscar ao
+        // reconectar, até 15 min de anúncios da hora errada — comprovantes
+        // que o servidor recusa como janela_expirada.
+        h.provisionar()
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(codigo = 503)
+        h.subir()
+        h.esperar { h.servidor.contar("/playlist") == 1 }
+        repeat(10) {
+            Thread.sleep(20)
+            h.idle()
+        }
+
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
+        val conectividade = h.contexto.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        val rede = conectividade.activeNetwork ?: org.robolectric.shadows.ShadowNetwork.newInstance(1)
+        org.robolectric.Shadows.shadowOf(conectividade).networkCallbacks.forEach { it.onAvailable(rede) }
+
+        h.esperar { h.servidor.contar("/playlist") == 2 }
+    }
+
+    @Test
+    fun `rede disponivel no boot nao gera busca extra de playlist`() {
+        h.provisionar()
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
+        h.subir()
+        h.esperar { h.servidor.contar("/playlist") == 1 }
+        val conectividade = h.contexto.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        val rede = conectividade.activeNetwork ?: org.robolectric.shadows.ShadowNetwork.newInstance(1)
+        org.robolectric.Shadows.shadowOf(conectividade).networkCallbacks.forEach { it.onAvailable(rede) }
+        repeat(25) {
+            Thread.sleep(20)
+            h.idle()
+        }
+
+        assertEquals(1, h.servidor.contar("/playlist"))
+    }
 }
