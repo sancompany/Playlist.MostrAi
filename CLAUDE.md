@@ -157,6 +157,24 @@ Fechadas:
   o player e a exibição paga em andamento. `screenOrientation` removido
   (janela translúcida herda a orientação da Activity opaca de trás).
   `docs/erros/2026-09-21-painel-translucido-com-orientacao-fixa-derrubava-o-app.md`.
+- **Lote V1 de lançamento + contrato V2 (23/09/2026)** — auditoria técnica
+  completa do player pedida pelo dono (com o GPT-5.6 revisando a
+  arquitetura) achou 11 riscos reais; todos corrigidos antes de qualquer
+  feature nova. Os quatro mais graves: fila de proof-of-play saturava em
+  13,9h offline (teto 5.000 → 50.000); o descarte no estouro jogava fora
+  comprovante faturável e preservava linha órfã; um HTTP 400 apagava até 50
+  comprovantes de uma vez (agora split binário + quarentena); e o cache
+  dependia da promessa não verificável de `criativoId → url` imutável
+  (agora endereçado por `contentHash` com SHA-256 conferido). Junto,
+  implementado o contrato Player V2 inteiro com degradação automática — 404
+  numa rota V2 é lido como backend V1, e nada quebra: `hello`, heartbeat V2
+  com erro durável em SQLite, `GET /config` versionado, horário operacional
+  local, OTA fase 1, kiosk (`CATEGORY_HOME` + watchdog + Device Owner
+  opcional), PIN com rate limit, token de provisionamento e rotação de
+  credencial. 74 → 209 testes. Contrato e checklist para a sessão do backend
+  em `docs/player-v2-contract.md` e `docs/player-v2-mostrai-checklist.md`.
+  versionCode 1 → 2, versionName 1.0.0, assinatura de release via
+  `keystore.properties` fora do Git.
 - Access — não se aplica (sem área administrativa web, `CONSTRAINTS.md`)
 - **`margemVmin` por lado, fechado com o backend (22/09/2026, sessão do
   backend `sancompany/mostrai`)** — o pedido pendente em `PARA-O-BACKEND.md`
@@ -188,11 +206,15 @@ que o dono confirmar o app rodando em aparelho real.
 - Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi`, `HttpCliente`, `PlaylistJson`, `PlayedJson`)
 - Playlist e reposicionamento: `app/src/main/java/br/com/mostrai/player/playlist/`
 - Proof-of-play (fila durável): `app/src/main/java/br/com/mostrai/player/proof/`
-- Configuração do aparelho: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda; `ConfigExterna` lê `mostrai-config.json` do pendrive)
-- Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt`
+- Configuração do aparelho: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda; `ConfigExterna` lê `mostrai-config.json` do pendrive; `ConfigRemota` é a config versionada do backend; `HorarioOperacional` é o regime, puro e testável)
+- Contrato V2 e degradação para V1: `app/src/main/java/br/com/mostrai/player/network/` (`SincronizacaoV2` decide, `ResultadoHttp` separa as famílias de falha, `HelloJson`/`HeartbeatJson` são os corpos)
+- Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer`)
+- Atualização remota: `app/src/main/java/br/com/mostrai/player/update/`
+- Kiosk: `app/src/main/java/br/com/mostrai/player/kiosk/` (`Watchdog`, `Kiosk` com Device Owner opcional)
+- Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt` — **só diagnóstico**, nunca configuração cotidiana
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`
 - Variáveis/segredos: nenhum `.env` — três caminhos de provisionamento, nesta ordem de precedência: build embutido (`-PconfigDispositivo`, README "Gerar um APK já configurado por tela") → arquivo externo (`mostrai-config.json` no pendrive, README "Configurar por um arquivo no pendrive") → extras de Intent por `adb` (sempre sobrescreve, é o caminho de depuração, README "Instalar e provisionar em bancada"). Nenhum dos três versiona segredo — `dispositivos/*.json` e `mostrai-config.json` ficam de fora do Git.
-- Handoff pro backend (`sancompany/mostrai`): `PARA-O-BACKEND.md` — o que este app já assume do contrato, e o que ainda falta do lado de lá (`margemVmin` resolvido em 22/09/2026; só falta vídeo de fundo institucional servido pelo backend).
+- Handoff pro backend (`sancompany/mostrai`): `docs/player-v2-contract.md` (o contrato exato implementado) e `docs/player-v2-mostrai-checklist.md` (a lista de trabalho do lado de lá). `PARA-O-BACKEND.md` continua como resumo curto de entrada.
 
 ## Conformidade
 

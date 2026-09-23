@@ -1,5 +1,14 @@
 # Para quem lê isto do lado do backend (`sancompany/mostrai`)
 
+> **Atualizado em 23/09/2026 — comece por outro lugar.** O player passou a
+> implementar o contrato V2 inteiro. O documento exato do que existe está em
+> **`docs/player-v2-contract.md`**, e a lista de trabalho do lado do backend
+> em **`docs/player-v2-mostrai-checklist.md`**. Este arquivo continua válido
+> como resumo de entrada, mas os dois acima são a fonte de verdade.
+>
+> Nada do V2 é bloqueante: o player novo roda contra o backend de hoje sem
+> nenhuma mudança, porque toda rota V2 degrada sozinha quando responde 404.
+
 Resumo de handoff — o que o Mostraí Player (este repositório) já assume do
 backend, e o que precisa do backend pra fechar. Escrito pra ser lido sem o
 histórico da conversa que gerou este repo: se algo aqui parecer
