@@ -7,6 +7,7 @@ import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import java.time.OffsetDateTime
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 
 /**
@@ -25,6 +26,18 @@ class FilaProofOfPlay(
     private val db = ProofOfPlayDb(context)
     private val prefsPerdas = context.applicationContext
         .getSharedPreferences(ProofOfPlayDb.PREFS_PERDAS, Context.MODE_PRIVATE)
+
+    /**
+     * Um envio de cada vez, **separado** da trava das operações de banco
+     * (BUG-007). Antes, `tentarEnviar` era `@Synchronized` no mesmo monitor
+     * de `registrarInicio`, e segurava esse monitor durante a chamada de
+     * rede. Como o player envia ao fim de toda exibição e o próximo item
+     * registra início logo em seguida, toda transição esperava o round-trip
+     * do envio anterior — até 25s de tela congelada numa internet dando
+     * timeout. Agora a rede roda sem trava de banco; esta flag só impede dois
+     * envios simultâneos de mandarem o mesmo evento.
+     */
+    private val enviando = AtomicBoolean(false)
 
     /** Fotografia da fila para o heartbeat e para o painel. */
     data class Resumo(val aguardandoEnvio: Int, val total: Int, val quarentena: Int, val maisAntigoMs: Long?)
@@ -95,17 +108,23 @@ class FilaProofOfPlay(
      * ao recuperar rede, ao iniciar o app, e por temporizador enquanto
      * houver fila (decisão 6.4).
      */
-    @Synchronized
     fun tentarEnviar() {
-        removerExpirados()
+        // Já tem envio em andamento: ele vai buscar o que estiver elegível, e
+        // o próximo ciclo (1 min, ou o fim da próxima exibição) pega o resto.
+        if (!enviando.compareAndSet(false, true)) return
+        try {
+            removerExpirados()
 
-        val agora = System.currentTimeMillis()
-        val elegiveis = db.elegiveisParaEnvio(agora, LIMITE_LOTE)
-        if (elegiveis.isEmpty()) return
+            val agora = System.currentTimeMillis()
+            val elegiveis = db.elegiveisParaEnvio(agora, LIMITE_LOTE)
+            if (elegiveis.isEmpty()) return
 
-        val (legados, novos) = elegiveis.partition { it.formatoLegado }
-        if (novos.isNotEmpty()) enviarLoteNovo(novos)
-        legados.forEach { enviarUmLegado(it) }
+            val (legados, novos) = elegiveis.partition { it.formatoLegado }
+            if (novos.isNotEmpty()) enviarLoteNovo(novos)
+            legados.forEach { enviarUmLegado(it) }
+        } finally {
+            enviando.set(false)
+        }
     }
 
     private fun enviarLoteNovo(eventos: List<EventoExibicao>) {
@@ -218,6 +237,8 @@ class FilaProofOfPlay(
         if (removidos > 0) incrementarPerdas(removidos)
     }
 
+    /** Ler-somar-gravar: sincronizado porque o envio e o registro de início rodam em paralelo. */
+    @Synchronized
     private fun incrementarPerdas(quantidade: Int) {
         prefsPerdas.edit().putInt(ProofOfPlayDb.CHAVE_PERDAS, perdas() + quantidade).apply()
     }
