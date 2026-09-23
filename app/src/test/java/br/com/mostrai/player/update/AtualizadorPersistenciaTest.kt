@@ -122,4 +122,31 @@ class AtualizadorPersistenciaTest {
         assertEquals(0, servidor.contar("/v.apk"))
         assertEquals(true, atualizador.podePedirInstalacao())
     }
+
+    @Test
+    fun `heartbeat 200 com corpo ilegivel nao apaga a atualizacao pronta`() {
+        // Auditoria F: corpo que não é JSON (proxy, página de erro servida
+        // com 200) virava Resposta() vazia — a mesma coisa que "sem
+        // atualização" — e considerar(null) apagava o APK já baixado e
+        // verificado, ou zerava o adiamento que o operador tinha escolhido.
+        estadoEmDisco(EstadoUpdate.READY, comApk = true)
+        servidor.rotas["/player"] = ServidorDeTeste.Resposta(corpo = "<html>erro</html>".toByteArray())
+        val config = br.com.mostrai.player.config.ConfigAparelho(contexto).apply {
+            baseUrl = servidor.baseUrl; dispositivoId = "tela-1"; chaveAparelho = "chave"
+        }
+        val atualizador = Atualizador(contexto, diario)
+        val sync = br.com.mostrai.player.network.SincronizacaoV2(
+            config, br.com.mostrai.player.network.MostraiApi(config), diario, atualizador,
+        )
+
+        sync.heartbeat(
+            br.com.mostrai.player.network.HeartbeatJson.Corpo(
+                estado = br.com.mostrai.player.estado.EstadoPlayer.PLAYING, configVersionAplicada = 0,
+                criativoId = null, ultimaPlaylistOkEm = null, filaPendentes = 0, filaMaisAntigoEm = null,
+                erroCodigo = null, erroEm = null, erroMensagem = null, desvioRelogioMs = null, updateEstado = null,
+            ),
+        )
+
+        assertEquals(EstadoUpdate.READY, atualizador.estado)
+    }
 }

@@ -140,7 +140,10 @@ open class MostraiApi(
     open fun heartbeat(corpo: HeartbeatJson.Corpo): ResultadoHttp<HeartbeatJson.Resposta> =
         chamarAutenticado("heartbeat") { base, dispositivoId, cabecalhos ->
             http.post("$base/player/$dispositivoId/heartbeat", cabecalhos, HeartbeatJson.corpo(corpo))
-        }.mapear { HeartbeatJson.parseResposta(it) }
+        }.flatMapear { corpo ->
+            HeartbeatJson.parseResposta(corpo)?.let { ResultadoHttp.Ok(it) }
+                ?: ResultadoHttp.RespostaInvalida("heartbeat respondeu 2xx sem JSON")
+        }
 
     // -------------------------------------------------------------------- hello
 

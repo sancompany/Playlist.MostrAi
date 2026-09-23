@@ -95,7 +95,7 @@ class HeartbeatJsonTest {
             }
         """.trimIndent()
 
-        val resposta = HeartbeatJson.parseResposta(corpo)
+        val resposta = HeartbeatJson.parseResposta(corpo)!!
 
         assertEquals("2026-09-23T13:00:00Z", resposta.servidorAgora)
         assertEquals(184, resposta.configVersion)
@@ -109,7 +109,7 @@ class HeartbeatJsonTest {
     fun `resposta V1 com margens continua sendo entendida`() {
         val corpo = """{"ok":true,"margens":{"superior":3,"direita":1.5,"inferior":0,"esquerda":2}}"""
 
-        val resposta = HeartbeatJson.parseResposta(corpo)
+        val resposta = HeartbeatJson.parseResposta(corpo)!!
 
         assertEquals(MargensOverscan(3f, 0f, 2f, 1.5f), resposta.margens)
         assertNull(resposta.configVersion)
@@ -118,7 +118,7 @@ class HeartbeatJsonTest {
 
     @Test
     fun `resposta vazia nao pede nada`() {
-        val resposta = HeartbeatJson.parseResposta("""{"ok":true}""")
+        val resposta = HeartbeatJson.parseResposta("""{"ok":true}""")!!
 
         assertNull(resposta.configVersion)
         assertNull(resposta.margens)
@@ -127,10 +127,16 @@ class HeartbeatJsonTest {
     }
 
     @Test
-    fun `resposta malformada nao lanca, so nao pede nada`() {
-        val resposta = HeartbeatJson.parseResposta("não é json")
+    fun `resposta malformada nao lanca e nao se passa por resposta vazia`() {
+        // BUG-034: tratada como {"ok": true}, ela dizia "sem atualização".
+        assertNull(HeartbeatJson.parseResposta("não é json"))
+    }
 
-        assertNull(resposta.configVersion)
+    @Test
+    fun `corpo vazio continua valendo como nada a fazer`() {
+        val resposta = HeartbeatJson.parseResposta("")!!
+
+        assertNull(resposta.update)
         assertFalse(resposta.atualizarPlaylist)
     }
 

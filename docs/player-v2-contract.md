@@ -291,7 +291,8 @@ não pede nada.
 
 | Código | O que o player faz |
 |---|---|
-| `2xx` | aplica a resposta, marca backend V2 disponível |
+| `2xx` com JSON (ou corpo vazio) | aplica a resposta, marca backend V2 disponível |
+| `2xx` com corpo que não é JSON | resposta inválida: nada é aplicado nem limpo (auditoria, BUG-034) |
 | `401`/`403` | estado `AUTH_ERROR`, registra erro durável, descarta chave candidata |
 | `404` | marca backend V1, segue no comportamento antigo |
 | `429` | respeita `Retry-After`; não registra erro |

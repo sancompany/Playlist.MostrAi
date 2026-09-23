@@ -73,7 +73,15 @@ object HeartbeatJson {
         val novaChave: String? = null,
     )
 
-    fun parseResposta(corpoBruto: String): Resposta = runCatching {
+    /**
+     * `null` quando o corpo não é JSON (BUG-034). Corpo ilegível não é o
+     * mesmo que `{"ok": true}`: tratado como resposta vazia, ele dizia "sem
+     * atualização", e o atualizador apagava um APK já baixado ou desfazia o
+     * adiamento do operador por causa de uma página de erro servida com 200.
+     * Corpo vazio continua valendo como "nada a fazer".
+     */
+    fun parseResposta(corpoBruto: String): Resposta? = runCatching {
+        if (corpoBruto.isBlank()) return Resposta()
         val json = JSONObject(corpoBruto)
         Resposta(
             servidorAgora = json.textoOuNulo("servidorAgora"),
@@ -87,7 +95,7 @@ object HeartbeatJson {
             update = json.optJSONObject("update")?.let(UpdateManifesto::parse),
             novaChave = json.textoOuNulo("novaChave"),
         )
-    }.getOrElse { Resposta() }
+    }.getOrNull()
 
     /**
      * `superior`/`inferior` viram `topo`/`base` para bater com o nome que
