@@ -277,7 +277,10 @@ servidor já queimou, não a credencial permanente de uma tela em operação —
 o mesmo pendrive não provisiona duas TVs por engano.
 
 Se o endpoint ainda não existir, o token fica guardado e o player tenta de
-novo a cada heartbeat; nada se perde. `rotacaoTela` fica no arquivo de
+novo a cada heartbeat; nada se perde. Se o token não servir (expirou, ou foi
+recusado), gere outro no admin, grave num pendrive e reinicie a TV com ele
+plugado: um token **diferente** do gravado, ou credencial completa no
+formato legado, substitui o anterior. O mesmo token não é reaplicado. `rotacaoTela` fica no arquivo de
 propósito: é exatamente o que costuma estar errado na primeira instalação, e
 precisa ser corrigível sem internet.
 

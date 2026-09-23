@@ -80,9 +80,6 @@ object ConfigExterna {
 
     fun procurarEAplicar(context: Context, config: ConfigAparelho) {
         if (config.provisionado) return
-        // Token já lido e ainda não trocado: reler o pendrive não adianta, e
-        // sobrescrever poderia reintroduzir um token que o servidor queimou.
-        if (!config.tokenProvisionamento.isNullOrBlank()) return
 
         val arquivo = localizarArquivo(context)
         if (arquivo == null) {
@@ -99,6 +96,18 @@ object ConfigExterna {
         val dados = parse(texto)
         if (dados == null) {
             Log.w(TAG, "${arquivo.absolutePath} encontrado, mas não é JSON válido")
+            return
+        }
+
+        // O mesmo token que já está gravado e ainda não virou credencial:
+        // reaplicar não adianta. Mas um token DIFERENTE, ou credencial
+        // completa, é o técnico trazendo um pendrive novo porque o anterior
+        // não serviu (expirou, ou foi queimado sem a resposta chegar). Antes,
+        // qualquer token gravado fazia o pendrive ser ignorado para sempre, e
+        // a TV só voltava limpando os dados do app (BUG-033).
+        val tokenGravado = config.tokenProvisionamento
+        if (!tokenGravado.isNullOrBlank() && dados.tokenProvisionamento == tokenGravado && dados.chaveAparelho == null) {
+            Log.i(TAG, "mesmo token do pendrive já gravado; aguardando a troca")
             return
         }
 
