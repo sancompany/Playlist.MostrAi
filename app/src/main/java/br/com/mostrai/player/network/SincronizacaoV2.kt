@@ -154,6 +154,20 @@ class SincronizacaoV2(
      * válido continua exatamente como estava, e a única consequência é o
      * admin mostrar "configuração pendente" até o próximo ciclo.
      */
+    /**
+     * Serializada (BUG-010). `GET /config` devolve sempre a config atual do
+     * servidor; dois heartbeats simultâneos — possível quando um deles está
+     * preso num download longo — podiam pedir a v12 e a v13 ao mesmo tempo,
+     * e se a resposta da v12 chegasse por último, a tela regredia para a
+     * config antiga até o próximo ciclo. Uma de cada vez, a ordem de
+     * aplicação é a ordem das requisições, e cada requisição devolve algo no
+     * mínimo tão novo quanto a anterior.
+     *
+     * Deliberadamente sem regra de "versão só sobe": se o backend um dia
+     * reiniciar a numeração, essa regra travaria a tela na config velha para
+     * sempre.
+     */
+    @Synchronized
     fun sincronizarConfigSeNecessario(versaoServidor: Int?): Boolean {
         val versao = versaoServidor ?: return false
         if (versao == config.configVersionAplicada) return false
