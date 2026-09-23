@@ -161,7 +161,9 @@ Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
   "Gerar um APK já configurado por tela") nunca sobrescreve um
   provisionamento já existente — nem o de uma instalação anterior, nem o
   que o provisionamento de bancada por `adb` aplicar depois (esse último
-  sempre sobrescreve, é o caminho de depuração). Quem vê: ninguém
+  sobrescreve sempre no APK de depuração; no de release, só provisiona
+  aparelho ainda não provisionado — qualquer app da TV pode abrir o player
+  com extras). Quem vê: ninguém
   diretamente — é o que faz o app subir sozinho no primeiro boot quando o
   APK já veio configurado, sem tela de erro nem intervenção.
   `ConfigAparelho.aplicarConfiguracaoEmbutidaSeNecessaria`.

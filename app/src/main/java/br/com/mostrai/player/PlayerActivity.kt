@@ -331,11 +331,19 @@ class PlayerActivity : AppCompatActivity() {
      * Provisionamento de laboratório, por extras do Intent (adb).
      *
      * Caminho de depuração em bancada; o caminho de campo é o
-     * `mostrai-config.json` no pendrive. Sobrescreve sempre, de propósito —
-     * é o que permite corrigir uma tela em bancada sem reinstalar nada.
+     * `mostrai-config.json` no pendrive. Em depuração sobrescreve sempre —
+     * é o que permite corrigir uma tela em bancada sem reinstalar nada. Em
+     * release só vale para aparelho ainda não provisionado (BUG-023, ver
+     * [aceitaExtrasDeProvisionamento]).
      */
     private fun aplicarProvisionamentoProvisorio(origem: Intent?) {
         val extras = origem?.extras ?: return
+        if (!aceitaExtrasDeProvisionamento(BuildConfig.DEBUG, config.provisionado)) {
+            if (EXTRAS_DE_PROVISIONAMENTO.any(extras::containsKey)) {
+                Log.w(TAG, "extras de provisionamento ignorados: aparelho já provisionado (release)")
+            }
+            return
+        }
         extras.getString(EXTRA_DISPOSITIVO)?.let { config.dispositivoId = it }
         extras.getString(EXTRA_CHAVE)?.let { config.chaveAparelho = it }
         extras.getString(EXTRA_TOKEN)?.let { config.tokenProvisionamento = it }
@@ -990,7 +998,19 @@ class PlayerActivity : AppCompatActivity() {
         startActivity(Intent(this, PainelActivity::class.java))
     }
 
-    private companion object {
+    internal companion object {
+        /**
+         * Esta Activity é exportada (LAUNCHER e HOME), e o Android não diz
+         * quem mandou o Intent (BUG-023). Sem esta regra, qualquer app
+         * instalado na TV trocava o `baseUrl` de uma tela em operação — a
+         * chave do aparelho ia no header da requisição seguinte para o
+         * servidor de quem trocou, e ele passava a decidir o que a tela
+         * exibe. Em release, os extras só provisionam aparelho novo (a
+         * bancada continua funcionando); em depuração, sobrescrevem sempre.
+         */
+        fun aceitaExtrasDeProvisionamento(ehDepuracao: Boolean, provisionado: Boolean): Boolean =
+            ehDepuracao || !provisionado
+
         const val TAG = "MostraiPlayer"
 
         /**
@@ -1010,6 +1030,11 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_MARGEM_ESQUERDA = "margemVminEsquerda"
         const val EXTRA_MARGEM_DIREITA = "margemVminDireita"
         const val EXTRA_ROTACAO = "rotacaoTela"
+
+        private val EXTRAS_DE_PROVISIONAMENTO = listOf(
+            EXTRA_DISPOSITIVO, EXTRA_CHAVE, EXTRA_TOKEN, EXTRA_BASE_URL, EXTRA_PIN,
+            EXTRA_MARGEM_TOPO, EXTRA_MARGEM_BASE, EXTRA_MARGEM_ESQUERDA, EXTRA_MARGEM_DIREITA, EXTRA_ROTACAO,
+        )
 
         const val INTERVALO_POLL_MS = 15 * 60_000L
         const val INTERVALO_HEARTBEAT_MS = 5 * 60_000L

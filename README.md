@@ -333,8 +333,11 @@ testar rápido sem preparar um arquivo por tela):
 ```sh
 adb install -r app-debug.apk
 
-# PROVISÓRIO: só para bancada. Sempre sobrescreve, mesmo por cima de uma
-# configuração já embutida no build — é o caminho de depuração.
+# PROVISÓRIO: só para bancada. No APK de depuração sempre sobrescreve,
+# mesmo por cima de uma configuração já embutida no build. No APK de
+# release só vale para aparelho AINDA NÃO provisionado: a PlayerActivity é
+# aberta por qualquer app da TV, e aceitar extras numa tela em operação
+# deixaria outro app trocar o servidor e levar a chave do aparelho.
 adb shell am start -n br.com.mostrai.player/.PlayerActivity \
   -e dispositivoId "<id-da-tela>" \
   -e chaveAparelho "<chave-revogavel>" \
