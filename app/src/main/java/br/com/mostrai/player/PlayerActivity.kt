@@ -1017,6 +1017,12 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (gestoPainel.aoTeclar(keyCode)) return true
+        // BUG-027: VOLTAR no controle da loja encerrava o player no meio do
+        // anúncio pago e, sem o Mostraí como HOME padrão, deixava o launcher
+        // da TV na tela até o watchdog reabrir. Consumido aqui, o onKeyUp
+        // não chega a chamar onBackPressed. O técnico sai pelas teclas HOME
+        // e de configurações do controle.
+        if (keyCode == KeyEvent.KEYCODE_BACK) return true
         return super.onKeyDown(keyCode, event)
     }
 

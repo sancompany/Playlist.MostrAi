@@ -60,4 +60,24 @@ class SegurancaLocalTest {
             h.encerrar()
         }
     }
+
+    @Test
+    fun `tecla voltar do controle nao fecha o player`() {
+        // Um VOLTAR no controle da loja encerrava a Activity no meio do
+        // anúncio pago; sem o Mostraí como HOME padrão, a tela ia para o
+        // launcher da TV até o watchdog reabrir, 5–7 min depois. O técnico
+        // continua saindo pelas teclas HOME e de configurações.
+        val h = Harness()
+        try {
+            val atividade = h.subir().get()
+
+            atividade.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+            atividade.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
+            h.idle()
+
+            assertFalse("VOLTAR fechou o player", atividade.isFinishing)
+        } finally {
+            h.encerrar()
+        }
+    }
 }
