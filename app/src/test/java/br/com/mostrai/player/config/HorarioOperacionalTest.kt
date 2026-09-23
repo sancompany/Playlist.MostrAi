@@ -63,6 +63,23 @@ class HorarioOperacionalTest {
     }
 
     @Test
+    fun `noite de sexta que cruza a meia-noite continua no sabado, nao na sexta de madrugada`() {
+        // Bar que só abre sexta à noite: "sex 22:00–02:00". A continuação é a
+        // madrugada de SÁBADO. Lida contra a lista do próprio dia, a faixa
+        // acendia sexta 00:00–02:00 (quinta à noite, fechado) e apagava
+        // sábado 00:00–02:00 (horário pago).
+        val horario = HorarioOperacional(
+            regime = RegimeOperacao.CUSTOM,
+            porDiaDaSemana = mapOf(DayOfWeek.FRIDAY to listOf(faixa("22:00", "02:00"))),
+        )
+
+        assertTrue(horario.estaDentro(instante("2026-09-25", "23:00"))) // sexta
+        assertTrue(horario.estaDentro(instante("2026-09-26", "01:00"))) // sábado de madrugada
+        assertFalse(horario.estaDentro(instante("2026-09-25", "01:00"))) // sexta de madrugada
+        assertFalse(horario.estaDentro(instante("2026-09-26", "03:00")))
+    }
+
+    @Test
     fun `feriado com lista vazia fecha o dia inteiro`() {
         val horario = HorarioOperacional(
             regime = RegimeOperacao.CUSTOM,

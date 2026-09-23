@@ -19,6 +19,16 @@ data class FaixaHoraria(val inicioMinutos: Int, val fimMinutos: Int) {
         minutoDoDia >= inicioMinutos || minutoDoDia < fimMinutos
     }
 
+    /** Faixa `22:00–02:00`: começa num dia e termina no seguinte. */
+    val cruzaMeiaNoite: Boolean get() = fimMinutos < inicioMinutos
+
+    /** A parte da faixa que cai no próprio dia em que ela começa. */
+    fun contemNoDiaDeInicio(minutoDoDia: Int): Boolean =
+        if (cruzaMeiaNoite) minutoDoDia >= inicioMinutos else minutoDoDia >= inicioMinutos && minutoDoDia < fimMinutos
+
+    /** A parte da faixa que transborda para a madrugada do dia seguinte. */
+    fun contemNaMadrugadaSeguinte(minutoDoDia: Int): Boolean = cruzaMeiaNoite && minutoDoDia < fimMinutos
+
     companion object {
         /** `"08:30"` → 510. Devolve null para qualquer coisa que não seja HH:MM válido. */
         fun deTexto(texto: String): Int? {
@@ -76,13 +86,23 @@ data class HorarioOperacional(
         val data = local.toLocalDate()
         val minutoDoDia = local.hour * 60 + local.minute
 
+        // Feriado sobrepõe o dia inteiro, inclusive a madrugada — "lista
+        // vazia = fechado o dia inteiro" (contrato §7).
         feriados[data]?.let { faixasDoFeriado ->
             return faixasDoFeriado.any { it.contem(minutoDoDia) }
         }
 
-        val faixas = porDiaDaSemana[data.dayOfWeek] ?: return false
-        return faixas.any { it.contem(minutoDoDia) }
+        // BUG-026: "sex 22:00–02:00" continua na madrugada de SÁBADO. Lida só
+        // contra a lista do próprio dia, a faixa acendia sexta de madrugada
+        // (quinta à noite) e apagava sábado de madrugada (horário pago).
+        val hoje = porDiaDaSemana[data.dayOfWeek].orEmpty()
+        val ontem = faixasDoDia(data.minusDays(1))
+        return hoje.any { it.contemNoDiaDeInicio(minutoDoDia) } ||
+            ontem.any { it.contemNaMadrugadaSeguinte(minutoDoDia) }
     }
+
+    private fun faixasDoDia(data: LocalDate): List<FaixaHoraria> =
+        feriados[data] ?: porDiaDaSemana[data.dayOfWeek].orEmpty()
 
     fun zonaOuPadrao(): ZoneId =
         runCatching { ZoneId.of(timezone) }.getOrElse { ZoneId.of(TIMEZONE_PADRAO) }
