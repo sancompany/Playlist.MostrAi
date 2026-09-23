@@ -49,9 +49,7 @@ class SincronizacaoV2(
 
         return when (val resultado = api.provisionar(token)) {
             is ResultadoHttp.Ok -> {
-                config.dispositivoId = resultado.valor.dispositivoId
-                config.chaveAparelho = resultado.valor.chaveAparelho
-                config.tokenProvisionamento = null
+                config.gravarCredenciaisDoToken(resultado.valor.dispositivoId, resultado.valor.chaveAparelho)
                 config.backendV2Disponivel = true
                 diario.registrar(DiarioBordo.Codigo.PROVISIONADO, "por token de uso único")
                 true

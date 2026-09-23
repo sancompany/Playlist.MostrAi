@@ -46,6 +46,19 @@ class ConfigAparelho(context: Context) {
         get() = prefs.getString(CHAVE_APARELHO_CANDIDATA, null)
         set(valor) = prefs.edit().putString(CHAVE_APARELHO_CANDIDATA, valor).apply()
 
+    /**
+     * Grava o par vindo da troca do token e apaga o token, numa escrita só e
+     * síncrona (ROB-003). O servidor queima o token na troca: se as três
+     * gravações fossem `apply()` separados, um crash ou queda de energia
+     * entre a resposta e o disco deixaria o aparelho com o token já gasto e
+     * sem credencial — só volta com visita. Chamar fora da thread principal.
+     */
+    fun gravarCredenciaisDoToken(dispositivoId: String, chave: String): Boolean = prefs.edit()
+        .putString(CHAVE_DISPOSITIVO, dispositivoId)
+        .putString(CHAVE_APARELHO, chave)
+        .remove(CHAVE_TOKEN_PROVISIONAMENTO)
+        .commit()
+
     /** Base da API, ex.: https://exemplo/api. Não vai versionada no repositório. */
     var baseUrl: String?
         get() = prefs.getString(CHAVE_BASE_URL, null)
