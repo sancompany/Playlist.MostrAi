@@ -159,7 +159,10 @@ class FilaProofOfPlay(
             is MostraiApi.RespostaPlayed.ErroPayload -> isolarPayloadRejeitado(eventos)
             is MostraiApi.RespostaPlayed.ErroAparelho -> {
                 Log.w(TAG, "erro do aparelho (${resposta.codigo}) ao enviar proof-of-play, fila mantida")
-                // Não descarta nada — problema do aparelho, fica visível no painel.
+                // Não descarta nada — problema do aparelho, fica visível no
+                // painel. Mas reagenda (ROB-005): sem isso, o lote inteiro ia
+                // de novo ao fim de cada exibição só para voltar 401.
+                eventos.forEach { adiarComBackoff(it) }
             }
             is MostraiApi.RespostaPlayed.RespeitarEspera -> {
                 val proximo = fimDaEspera(resposta.segundos)
@@ -210,7 +213,7 @@ class FilaProofOfPlay(
                 db.marcarQuarentena(evento.execucaoId, MOTIVO_QUARENTENA)
                 incrementarPerdas(1)
             }
-            is MostraiApi.RespostaPlayed.ErroAparelho -> Unit // fila mantida
+            is MostraiApi.RespostaPlayed.ErroAparelho -> adiarComBackoff(evento) // fila mantida, reagendada
             is MostraiApi.RespostaPlayed.RespeitarEspera -> {
                 db.adiarReenvio(evento.execucaoId, fimDaEspera(resposta.segundos), evento.tentativas + 1)
             }

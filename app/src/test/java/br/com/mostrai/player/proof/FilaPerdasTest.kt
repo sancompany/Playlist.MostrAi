@@ -22,7 +22,11 @@ class FilaPerdasTest {
 
     private class Api(config: ConfigAparelho) : MostraiApi(config) {
         var resposta: RespostaPlayed = RespostaPlayed.Transitorio("x")
-        override fun enviarLote(eventos: List<EventoExibicao>) = resposta
+        var envios = 0
+        override fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
+            envios++
+            return resposta
+        }
     }
 
     private lateinit var contexto: Context
@@ -110,6 +114,22 @@ class FilaPerdasTest {
         val daquiAUmDia = System.currentTimeMillis() + 24 * 60 * 60 * 1000L
         val elegiveis = ProofOfPlayDb(contexto).elegiveisParaEnvio(daquiAUmDia, 10)
         assertEquals("evento adiado para além de um dia", 1, elegiveis.size)
+    }
+
+    @Test
+    fun `credencial recusada nao reenvia o lote a cada exibicao`() {
+        // tentarEnviar roda ao fim de TODA exibição e a cada minuto. Com a
+        // credencial recusada, sem reagendar, o lote inteiro ia de novo a
+        // cada 10-30s só para voltar 401 — e os comprovantes ficam intactos.
+        val id = fila.registrarInicio(item, playlist)!!
+        fila.registrarFim(id)
+        api.resposta = MostraiApi.RespostaPlayed.ErroAparelho(401)
+
+        repeat(5) { fila.tentarEnviar() }
+
+        assertEquals(1, api.envios)
+        assertEquals(1, fila.pendentes())
+        assertEquals(0, fila.perdas())
     }
 
     @Test
