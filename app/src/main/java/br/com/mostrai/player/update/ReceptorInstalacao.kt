@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.util.Log
+import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.estado.DiarioBordo
 
 /**
@@ -40,7 +41,12 @@ class ReceptorInstalacao : BroadcastReceiver() {
             else -> {
                 val mensagem = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                 diario.registrar(DiarioBordo.Codigo.UPDATE_FALHOU, "status $status: ${mensagem ?: "sem detalhe"}")
-                atualizador.adiar(HORAS_APOS_CANCELAMENTO)
+                // BUG-024: a janela vem da config (`update.horasEntreTentativas`,
+                // contrato §5), não só da constante — o admin mudava o valor e
+                // nada acontecia.
+                val horas = ConfigAparelho(context).configRemota()?.politicaUpdate?.horasEntreTentativas
+                    ?: HORAS_APOS_CANCELAMENTO
+                atualizador.adiar(horas)
             }
         }
     }
