@@ -48,6 +48,15 @@ class PlayedJsonTest {
     }
 
     @Test
+    fun `um resultado malformado nao descarta os outros`() {
+        // Descartar a resposta inteira deixava na fila comprovantes que o
+        // servidor JÁ contou; reenviados até expirar, viravam "perda".
+        val corpo = """{"resultados": [null, 7, {"execucaoId": "e1", "status": "contabilizado"}]}"""
+
+        assertEquals(mapOf("e1" to "contabilizado"), PlayedJson.parseResultados(corpo))
+    }
+
+    @Test
     fun `corpoLegado manda so anuncianteId`() {
         val corpo = PlayedJson.corpoLegado("anun-1")
         assertEquals("anun-1", JSONObject(corpo).getString("anuncianteId"))
