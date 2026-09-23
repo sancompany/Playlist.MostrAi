@@ -1,6 +1,8 @@
 package br.com.mostrai.player.ui
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -50,6 +52,35 @@ class PainelActivity : AppCompatActivity() {
     private lateinit var grupoInfo: ScrollView
 
     private val digitado = StringBuilder()
+
+    /**
+     * BUG-028: o player segue tocando — e gerando comprovante — atrás deste
+     * painel, que cobre 90% da tela. Esquecido aberto, a loja exibia o
+     * diagnóstico por dias com os anúncios contando por baixo. Fecha sozinho
+     * depois de [INATIVIDADE_MS] sem nenhuma tecla.
+     */
+    private val handler = Handler(Looper.getMainLooper())
+    private val fecharPorInatividade = Runnable { finish() }
+
+    private fun reiniciarContagemDeInatividade() {
+        handler.removeCallbacks(fecharPorInatividade)
+        handler.postDelayed(fecharPorInatividade, INATIVIDADE_MS)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        reiniciarContagemDeInatividade()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(fecharPorInatividade)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        reiniciarContagemDeInatividade()
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -151,7 +182,7 @@ class PainelActivity : AppCompatActivity() {
             appendLine()
             appendLine("Tela .............. ${resumirId(config.dispositivoId)}")
             appendLine("Chave ............. ${resumirChave(config.chaveAparelho)}")
-            appendLine("Servidor .......... ${config.baseUrl ?: "—"}")
+            appendLine("Servidor .......... ${resumirServidor(config.baseUrl)}")
             appendLine("Provisionado ...... ${if (config.provisionado) "sim" else "não"}")
             appendLine("Backend V2 ........ ${if (config.backendV2Disponivel) "sim" else "não detectado"}")
             appendLine("Config aplicada ... versão ${config.configVersionAplicada}")
@@ -230,6 +261,18 @@ class PainelActivity : AppCompatActivity() {
         return if (chave.length <= 8) "••••" else "${chave.take(4)}…${chave.takeLast(4)}"
     }
 
+    /**
+     * Só esquema e host: a tela fica num comércio, e uma URL nunca pode
+     * levar credencial para ela (usuário:senha, token em query).
+     */
+    private fun resumirServidor(url: String?): String {
+        if (url.isNullOrBlank()) return "—"
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return "(inválido)"
+        val host = uri.host ?: return "(inválido)"
+        val porta = if (uri.port > 0) ":${uri.port}" else ""
+        return "${uri.scheme}://$host$porta"
+    }
+
     /** O id não é segredo, mas a tela fica num comércio — mostra só o suficiente para conferir. */
     private fun resumirId(id: String?): String {
         if (id.isNullOrBlank()) return "—"
@@ -242,5 +285,9 @@ class PainelActivity : AppCompatActivity() {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    private companion object {
+        const val INATIVIDADE_MS = 3 * 60_000L
     }
 }
