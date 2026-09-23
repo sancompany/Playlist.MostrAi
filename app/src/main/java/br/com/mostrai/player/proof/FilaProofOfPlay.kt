@@ -238,15 +238,18 @@ class FilaProofOfPlay(
     private fun limitarTamanho() {
         if (db.contarPendentes() < TAMANHO_MAXIMO_FILA) return
         db.proximoADescartar()?.let {
+            val eraComprovante = db.aguardaEnvio(it)
             db.remover(it)
-            incrementarPerdas(1)
+            if (eraComprovante) incrementarPerdas(1)
         }
     }
 
+    /** Só comprovante conta como perda — ver [ProofOfPlayDb.contarComprovantesAntesDe]. */
     private fun removerExpirados() {
         val limite = System.currentTimeMillis() - HORIZONTE_EXPIRACAO_MS
-        val removidos = db.removerExpirados(limite)
-        if (removidos > 0) incrementarPerdas(removidos)
+        val comprovantes = db.contarComprovantesAntesDe(limite)
+        db.removerExpirados(limite)
+        if (comprovantes > 0) incrementarPerdas(comprovantes)
     }
 
     private inline fun <T> seguro(padrao: T, bloco: () -> T): T = try {

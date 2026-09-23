@@ -151,7 +151,7 @@ class ProofOfPlayDb(context: Context) :
     fun contarPendentes(): Int = contar(null)
 
     /** Só o que ainda pode virar comprovante — é o número que interessa ao admin. */
-    fun contarAguardandoEnvio(): Int = contar("terminado_em IS NOT NULL AND quarentena_motivo IS NULL")
+    fun contarAguardandoEnvio(): Int = contar(AGUARDANDO_ENVIO)
 
     fun contarQuarentena(): Int = contar("quarentena_motivo IS NOT NULL")
 
@@ -201,6 +201,20 @@ class ProofOfPlayDb(context: Context) :
         return null
     }
 
+    /**
+     * Quantos comprovantes de verdade — terminados e fora da quarentena —
+     * existem antes de [limiteMs]. Órfão nunca foi comprovante, e quarentena
+     * já foi contada como perda ao entrar nela (BUG-017).
+     */
+    fun contarComprovantesAntesDe(limiteMs: Long): Int =
+        contar("criado_em_ms < $limiteMs AND $AGUARDANDO_ENVIO")
+
+    fun aguardaEnvio(execucaoId: String): Boolean {
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM $TABELA WHERE execucao_id = ? AND $AGUARDANDO_ENVIO", arrayOf(execucaoId),
+        ).use { return it.moveToFirst() }
+    }
+
     /** Horizonte local de 7 dias (seção 6.5) — contabilidade, não decisão de crédito. */
     fun removerExpirados(limiteMs: Long): Int =
         writableDatabase.delete(TABELA, "criado_em_ms < ?", arrayOf(limiteMs.toString()))
@@ -246,6 +260,8 @@ class ProofOfPlayDb(context: Context) :
         /** 1 → 2: coluna `quarentena_motivo` (R4). */
         const val VERSAO = 2
         const val TABELA = "evento_exibicao"
+
+        private const val AGUARDANDO_ENVIO = "terminado_em IS NOT NULL AND quarentena_motivo IS NULL"
 
         /** Compartilhado com [FilaProofOfPlay] para o contador de perda. */
         const val PREFS_PERDAS = "mostrai_perdas"
