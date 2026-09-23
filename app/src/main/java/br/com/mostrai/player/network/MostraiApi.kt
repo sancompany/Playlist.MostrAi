@@ -44,14 +44,15 @@ open class MostraiApi(
         val dispositivoId = config.dispositivoId ?: return RespostaPlaylist.Transitorio("sem dispositivoId")
         if (!config.temCredencial) return RespostaPlaylist.ErroAparelho(SEM_CREDENCIAL)
         return try {
-            val resposta = http.get("$base/playlist/$dispositivoId", cabecalhos())
+            val chave = chaveParaEnviar()
+            val resposta = http.get("$base/playlist/$dispositivoId", cabecalhos(chave))
             when (resposta.codigo) {
                 200 -> {
-                    promoverChaveCandidata()
+                    promoverChaveCandidata(chave)
                     RespostaPlaylist.Sucesso(PlaylistJson.parse(resposta.corpo), resposta.corpo)
                 }
                 401, 403 -> {
-                    descartarChaveCandidata()
+                    descartarChaveCandidata(chave)
                     RespostaPlaylist.ErroAparelho(resposta.codigo)
                 }
                 404 -> RespostaPlaylist.ErroAparelho(404)
@@ -82,7 +83,7 @@ open class MostraiApi(
         if (!config.temCredencial) return RespostaPlayed.ErroAparelho(SEM_CREDENCIAL)
         return try {
             val resposta = http.post(
-                "$base/player/$dispositivoId/played", cabecalhos(), PlayedJson.corpoLote(eventos),
+                "$base/player/$dispositivoId/played", cabecalhos(chaveParaEnviar()), PlayedJson.corpoLote(eventos),
             )
             when (resposta.codigo) {
                 200 -> RespostaPlayed.Sucesso(PlayedJson.parseResultados(resposta.corpo))
@@ -109,7 +110,7 @@ open class MostraiApi(
         if (!config.temCredencial) return RespostaPlayed.ErroAparelho(SEM_CREDENCIAL)
         return try {
             val resposta = http.post(
-                "$base/player/$dispositivoId/played", cabecalhos(), PlayedJson.corpoLegado(anuncianteId),
+                "$base/player/$dispositivoId/played", cabecalhos(chaveParaEnviar()), PlayedJson.corpoLegado(anuncianteId),
             )
             when (resposta.codigo) {
                 200 -> RespostaPlayed.SucessoLegado(PlayedJson.parseContouLegado(resposta.corpo))
@@ -137,22 +138,22 @@ open class MostraiApi(
      * justamente na única chamada periódica que o aparelho faz.
      */
     open fun heartbeat(corpo: HeartbeatJson.Corpo): ResultadoHttp<HeartbeatJson.Resposta> =
-        chamarAutenticado("heartbeat") { base, dispositivoId ->
-            http.post("$base/player/$dispositivoId/heartbeat", cabecalhos(), HeartbeatJson.corpo(corpo))
+        chamarAutenticado("heartbeat") { base, dispositivoId, cabecalhos ->
+            http.post("$base/player/$dispositivoId/heartbeat", cabecalhos, HeartbeatJson.corpo(corpo))
         }.mapear { HeartbeatJson.parseResposta(it) }
 
     // -------------------------------------------------------------------- hello
 
     open fun hello(dados: HelloJson.Dados): ResultadoHttp<Int?> =
-        chamarAutenticado("hello") { base, dispositivoId ->
-            http.post("$base/player/$dispositivoId/hello", cabecalhos(), HelloJson.corpo(dados))
+        chamarAutenticado("hello") { base, dispositivoId, cabecalhos ->
+            http.post("$base/player/$dispositivoId/hello", cabecalhos, HelloJson.corpo(dados))
         }.mapear { HelloJson.parseConfigVersion(it) }
 
     // ------------------------------------------------------------------- config
 
     open fun buscarConfig(): ResultadoHttp<Pair<ConfigRemota, String>> =
-        chamarAutenticado("config") { base, dispositivoId ->
-            http.get("$base/player/$dispositivoId/config", cabecalhos())
+        chamarAutenticado("config") { base, dispositivoId, cabecalhos ->
+            http.get("$base/player/$dispositivoId/config", cabecalhos)
         }.flatMapear { corpo ->
             val config = ConfigRemotaJson.parse(corpo)
                 ?: return@flatMapear ResultadoHttp.RespostaInvalida("config sem configVersion utilizável")
@@ -202,7 +203,7 @@ open class MostraiApi(
 
     private inline fun chamarAutenticado(
         nome: String,
-        chamada: (base: String, dispositivoId: String) -> HttpCliente.Resposta,
+        chamada: (base: String, dispositivoId: String, cabecalhos: Map<String, String>) -> HttpCliente.Resposta,
     ): ResultadoHttp<String> {
         val base = config.baseUrl ?: return ResultadoHttp.SemCredencial("sem baseUrl configurada")
         val dispositivoId = config.dispositivoId ?: return ResultadoHttp.SemCredencial("sem dispositivoId")
@@ -211,11 +212,12 @@ open class MostraiApi(
         // que o aparelho simplesmente não foi provisionado.
         if (!config.temCredencial) return ResultadoHttp.SemCredencial("sem chave de aparelho")
 
+        val chave = chaveParaEnviar()
         return try {
-            val resultado = classificar(chamada(base, dispositivoId))
+            val resultado = classificar(chamada(base, dispositivoId, cabecalhos(chave)))
             when (resultado) {
-                is ResultadoHttp.Ok -> promoverChaveCandidata()
-                is ResultadoHttp.ErroAutenticacao -> descartarChaveCandidata()
+                is ResultadoHttp.Ok -> promoverChaveCandidata(chave)
+                is ResultadoHttp.ErroAutenticacao -> descartarChaveCandidata(chave)
                 else -> Unit
             }
             resultado
@@ -253,17 +255,31 @@ open class MostraiApi(
      * A chave candidata só vira oficial depois de o servidor aceitar uma
      * requisição feita com ela (Parte 14). Enquanto não aceitar, a antiga
      * continua valendo e a tela continua no ar.
+     *
+     * Só conta a resposta de uma requisição que **levou** a candidata
+     * (BUG-013). Playlist, heartbeat, config e envio de proof-of-play rodam
+     * em paralelo; a candidata chega pela resposta de um deles enquanto os
+     * outros já saíram com a chave antiga, e o 200 desses outros não prova
+     * nada sobre ela. Antes, promovia assim mesmo — e se a candidata não
+     * existisse no servidor, a tela jogava fora a única chave válida.
      */
-    private fun promoverChaveCandidata() {
+    @Synchronized
+    private fun promoverChaveCandidata(chaveEnviada: String?) {
         val candidata = config.chaveCandidata ?: return
+        if (candidata != chaveEnviada) return
         config.chaveAparelho = candidata
         config.chaveCandidata = null
         Log.i(TAG, "chave de aparelho rotacionada com sucesso")
     }
 
-    /** A candidata não serve: volta para a antiga sem drama. */
-    private fun descartarChaveCandidata() {
-        if (config.chaveCandidata != null) {
+    /**
+     * A candidata não serve: volta para a antiga sem drama. Mesma regra da
+     * promoção — um 401 de requisição feita com a chave antiga fala da
+     * antiga, não da candidata.
+     */
+    @Synchronized
+    private fun descartarChaveCandidata(chaveEnviada: String?) {
+        if (config.chaveCandidata != null && config.chaveCandidata == chaveEnviada) {
             Log.w(TAG, "chave candidata rejeitada pelo servidor, mantendo a anterior")
             config.chaveCandidata = null
         }
@@ -279,11 +295,16 @@ open class MostraiApi(
         "X-Player-Contract" to HeartbeatJson.CONTRATO.toString(),
     )
 
-    private fun cabecalhos(): Map<String, String> {
-        // Durante a rotação, a candidata é quem vai — é assim que ela prova
-        // que funciona. Se falhar, promoverChaveCandidata nunca roda e a
-        // antiga continua gravada.
-        val chave = config.chaveCandidata ?: config.chaveAparelho ?: return cabecalhosBase()
+    /**
+     * Durante a rotação, a candidata é quem vai — é assim que ela prova que
+     * funciona. Se falhar, promoverChaveCandidata nunca roda e a antiga
+     * continua gravada. Lida uma vez por requisição: quem chama guarda o
+     * valor para saber, na resposta, qual chave ela está julgando.
+     */
+    private fun chaveParaEnviar(): String? = config.chaveCandidata ?: config.chaveAparelho
+
+    private fun cabecalhos(chave: String?): Map<String, String> {
+        if (chave == null) return cabecalhosBase()
         return cabecalhosBase() + mapOf(
             "X-Aparelho-Id" to chave,
             "X-Aparelho-Key" to chave,
