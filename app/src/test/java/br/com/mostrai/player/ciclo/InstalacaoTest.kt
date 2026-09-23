@@ -157,4 +157,21 @@ class InstalacaoTest {
             Atualizador(h.contexto, br.com.mostrai.player.estado.DiarioBordo(h.contexto)).estado == EstadoUpdate.READY,
         )
     }
+
+    @Test
+    fun `nova oferta de instalacao abandona a sessao anterior`() {
+        // Auditoria G: cada oferta cria uma sessão do PackageInstaller com
+        // uma cópia inteira do APK no armazenamento do sistema. Com o
+        // diálogo ignorado e a reoferta a cada 6h, as sessões antigas ficavam
+        // lá até o sistema expirá-las (dias) — centenas de MB numa TV.
+        atualizacaoPronta()
+        val atualizador = Atualizador(h.contexto, br.com.mostrai.player.estado.DiarioBordo(h.contexto))
+        val instalador = h.contexto.packageManager.packageInstaller
+
+        assertTrue(atualizador.pedirInstalacao())
+        atualizacaoPronta() // 6h depois: de volta a READY
+        assertTrue(atualizador.pedirInstalacao())
+
+        assertTrue("sessões acumuladas: ${instalador.mySessions.size}", instalador.mySessions.size <= 1)
+    }
 }

@@ -233,6 +233,10 @@ class Atualizador(
         }
         return try {
             val instalador = app.packageManager.packageInstaller
+            // BUG-036: cada sessão guarda uma cópia inteira do APK no
+            // armazenamento do sistema. Com a reoferta a cada 6h e o diálogo
+            // ignorado, as anteriores ficavam até o sistema expirá-las (dias).
+            instalador.mySessions.forEach { runCatching { instalador.abandonSession(it.sessionId) } }
             val parametros = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             val idSessao = instalador.createSession(parametros)
             instalador.openSession(idSessao).use { sessao ->
