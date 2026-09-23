@@ -186,7 +186,14 @@ class CacheMidia(context: Context) {
 
             val digest = MessageDigest.getInstance("SHA-256")
             DigestInputStream(conexao.inputStream, digest).use { entrada ->
-                temporario.outputStream().use { saida -> entrada.copyTo(saida) }
+                temporario.outputStream().use { saida ->
+                    entrada.copyTo(saida)
+                    // ROB-004: sem isto, uma queda de energia logo depois do
+                    // renameTo pode deixar o nome final apontando para dados
+                    // que nunca chegaram ao disco — e o caminho rápido de
+                    // resolucao() confia no arquivo com nome final para sempre.
+                    saida.fd.sync()
+                }
             }
 
             if (temporario.length() == 0L) throw IOException("arquivo baixado veio vazio")
