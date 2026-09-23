@@ -679,9 +679,10 @@ class PlayerActivity : AppCompatActivity() {
             // A linha da fila nasce ANTES do play() (decisão 3, seção 4) — só
             // toca depois que o execucaoId está persistido. Resolve o arquivo
             // do cache local na mesma ida à thread de fundo (bloco 4 do MVP).
-            val (id, arquivoLocal) = withContext(Dispatchers.IO) {
-                fila.registrarInicio(item, playlistDoItem) to cacheMidia.resolver(item)
+            val (id, resolucao) = withContext(Dispatchers.IO) {
+                fila.registrarInicio(item, playlistDoItem) to cacheMidia.resolucao(item)
             }
+            val arquivoLocal = resolucao.arquivo
 
             if (minhaGeracao != geracaoReproducao) {
                 // Um item mais novo já assumiu a tela enquanto isto resolvia
@@ -695,7 +696,7 @@ class PlayerActivity : AppCompatActivity() {
             // Hash divergente é mídia comprovadamente errada: tocar a URL
             // remota seria servir exatamente o arquivo que acabou de ser
             // rejeitado. Pula o item (R3).
-            if (arquivoLocal == null && !cacheMidia.deveTocarDaUrlRemota()) {
+            if (arquivoLocal == null && !resolucao.podeTocarDaUrlRemota) {
                 if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
                 estadoAtual = EstadoPlayer.DOWNLOAD_ERROR
                 diario.registrar(DiarioBordo.Codigo.MIDIA_HASH_DIVERGENTE, item.criativoId)

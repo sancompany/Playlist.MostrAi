@@ -83,17 +83,18 @@ class CacheMidiaHashTest {
     fun `hash errado impede tocar a url remota`() {
         // Cair para a URL remota seria servir exatamente o arquivo que acabou
         // de ser rejeitado.
-        cache.resolver(item("b".repeat(64)))
+        val resolucao = cache.resolucao(item("b".repeat(64)))
 
-        assertFalse(cache.deveTocarDaUrlRemota())
+        assertFalse(resolucao.podeTocarDaUrlRemota)
     }
 
     @Test
     fun `falha de rede continua permitindo tocar da url remota`() {
         val itemQuebrado = item(null).copy(url = "http://127.0.0.1:1/nao-existe.mp4")
 
-        assertNull(cache.resolver(itemQuebrado))
-        assertTrue(cache.deveTocarDaUrlRemota())
+        val resolucao = cache.resolucao(itemQuebrado)
+        assertNull(resolucao.arquivo)
+        assertTrue(resolucao.podeTocarDaUrlRemota)
     }
 
     @Test

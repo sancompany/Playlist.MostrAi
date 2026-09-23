@@ -1,6 +1,7 @@
 package br.com.mostrai.player.cache
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import br.com.mostrai.player.playlist.ItemPlaylist
 import java.io.File
@@ -9,6 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.DigestInputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Cache local de mídia (bloco 4 do MVP — obrigatório, não otimização: sem
@@ -32,6 +34,25 @@ class CacheMidia(context: Context) {
         object SemUrl : Falha()
     }
 
+    /**
+     * O resultado de uma resolução, **por chamada** (BUG-009).
+     *
+     * A versão anterior guardava o motivo da falha num campo compartilhado,
+     * e o player o consultava depois. Entre o `resolver(A)` falhar por hash
+     * e o player perguntar "posso tocar da URL?", o pré-aquecimento resolvia
+     * outro item com sucesso e zerava o campo — e A, a mídia
+     * comprovadamente errada, tocava da URL remota. O motivo agora viaja
+     * junto com o resultado, e não há o que outra thread sobrescrever.
+     */
+    data class Resolucao(val arquivo: File?, val falha: Falha?) {
+        /**
+         * Hash divergente é mídia comprovadamente errada: tocar a URL remota
+         * seria servir exatamente o arquivo que acabou de ser rejeitado.
+         * Qualquer outra falha (rede, sem cache) pode cair para a URL.
+         */
+        val podeTocarDaUrlRemota: Boolean get() = falha !is Falha.HashDivergente
+    }
+
     private val diretorio: File = File(context.applicationContext.cacheDir, "midia").apply {
         mkdirs()
         // Um .tmp órfão só existe se um download anterior foi interrompido no
@@ -41,68 +62,81 @@ class CacheMidia(context: Context) {
         listFiles { arquivo -> arquivo.name.endsWith(".tmp") }?.forEach { it.delete() }
     }
 
-    /** Última falha de resolução, para quem monta o diagnóstico. */
-    @Volatile
-    var ultimaFalha: Falha? = null
-        private set
+    /**
+     * Uma trava por chave de cache, não uma global (BUG-008).
+     *
+     * O pré-aquecimento baixa a playlist inteira, um item por vez. Com trava
+     * global, um item que JÁ estava no cache não conseguia começar enquanto
+     * outro, completamente diferente, baixava — um vídeo grande numa
+     * internet de loja pode levar minutos, e a tela ficava congelada nesse
+     * tempo. Por chave, só downloads do mesmo arquivo se excluem, que é o
+     * único caso em que dois escritores no mesmo `.tmp` corromperiam o cache.
+     */
+    private val travas = ConcurrentHashMap<String, Any>()
+
+    /**
+     * Chaves cujo download foi rejeitado por hash, e quando (BUG-006).
+     *
+     * O arquivo continua não batendo com o hash até alguém corrigir no
+     * backend; rebaixar a cada vez que o item aparece na playlist queimava a
+     * internet da loja. A rejeição vale por [SILENCIO_APOS_HASH_DIVERGENTE_MS]
+     * e depois o player tenta de novo, para pegar a correção quando vier.
+     * Em memória de propósito: um reinício do processo dá mais uma chance.
+     */
+    private val rejeitadas = ConcurrentHashMap<String, Pair<Falha.HashDivergente, Long>>()
 
     /**
      * Devolve o arquivo local pronto para tocar — do cache se já existir,
-     * baixando primeiro se não. Retorna null se não houver como cachear
-     * (sem URL, download falhou, ou hash não bateu) — quem chama cai para
-     * tocar direto da URL remota nesse caso, exceto quando o hash divergiu:
-     * aí a mídia é comprovadamente errada e não deve tocar de jeito nenhum.
-     *
-     * Sincronizado de propósito: sem isso, o pré-aquecimento em segundo
-     * plano e a exibição que acabou de chegar no mesmo item podem baixar a
-     * mesma chave ao mesmo tempo e escrever por cima uma da outra no mesmo
-     * arquivo temporário, corrompendo o cache. Serializar aqui é a mesma
-     * decisão que já limita `preAquecer` a uma baixa por vez, e é também o
-     * que impede dois downloads simultâneos do mesmo hash (Parte 17).
+     * baixando primeiro se não. Sem arquivo, [Resolucao.falha] diz por quê,
+     * e [Resolucao.podeTocarDaUrlRemota] diz se o player pode cair para a URL.
      *
      * Bloqueante — chamar de uma thread de fundo.
      */
-    @Synchronized
-    fun resolver(item: ItemPlaylist): File? {
-        val url = item.url ?: run {
-            ultimaFalha = Falha.SemUrl
-            return null
-        }
-        val chave = ChaveCache.paraItem(item) ?: return null
+    fun resolucao(item: ItemPlaylist): Resolucao {
+        val url = item.url ?: return Resolucao(null, Falha.SemUrl)
+        val chave = ChaveCache.paraItem(item) ?: return Resolucao(null, Falha.SemUrl)
         val arquivo = File(diretorio, chave)
 
+        // Caminho rápido, sem trava: arquivo com o nome final sempre passou
+        // pela verificação (a promoção é o último passo de baixarPara).
         if (arquivo.exists() && arquivo.length() > 0) {
             arquivo.setLastModified(System.currentTimeMillis())
-            ultimaFalha = null
-            return arquivo
+            return Resolucao(arquivo, null)
         }
 
-        val hashEsperado = item.contentHash?.takeIf { ChaveCache.ehHexSha256(it) }?.lowercase()
-        return try {
-            baixarPara(url, arquivo, hashEsperado)
-            limitarTamanho()
-            ultimaFalha = null
-            arquivo
-        } catch (e: HashDivergenteException) {
-            Log.e(TAG, "mídia descartada: hash não confere ($chave)", e)
-            arquivo.delete()
-            ultimaFalha = Falha.HashDivergente(e.esperado, e.obtido)
-            null
-        } catch (e: IOException) {
-            Log.w(TAG, "falha ao baixar mídia ($chave), tocando direto da URL", e)
-            arquivo.delete() // nunca deixa arquivo parcial no cache
-            ultimaFalha = Falha.Rede(e.message ?: "falha de rede")
-            null
+        rejeitadas[chave]?.let { (falha, em) ->
+            if (SystemClock.elapsedRealtime() - em < SILENCIO_APOS_HASH_DIVERGENTE_MS) {
+                return Resolucao(null, falha)
+            }
+            rejeitadas.remove(chave)
+        }
+
+        synchronized(travas.computeIfAbsent(chave) { Any() }) {
+            // Outra thread pode ter baixado este mesmo arquivo enquanto esta
+            // esperava a trava — não baixa de novo.
+            if (arquivo.exists() && arquivo.length() > 0) return Resolucao(arquivo, null)
+
+            val hashEsperado = item.contentHash?.takeIf { ChaveCache.ehHexSha256(it) }?.lowercase()
+            return try {
+                baixarPara(url, arquivo, hashEsperado)
+                limitarTamanho()
+                Resolucao(arquivo, null)
+            } catch (e: HashDivergenteException) {
+                Log.e(TAG, "mídia descartada: hash não confere ($chave)", e)
+                arquivo.delete()
+                val falha = Falha.HashDivergente(e.esperado, e.obtido)
+                rejeitadas[chave] = falha to SystemClock.elapsedRealtime()
+                Resolucao(null, falha)
+            } catch (e: IOException) {
+                Log.w(TAG, "falha ao baixar mídia ($chave), tocando direto da URL", e)
+                arquivo.delete() // nunca deixa arquivo parcial no cache
+                Resolucao(null, Falha.Rede(e.message ?: "falha de rede"))
+            }
         }
     }
 
-    /**
-     * Quando o hash divergiu, o arquivo baixado é comprovadamente diferente
-     * do que o backend prometeu. Tocar a URL remota direto seria servir
-     * exatamente a mídia que acabou de ser rejeitada — o item deve ser
-     * pulado, não "degradado".
-     */
-    fun deveTocarDaUrlRemota(): Boolean = ultimaFalha !is Falha.HashDivergente
+    /** Atalho para quem só precisa do arquivo (pré-aquecimento, testes). */
+    fun resolver(item: ItemPlaylist): File? = resolucao(item).arquivo
 
     /**
      * Baixa de antemão os itens de uma playlist que ainda não estão em
@@ -177,7 +211,7 @@ class CacheMidia(context: Context) {
 
     /** Teto simples de tamanho, descarta o mais antigo — sem LRU sofisticado na v1 (CONSTRAINTS.md). */
     private fun limitarTamanho() {
-        val arquivos = diretorio.listFiles()?.filter { it.isFile } ?: return
+        val arquivos = diretorio.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") } ?: return
         var tamanhoTotal = arquivos.sumOf { it.length() }
         if (tamanhoTotal <= TAMANHO_MAXIMO_BYTES) return
 
@@ -192,6 +226,9 @@ class CacheMidia(context: Context) {
         const val TAG = "CacheMidia"
         const val TIMEOUT_CONEXAO_MS = 15_000
         const val TIMEOUT_LEITURA_MS = 30_000
+
+        /** Duas tentativas por hora de uma mídia rejeitada, não uma por exibição. */
+        const val SILENCIO_APOS_HASH_DIVERGENTE_MS = 30 * 60_000L
 
         // limite: teto fixo de 1GB, descarte por idade do arquivo (não por uso
         // real) — revisar se a operação mostrar necessidade de mais ou de LRU
