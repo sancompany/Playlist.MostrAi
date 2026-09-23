@@ -3,7 +3,9 @@ package br.com.mostrai.player.estado
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
 import java.time.OffsetDateTime
 
 /**
@@ -19,6 +21,12 @@ import java.time.OffsetDateTime
  * sanitizado por quem registra. Não é log de aplicação, não recebe
  * stacktrace, não recebe segredo — é a lista curta do que o operador
  * precisaria saber olhando a ficha da tela.
+ *
+ * **Nunca lança** (BUG-004). O diário é chamado de `onCreate`, da thread
+ * principal e de corrotinas sem tratador; com o disco cheio ou o arquivo
+ * ilegível, uma `SQLiteException` aqui derrubava o app no boot, o watchdog
+ * reabria, e caía de novo — tela preta em laço por causa do diagnóstico.
+ * Sem banco, o diário fica mudo e o player continua tocando.
  */
 class DiarioBordo(context: Context) {
 
@@ -43,21 +51,23 @@ class DiarioBordo(context: Context) {
             put("em_ms", agora)
             put("severidade", codigo.severidade.name)
         }
-        val db = helper.writableDatabase
-        db.insert(TABELA, null, valores)
-        podar(db)
+        seguro(Unit) {
+            val db = helper.writableDatabase
+            db.insert(TABELA, null, valores)
+            podar(db)
+        }
     }
 
     /** O erro mais recente ainda não superado por um sinal de normalidade. */
     fun ultimoErro(): Evento? = primeiro("severidade = ?", arrayOf(Severidade.ERRO.name))
 
-    fun ultimos(quantidade: Int): List<Evento> {
+    fun ultimos(quantidade: Int): List<Evento> = seguro(emptyList()) {
         helper.readableDatabase.query(
             TABELA, null, null, null, null, null, "em_ms DESC", quantidade.toString(),
         ).use { cursor ->
             val lista = mutableListOf<Evento>()
             while (cursor.moveToNext()) lista.add(cursor.paraEvento())
-            return lista
+            lista
         }
     }
 
@@ -68,13 +78,20 @@ class DiarioBordo(context: Context) {
      * "quebrou uma vez semana passada".
      */
     fun limparErros() {
-        helper.writableDatabase.delete(TABELA, "severidade = ?", arrayOf(Severidade.ERRO.name))
+        seguro(Unit) { helper.writableDatabase.delete(TABELA, "severidade = ?", arrayOf(Severidade.ERRO.name)) }
     }
 
-    private fun primeiro(onde: String, args: Array<String>): Evento? {
+    private fun primeiro(onde: String, args: Array<String>): Evento? = seguro(null) {
         helper.readableDatabase.query(TABELA, null, onde, args, null, null, "em_ms DESC", "1").use {
-            return if (it.moveToFirst()) it.paraEvento() else null
+            if (it.moveToFirst()) it.paraEvento() else null
         }
+    }
+
+    private inline fun <T> seguro(padrao: T, bloco: () -> T): T = try {
+        bloco()
+    } catch (e: SQLiteException) {
+        Log.e(TAG, "diário indisponível: ${e.javaClass.simpleName}")
+        padrao
     }
 
     private fun podar(db: SQLiteDatabase) {
@@ -126,6 +143,7 @@ class DiarioBordo(context: Context) {
         const val VERSAO = 1
         const val TABELA = "evento_diario"
         const val MAXIMO_EVENTOS = 200
+        private const val TAG = "DiarioBordo"
 
         /** Corta tamanho e tira o que nunca pode sair do aparelho. */
         fun sanitizar(texto: String): String = texto

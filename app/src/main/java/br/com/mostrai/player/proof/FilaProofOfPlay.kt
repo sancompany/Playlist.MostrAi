@@ -1,6 +1,7 @@
 package br.com.mostrai.player.proof
 
 import android.content.Context
+import android.database.sqlite.SQLiteException
 import android.util.Log
 import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.playlist.ItemPlaylist
@@ -18,6 +19,12 @@ import kotlin.math.min
  * de 7 dias. Nunca por timeout, 5xx, erro de socket ou reinício do app.
  *
  * Chamar sempre de uma thread de fundo — faz E/S de disco e de rede.
+ *
+ * **Nenhuma operação pública lança `SQLiteException`** (BUG-004): disco
+ * cheio ou banco ilegível derrubavam o processo a cada item, e o watchdog o
+ * reabria para cair de novo. Sem banco não há onde guardar comprovante, e a
+ * escolha é entre tela preta e tocar sem cobrar — o anunciante já está sem
+ * comprovante nos dois casos, a loja pelo menos não fica com a tela apagada.
  */
 class FilaProofOfPlay(
     context: Context,
@@ -43,20 +50,23 @@ class FilaProofOfPlay(
     data class Resumo(val aguardandoEnvio: Int, val total: Int, val quarentena: Int, val maisAntigoMs: Long?)
 
     @Synchronized
-    fun resumo(): Resumo = Resumo(
-        aguardandoEnvio = db.contarAguardandoEnvio(),
-        total = db.contarPendentes(),
-        quarentena = db.contarQuarentena(),
-        maisAntigoMs = db.maisAntigoAguardandoEnvioMs(),
-    )
+    fun resumo(): Resumo = seguro(Resumo(0, 0, 0, null)) {
+        Resumo(
+            aguardandoEnvio = db.contarAguardandoEnvio(),
+            total = db.contarPendentes(),
+            quarentena = db.contarQuarentena(),
+            maisAntigoMs = db.maisAntigoAguardandoEnvioMs(),
+        )
+    }
 
     /**
      * Cria a linha ANTES do play(), com o execucaoId já definido (decisão 3,
      * seção 4). Retorna null para itens que não contam (institucional,
-     * autoanúncio) — esses nunca entram na fila.
+     * autoanúncio) — esses nunca entram na fila — e quando o banco não
+     * aceita a linha: o item toca, sem comprovante.
      */
     @Synchronized
-    fun registrarInicio(item: ItemPlaylist, playlist: Playlist): String? {
+    fun registrarInicio(item: ItemPlaylist, playlist: Playlist): String? = seguro(null) {
         if (!item.contabiliza) return null
 
         limitarTamanho()
@@ -77,13 +87,13 @@ class FilaProofOfPlay(
                 criadoEmMs = System.currentTimeMillis(),
             )
         )
-        return execucaoId
+        execucaoId
     }
 
     /** Chamado só no STATE_ENDED — aqui a exibição vira comprovante elegível. */
     @Synchronized
     fun registrarFim(execucaoId: String) {
-        db.marcarTerminado(execucaoId, OffsetDateTime.now().toString())
+        seguro(Unit) { db.marcarTerminado(execucaoId, OffsetDateTime.now().toString()) }
     }
 
     /**
@@ -96,10 +106,10 @@ class FilaProofOfPlay(
      */
     @Synchronized
     fun registrarFalha(execucaoId: String) {
-        db.remover(execucaoId)
+        seguro(Unit) { db.remover(execucaoId) }
     }
 
-    fun pendentes(): Int = db.contarAguardandoEnvio()
+    fun pendentes(): Int = seguro(0) { db.contarAguardandoEnvio() }
 
     fun perdas(): Int = prefsPerdas.getInt(ProofOfPlayDb.CHAVE_PERDAS, 0)
 
@@ -113,15 +123,17 @@ class FilaProofOfPlay(
         // o próximo ciclo (1 min, ou o fim da próxima exibição) pega o resto.
         if (!enviando.compareAndSet(false, true)) return
         try {
-            removerExpirados()
+            seguro(Unit) {
+                removerExpirados()
 
-            val agora = System.currentTimeMillis()
-            val elegiveis = db.elegiveisParaEnvio(agora, LIMITE_LOTE)
-            if (elegiveis.isEmpty()) return
+                val agora = System.currentTimeMillis()
+                val elegiveis = db.elegiveisParaEnvio(agora, LIMITE_LOTE)
+                if (elegiveis.isEmpty()) return
 
-            val (legados, novos) = elegiveis.partition { it.formatoLegado }
-            if (novos.isNotEmpty()) enviarLoteNovo(novos)
-            legados.forEach { enviarUmLegado(it) }
+                val (legados, novos) = elegiveis.partition { it.formatoLegado }
+                if (novos.isNotEmpty()) enviarLoteNovo(novos)
+                legados.forEach { enviarUmLegado(it) }
+            }
         } finally {
             enviando.set(false)
         }
@@ -235,6 +247,13 @@ class FilaProofOfPlay(
         val limite = System.currentTimeMillis() - HORIZONTE_EXPIRACAO_MS
         val removidos = db.removerExpirados(limite)
         if (removidos > 0) incrementarPerdas(removidos)
+    }
+
+    private inline fun <T> seguro(padrao: T, bloco: () -> T): T = try {
+        bloco()
+    } catch (e: SQLiteException) {
+        Log.e(TAG, "fila de proof-of-play indisponível: ${e.javaClass.simpleName}")
+        padrao
     }
 
     /** Ler-somar-gravar: sincronizado porque o envio e o registro de início rodam em paralelo. */
