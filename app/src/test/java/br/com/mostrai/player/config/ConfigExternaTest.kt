@@ -88,4 +88,21 @@ class ConfigExternaTest {
             assertEquals(valor, ConfigExterna.parse("""{"rotacaoTela": $valor}""")?.rotacaoTela)
         }
     }
+
+    @Test
+    fun `espaco colado junto com id, chave, token e url e descartado`() {
+        // Auditoria H: valor copiado e colado com espaço ou quebra de linha
+        // virava URL inválida ou header de credencial errado — a TV parecia
+        // provisionada e nunca autenticava.
+        val dados = ConfigExterna.parse(
+            """{"dispositivoId": " tela-1 ", "chaveAparelho": "k1\n", "tokenProvisionamento": " tok ",
+               "baseUrl": " https://api.exemplo.com ", "pin": " 1234 "}""",
+        )!!
+
+        assertEquals("tela-1", dados.dispositivoId)
+        assertEquals("k1", dados.chaveAparelho)
+        assertEquals("tok", dados.tokenProvisionamento)
+        assertEquals("https://api.exemplo.com", dados.baseUrl)
+        assertEquals("1234", dados.pin)
+    }
 }

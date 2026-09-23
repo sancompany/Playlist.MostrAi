@@ -47,11 +47,11 @@ object ConfigExterna {
     fun parse(textoJson: String): Dados? = runCatching {
         val json = JSONObject(textoJson)
         Dados(
-            dispositivoId = json.optString("dispositivoId").ifBlank { null },
-            chaveAparelho = json.optString("chaveAparelho").ifBlank { null },
-            tokenProvisionamento = json.optString("tokenProvisionamento").ifBlank { null },
-            baseUrl = json.optString("baseUrl").ifBlank { null },
-            pin = json.optString("pin").ifBlank { null },
+            dispositivoId = json.texto("dispositivoId"),
+            chaveAparelho = json.texto("chaveAparelho"),
+            tokenProvisionamento = json.texto("tokenProvisionamento"),
+            baseUrl = json.texto("baseUrl"),
+            pin = json.texto("pin"),
             margemVminTopo = json.margemVmin("margemVminTopo"),
             margemVminBase = json.margemVmin("margemVminBase"),
             margemVminEsquerda = json.margemVmin("margemVminEsquerda"),
@@ -66,6 +66,13 @@ object ConfigExterna {
             },
         )
     }.getOrNull()
+
+    /**
+     * Sem espaço nem quebra de linha nas pontas (BUG-038): valor copiado e
+     * colado no JSON virava URL inválida ou header de credencial errado — a
+     * TV parecia provisionada e nunca autenticava.
+     */
+    private fun JSONObject.texto(chave: String): String? = optString(chave).trim().ifBlank { null }
 
     private fun JSONObject.margemVmin(chave: String): Float? =
         if (has(chave) && !isNull(chave)) {
