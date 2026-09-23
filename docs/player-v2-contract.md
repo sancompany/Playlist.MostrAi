@@ -493,6 +493,8 @@ de sempre quando a internet cai.
   inteiro** (dado ruim nunca apaga a tela).
 - `feriados` sobrepõe o dia inteiro, inclusive a madrugada que viria da
   véspera. Lista vazia = fechado o dia inteiro.
+- O horário é reavaliado a cada minuto: abrir e fechar acontecem com até
+  60 s de atraso em relação à faixa.
 - O horário é avaliado no relógio da TV, no fuso configurado. Um relógio
   errado na TV desloca o horário; `desvioRelogioMs` no heartbeat mostra
   isso.
@@ -528,6 +530,9 @@ Vem dentro da resposta do heartbeat, em `update`:
   "size": 8459231
 }
 ```
+
+`required` é **informativo** no player: aparece no painel, mas não muda o
+fluxo (a instalação sempre depende da confirmação no controle, seção 8.4).
 
 Aceita também `disponivel`/`obrigatorio`/`versao`. Campos obrigatórios:
 `build` (> 0), `url`, `sha256` (64 hex). **Manifesto sem hash válido é
