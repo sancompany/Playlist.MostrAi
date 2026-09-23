@@ -5,6 +5,7 @@ import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.estado.DiarioBordo
 import br.com.mostrai.player.update.Atualizador
+import kotlin.concurrent.thread
 
 /**
  * Conversa com o contrato V2 e degrada sozinha quando ele não existe.
@@ -130,8 +131,15 @@ class SincronizacaoV2(
 
         atualizador.reavaliarAdiamento()
         atualizador.considerar(resposta.update)
-        if (config.configRemota()?.politicaUpdate?.baixarAutomaticamente != false) {
-            atualizador.baixarSeNecessario(resposta.update)
+        val manifesto = resposta.update
+        if (manifesto != null && config.configRemota()?.politicaUpdate?.baixarAutomaticamente != false) {
+            // BUG-032: fora do ciclo do heartbeat. Rodando aqui dentro, o
+            // heartbeat que trazia o manifesto só devolvia seus efeitos
+            // (playlist.atualizar, margens, rotação, falha de autenticação)
+            // depois do APK inteiro — minutos numa internet de loja, e o
+            // backend manda `atualizar` uma vez só. A reserva de estado do
+            // Atualizador já garante um download por vez.
+            thread(name = "mostrai-ota", isDaemon = true) { atualizador.baixarSeNecessario(manifesto) }
         }
 
         return Efeitos(

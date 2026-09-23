@@ -96,4 +96,39 @@ class AtualizadorConcorrenciaTest {
         assertTrue("motivo: ${falha.mensagem}", falha.mensagem!!.contains("SHA-256"))
         assertEquals(0, java.io.File(contexto.cacheDir, "update").listFiles()!!.count { it.name.endsWith(".apk") })
     }
+
+    @Test
+    fun `heartbeat que traz manifesto nao segura os proprios efeitos durante o download`() {
+        // Auditoria D: o download saiu da trava (BUG-012), mas continuava
+        // dentro de heartbeat(). O heartbeat que trazia o manifesto só
+        // devolvia playlist.atualizar, margens e rotação depois do APK
+        // inteiro — e o backend manda atualizar: true uma vez só.
+        val trava = CountDownLatch(1)
+        servidor.travas["/lento.apk"] = trava
+        servidor.rotas["/lento.apk"] = ServidorDeTeste.Resposta(corpo = "apk".toByteArray())
+        val m = manifesto(BuildConfig.VERSION_CODE + 1, "/lento.apk")
+        val config = br.com.mostrai.player.config.ConfigAparelho(contexto).apply {
+            baseUrl = servidor.baseUrl; dispositivoId = "tela-1"; chaveAparelho = "chave"
+        }
+        val api = object : br.com.mostrai.player.network.MostraiApi(config) {
+            override fun heartbeat(corpo: br.com.mostrai.player.network.HeartbeatJson.Corpo) =
+                br.com.mostrai.player.network.ResultadoHttp.Ok(
+                    br.com.mostrai.player.network.HeartbeatJson.Resposta(atualizarPlaylist = true, update = m),
+                )
+        }
+        val sync = br.com.mostrai.player.network.SincronizacaoV2(config, api, diario, atualizador)
+        val corpo = br.com.mostrai.player.network.HeartbeatJson.Corpo(
+            estado = br.com.mostrai.player.estado.EstadoPlayer.PLAYING, configVersionAplicada = 0,
+            criativoId = null, ultimaPlaylistOkEm = null, filaPendentes = 0, filaMaisAntigoEm = null,
+            erroCodigo = null, erroEm = null, erroMensagem = null, desvioRelogioMs = null, updateEstado = null,
+        )
+
+        val inicio = System.nanoTime()
+        val efeitos = sync.heartbeat(corpo)
+        val esperouMs = (System.nanoTime() - inicio) / 1_000_000
+        trava.countDown()
+
+        assertTrue(efeitos.atualizarPlaylist)
+        assertTrue("heartbeat esperou ${esperouMs}ms pelo download do APK", esperouMs < 2_000)
+    }
 }
