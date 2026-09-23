@@ -486,6 +486,8 @@ de sempre quando a internet cai.
   pertence ao dia seguinte (auditoria, BUG-026).
 - Dia da semana sem faixa = fechado naquele dia (mas a madrugada de uma
   faixa da véspera ainda vale).
+- `inicio` igual a `fim` é uma faixa **vazia** (fim exclusivo), não "24h".
+  Para o dia inteiro, use `"00:00"`–`"24:00"`.
 - Dia cujas faixas existem mas nenhuma pôde ser lida = **aceso o dia
   inteiro** (dado ruim nunca apaga a tela).
 - `feriados` sobrepõe o dia inteiro, inclusive a madrugada que viria da

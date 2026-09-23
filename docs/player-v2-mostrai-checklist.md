@@ -116,7 +116,8 @@ já materializadas — o player não conhece o conceito de "ponto".
 Formato das faixas (contrato §7): `HH:MM` ou `HH:MM:SS`. Uma faixa que cruza
 a meia-noite pertence ao dia em que **começa** (`"sex": 22:00–02:00` vale até
 sábado 02:00). Para fechar um dia, mande a lista vazia explícita; faixa que
-o player não consegue ler deixa o dia **aceso**.
+o player não consegue ler deixa o dia **aceso**. Dia inteiro é
+`00:00`–`24:00` — `00:00`–`00:00` é uma faixa vazia e fecha o dia.
 
 ### Onde ficam as margens
 
