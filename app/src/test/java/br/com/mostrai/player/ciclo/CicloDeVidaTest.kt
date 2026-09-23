@@ -113,4 +113,20 @@ class CicloDeVidaTest {
 
         assertTrue(geracao(atividade) > depoisDeVoltar)
     }
+
+    // ------------------------------------------------------------ ROB-007
+
+    @Test
+    fun `hello que falhou no boot e tentado de novo sem reiniciar o app`() {
+        // TV que liga sem internet e fica semanas no ar: sem nova tentativa,
+        // o admin nunca recebe modelo, versão e resolução da tela.
+        h.provisionar()
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 503)
+        h.subir()
+        h.esperar { h.servidor.contar("/player/tela-1/hello") == 1 }
+
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(corpo = "{}".toByteArray())
+        h.avancar(5 * 60_000L + 1_000L) // um heartbeat periódico
+        runCatching { h.esperar { h.servidor.contar("/player/tela-1/hello") == 2 } }.onFailure { throw AssertionError("recebidas: ${h.servidor.recebidas}") }
+    }
 }

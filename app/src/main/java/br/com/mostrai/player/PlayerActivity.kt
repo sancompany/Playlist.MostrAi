@@ -929,6 +929,15 @@ class PlayerActivity : AppCompatActivity() {
                 )
             )
 
+            // ROB-007: o hello do boot pode ter falhado (TV ligada sem
+            // internet). Sem nova tentativa, a ficha técnica só chegava no
+            // próximo reinício — semanas, numa TV que não desliga. Só com o
+            // V2 confirmado: num backend V1 seria um 404 extra a cada ciclo.
+            // Sem mudança na assinatura, helloSeNecessario nem faz requisição.
+            if (!primeiroDoBoot && config.backendV2Disponivel) {
+                sincronizacao.helloSeNecessario(HelloJson.coletar(this@PlayerActivity))
+            }
+
             withContext(Dispatchers.Main) { aplicarEfeitos(efeitos) }
         }
     }
