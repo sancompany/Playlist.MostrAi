@@ -19,6 +19,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -165,6 +166,9 @@ class PlayerActivity : AppCompatActivity() {
     /** Itens seguidos que não conseguiram tocar — zera a cada exibição que termina. */
     private var falhasSeguidas = 0
 
+    /** O ciclo parou para o diálogo de instalação e ainda não foi retomado. */
+    private var aguardandoInstalacao = false
+
     /** Origem da última busca de playlist — decide se a institucional mostra erro. */
     private var ultimaOrigemFetch: PlaylistRepositorio.Origem = PlaylistRepositorio.Origem.INSTITUCIONAL
 
@@ -174,6 +178,24 @@ class PlayerActivity : AppCompatActivity() {
     private val gestoPainel = GestoPainel { abrirPainel() }
 
     private val avancarPorTempo = Runnable { avancar() }
+
+    /**
+     * Rede de segurança do pedido de instalação (BUG-019). Se o diálogo
+     * nunca apareceu — sessão recusada, confirmação que não abriu — a
+     * Activity nunca sai de RESUMED, e nada mais retomaria o ciclo. Enquanto
+     * um diálogo estiver cobrindo a tela (Activity pausada), continua
+     * esperando: tocar atrás dele seria cobrar exibição que ninguém viu.
+     */
+    private val retomarAposPedidoDeInstalacao = object : Runnable {
+        override fun run() {
+            if (!aguardandoInstalacao) return
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                retomarCicloAposInstalacao()
+            } else {
+                handler.postDelayed(this, ESPERA_DIALOGO_INSTALACAO_MS)
+            }
+        }
+    }
 
     private val buscarPeriodicamente = object : Runnable {
         override fun run() {
@@ -424,11 +446,22 @@ class PlayerActivity : AppCompatActivity() {
         super.onResume()
         esconderInterfaceDoSistema()
         Watchdog.registrarSinalDeVida(this)
+        // Diálogo de instalação com tema de diálogo só pausa esta Activity:
+        // ao fechar, não há onStart para recomeçar o ciclo (BUG-019).
+        if (aguardandoInstalacao) retomarCicloAposInstalacao()
+    }
+
+    private fun retomarCicloAposInstalacao() {
+        aguardandoInstalacao = false
+        handler.removeCallbacks(retomarAposPedidoDeInstalacao)
+        avancar()
     }
 
     override fun onStop() {
         super.onStop()
         iniciada = false
+        // onStart recomeça o ciclo inteiro; não há o que retomar.
+        aguardandoInstalacao = false
         // Invalida qualquer mostrarVideo ainda resolvendo cache: ao voltar,
         // ele confere a geração, vê que ficou para trás e libera a própria
         // linha em vez de tentar tocar num player que já não existe.
@@ -780,7 +813,11 @@ class PlayerActivity : AppCompatActivity() {
         // Janela segura: nenhuma exibição paga no ar entre um item e o
         // próximo. É aqui, e só aqui, que a confirmação de instalação pode
         // aparecer sem cortar o anúncio de ninguém.
-        if (tentarInstalarAtualizacao()) return
+        if (tentarInstalarAtualizacao()) {
+            aguardandoInstalacao = true
+            handler.postDelayed(retomarAposPedidoDeInstalacao, ESPERA_DIALOGO_INSTALACAO_MS)
+            return
+        }
         avancar()
     }
 
@@ -962,6 +999,9 @@ class PlayerActivity : AppCompatActivity() {
 
         /** Bem abaixo de [Watchdog.TOLERANCIA_MS], com folga para atraso do looper. */
         const val INTERVALO_SINAL_DE_VIDA_MS = 60_000L
+
+        /** Quanto esperar o diálogo de instalação aparecer antes de retomar a exibição. */
+        const val ESPERA_DIALOGO_INSTALACAO_MS = 30_000L
 
         /** Pausa depois de uma volta inteira da playlist sem nenhuma exibição. */
         const val ESPERA_APOS_VOLTA_SEM_EXIBICAO_MS = 10_000L
