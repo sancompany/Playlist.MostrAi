@@ -78,8 +78,7 @@ class Atualizador(
      * decide quando gastar banda é [baixarSeNecessario], numa thread de
      * fundo.
      */
-    @Synchronized
-    fun considerar(manifesto: UpdateManifesto?) {
+    fun considerar(manifesto: UpdateManifesto?): Unit = synchronized(TRAVA) {
         if (manifesto == null) {
             if (estado != EstadoUpdate.NONE && estado != EstadoUpdate.INSTALL_REQUESTED) limpar()
             return
@@ -93,7 +92,7 @@ class Atualizador(
             }
             return
         }
-        if (manifesto.build == buildAlvo && estado in setOf(EstadoUpdate.READY, EstadoUpdate.DOWNLOADING)) return
+        if (manifesto.build == buildAlvo && jaEmAndamento()) return
 
         // BUG-011: o mesmo build que acabou de falhar continua falhando até
         // alguém corrigir o APK no servidor. Sem esta espera, cada heartbeat
@@ -123,9 +122,10 @@ class Atualizador(
      * no meio do caminho, um manifesto mais novo tiver chegado.
      */
     fun baixarSeNecessario(manifesto: UpdateManifesto?) {
-        val alvo = synchronized(this) {
+        val alvo = synchronized(TRAVA) {
             if (manifesto == null || estado != EstadoUpdate.AVAILABLE) return
             if (manifesto.build != buildAlvo) return
+            buildBaixandoNesteProcesso = manifesto.build
             estado = EstadoUpdate.DOWNLOADING
             manifesto
         }
@@ -141,7 +141,8 @@ class Atualizador(
             e
         }
 
-        synchronized(this) {
+        synchronized(TRAVA) {
+            buildBaixandoNesteProcesso = 0
             if (buildAlvo != alvo.build) {
                 // Superado por um manifesto mais novo durante o download: este
                 // arquivo não é mais o alvo e não pode virar READY.
@@ -217,8 +218,7 @@ class Atualizador(
      * Abre o diálogo do sistema. Sem Device Owner isso é o máximo que o
      * Android permite; o retorno é assíncrono e chega em [aoResultadoInstalacao].
      */
-    @Synchronized
-    fun pedirInstalacao(): Boolean {
+    fun pedirInstalacao(): Boolean = synchronized(TRAVA) {
         val apk = arquivoPronto() ?: return false
         if (!app.packageManager.canRequestPackageInstallsCompat()) {
             diario.registrar(
@@ -245,6 +245,9 @@ class Atualizador(
                 sessao.commit(pending.intentSender)
             }
             estado = EstadoUpdate.INSTALL_REQUESTED
+            // Se o resultado nunca chegar (TV desligada com o diálogo
+            // aberto), reavaliarAdiamento oferece de novo depois disto.
+            proximaTentativaMs = System.currentTimeMillis() + ESPERA_SEM_RESPOSTA_MS
             diario.registrar(DiarioBordo.Codigo.UPDATE_INSTALACAO_PEDIDA, "build $buildAlvo")
             true
         } catch (e: Exception) {
@@ -260,26 +263,47 @@ class Atualizador(
      * silêncio — insistir a cada ciclo transformaria a TV da loja num
      * pop-up piscando, que é pior que não atualizar.
      */
-    @Synchronized
-    fun adiar(horas: Int) {
+    fun adiar(horas: Int): Unit = synchronized(TRAVA) {
         if (estado == EstadoUpdate.INSTALL_REQUESTED || estado == EstadoUpdate.READY) {
             estado = EstadoUpdate.DEFERRED
             proximaTentativaMs = System.currentTimeMillis() + horas * 60L * 60L * 1000L
         }
     }
 
-    /** Sai de DEFERRED quando a janela de silêncio passa. */
-    @Synchronized
-    fun reavaliarAdiamento(agoraMs: Long = System.currentTimeMillis()) {
-        if (estado == EstadoUpdate.DEFERRED && agoraMs >= proximaTentativaMs && arquivoExiste()) {
+    /**
+     * Sai de DEFERRED quando a janela de silêncio passa — e de
+     * INSTALL_REQUESTED quando o resultado do diálogo nunca chegou.
+     */
+    fun reavaliarAdiamento(agoraMs: Long = System.currentTimeMillis()): Unit = synchronized(TRAVA) {
+        val esperando = estado == EstadoUpdate.DEFERRED || estado == EstadoUpdate.INSTALL_REQUESTED
+        if (esperando && agoraMs >= proximaTentativaMs && arquivoExiste()) {
             estado = EstadoUpdate.READY
         }
     }
 
+    /**
+     * O manifesto repetido do mesmo build não é novidade (BUG-014, BUG-015).
+     * O heartbeat manda o mesmo `update` a cada 5 min; antes, qualquer estado
+     * fora de READY/DOWNLOADING virava AVAILABLE de novo:
+     *
+     * - INSTALL_REQUESTED → rebaixava o APK inteiro e, pronto, abria outro
+     *   diálogo de instalação por cima do anterior, a cada ciclo;
+     * - DEFERRED → rebaixava o APK que o operador tinha acabado de adiar.
+     *
+     * E o inverso: DOWNLOADING gravado por um processo que morreu no meio
+     * (queda de energia, watchdog) nunca saía de DOWNLOADING — ninguém estava
+     * baixando, e a tela nunca mais atualizava para aquele build. Idem um
+     * READY cujo APK o Android apagou ao limpar o `cacheDir`.
+     */
+    private fun jaEmAndamento(): Boolean = when (estado) {
+        EstadoUpdate.DOWNLOADING -> buildBaixandoNesteProcesso == buildAlvo
+        EstadoUpdate.READY, EstadoUpdate.INSTALL_REQUESTED, EstadoUpdate.DEFERRED -> arquivoExiste()
+        else -> false
+    }
+
     private fun arquivoExiste(): Boolean = File(diretorio, "$buildAlvo.apk").exists()
 
-    @Synchronized
-    fun limpar() {
+    fun limpar(): Unit = synchronized(TRAVA) {
         diretorio.listFiles()?.forEach { it.delete() }
         prefs.edit().clear().apply()
     }
@@ -300,5 +324,19 @@ class Atualizador(
 
         /** Quanto esperar antes de tentar de novo o mesmo build que falhou. */
         const val ESPERA_APOS_FALHA_MS = 6 * 60 * 60 * 1000L
+
+        /** Quanto esperar pelo resultado do diálogo antes de oferecer de novo. */
+        const val ESPERA_SEM_RESPOSTA_MS = 6 * 60 * 60 * 1000L
+
+        /**
+         * Uma trava para o processo inteiro, não por instância: Player,
+         * painel e o receptor do resultado da instalação criam cada um o seu
+         * [Atualizador] sobre as mesmas preferências.
+         */
+        private val TRAVA = Any()
+
+        /** Só existe em memória — morre junto com o download que o processo fazia. */
+        @Volatile
+        private var buildBaixandoNesteProcesso = 0
     }
 }
