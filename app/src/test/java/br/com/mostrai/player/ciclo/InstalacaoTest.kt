@@ -135,4 +135,26 @@ class InstalacaoTest {
 
         assertTrue("ciclo não retomou ao fechar o diálogo", geracao(atividade) > parado)
     }
+
+    @Test
+    fun `atualizacao pronta nunca e pedida no meio da exibicao`() {
+        // Invariante 13: o único ponto que pede instalação é o fim de uma
+        // exibição. Heartbeats, poll e checagem de horário passam enquanto o
+        // item está no ar sem abrir diálogo nenhum.
+        h.provisionar()
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo(duracao = 600).toByteArray())
+        h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(corpo = "bytes".toByteArray())
+        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+        atualizacaoPronta()
+
+        val atividade = h.subir().get()
+        h.esperar { geracao(atividade) >= 1 && h.servidor.contar("/midia") > 0 }
+        h.avancar(16 * 60_000L) // três heartbeats, um poll, várias checagens de horário
+        h.esperar { true }
+
+        assertTrue(h.contexto.packageManager.packageInstaller.allSessions.isEmpty())
+        assertTrue(
+            Atualizador(h.contexto, br.com.mostrai.player.estado.DiarioBordo(h.contexto)).estado == EstadoUpdate.READY,
+        )
+    }
 }

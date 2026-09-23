@@ -51,4 +51,30 @@ class PainelTest {
 
         assertFalse(painel.isFinishing)
     }
+
+    @Test
+    fun `painel nunca mostra a chave inteira nem credencial na url`() {
+        // Invariante 14: a tela fica num comércio.
+        br.com.mostrai.player.config.ConfigAparelho(h.contexto).apply {
+            baseUrl = "https://usuario:senha-secreta@api.exemplo.com/v1?token=tk-secreto"
+            dispositivoId = "tela-1"
+            chaveAparelho = "chave-muito-secreta-123456789"
+            pinPainel = "1234"
+        }
+        val painel = Robolectric.buildActivity(PainelActivity::class.java).setup().get()
+
+        val teclado = painel.findViewById<android.widget.GridLayout>(br.com.mostrai.player.R.id.teclado)
+        "1234".forEach { d ->
+            (0 until teclado.childCount).map { teclado.getChildAt(it) as android.widget.TextView }
+                .first { it.text.toString() == d.toString() }
+                .performClick()
+        }
+        h.idle()
+
+        val texto = painel.findViewById<android.widget.TextView>(br.com.mostrai.player.R.id.info).text.toString()
+        assertTrue("painel não abriu: $texto", texto.contains("Servidor"))
+        listOf("chave-muito-secreta-123456789", "senha-secreta", "usuario:", "tk-secreto").forEach {
+            assertFalse("painel mostrou '$it'", texto.contains(it))
+        }
+    }
 }
