@@ -138,8 +138,9 @@ completo da fila de proof-of-play, incluindo migração de esquema. CI
   feriados e fuso. Fora do horário nenhum proof-of-play nasce.
 - Atualização remota fase 1: manifesto, download, SHA-256 conferido,
   confirmação pedida só entre itens.
-- Kiosk: elegível a launcher padrão, watchdog com backoff, Device Owner
-  detectado e usado se houver — nunca exigido.
+- Kiosk: watchdog com backoff, Device Owner detectado e usado se houver —
+  nunca exigido. (Sem se declarar launcher: o instalador da TV recusa —
+  `docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`.)
 - **Tudo degrada sozinho:** `404` numa rota V2 é lido como backend V1. O
   player roda contra o backend de hoje sem nenhuma mudança do lado de lá.
   Contrato exato em `docs/player-v2-contract.md`.

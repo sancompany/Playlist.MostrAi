@@ -136,7 +136,7 @@ o primeiro ponto antes de `/player/provisionar` existir.
 ### 2.4 Provisionamento de bancada por Intent (`adb`)
 
 Extras de Intent na `PlayerActivity` só provisionam aparelho **ainda não
-provisionado** no APK de release. A Activity é exportada (launcher/HOME) e o
+provisionado** no APK de release. A Activity é exportada (launcher) e o
 Android não informa quem a abriu; aceitar extras numa tela em operação
 deixaria qualquer app da TV trocar o `baseUrl` e receber a chave no header
 (auditoria, BUG-023). No APK de depuração, sobrescrevem sempre.

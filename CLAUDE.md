@@ -222,6 +222,14 @@ Fechadas:
   real marcados obrigatórios antes de cliente real. Nenhuma correção de
   código nesta rodada — 283 testes, mesmos da auditoria de 23/09. Veredito:
   **PLAYER TECNICAMENTE PRONTO — AGUARDANDO TESTE FÍSICO.**
+- **"Instalação anormal" na TV (25/09/2026)** — primeiro teste físico: o
+  1.0.0 não instalava na SEMP TCL 32S6500S, o 0.1.0 instalava. Diferença
+  de manifesto reduzida a 3 itens e bisseccionada na TV com APKs de
+  diagnóstico: o APK sem o `intent-filter` de `HOME` (launcher padrão)
+  instalou direto. Filtro removido; o retorno do player à frente fica com o
+  `Watchdog`. Checklist físico item 4 atualizado. Sem teste automatizado
+  (instalador do fabricante) ·
+  `docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.

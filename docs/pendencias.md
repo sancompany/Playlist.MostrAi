@@ -44,8 +44,9 @@ obrigatórios antes de qualquer cliente real.
 
   **Ampliado pelo lote V2 (23/09/2026)** — a lista de verificação na TV
   passa a incluir, além do acima:
-  - o player como **launcher padrão** (`CATEGORY_HOME`): escolher "sempre" na
-    primeira instalação e confirmar que a tecla Home volta ao player;
+  - ~~o player como **launcher padrão** (`CATEGORY_HOME`)~~ — descartado em
+    25/09/2026: o instalador da TV recusava o APK com esse filtro
+    (`docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`);
   - o **watchdog** reabrindo o player depois de sair para outro app;
   - o **diálogo de instalação** do OTA (exige autorizar "instalar apps
     desconhecidos" para o pacote — mais um passo da primeira instalação);

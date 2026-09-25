@@ -19,7 +19,7 @@ aqui bloqueia (não é feedback estético).
 | 1 | Instalar o release APK assinado (pendrive ou `adb install`) | Instala sem erro; ícone/banner reais aparecem no launcher da TV | ☐ |
 | 2 | Confirmar a assinatura | `apksigner verify --print-certs app-release.apk` mostra o certificado do `mostrai-release.jks` gerado (RUNBOOK.md) | ☐ |
 | 3 | Primeiro boot | Vídeo de abertura toca uma vez; ciclo normal começa depois (institucional se sem provisionamento, ou playlist se já vier configurado pelo pendrive/build embutido) | ☐ |
-| 4 | Launcher (`CATEGORY_HOME`) | Ao instalar, o Android oferece "usar como padrão"; escolhendo "sempre", a tecla HOME do controle volta ao player em vez de sair | ☐ |
+| 4 | Sair com HOME e esperar | A tecla HOME do controle leva ao launcher da TV; sem tocar em mais nada, o player volta sozinho em 5–7 min (`Watchdog`). O player **não** se oferece como launcher padrão — o instalador da TV recusava o APK com isso (`docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`) | ☐ |
 | 5 | Reboot | Desligar/religar a TV: o player reabre sozinho (`BootReceiver` + `Watchdog`), sem precisar de ninguém tocar no controle | ☐ |
 | 6 | Queda de energia no meio de uma exibição | Tirar da tomada durante um anúncio e religar: o app volta, não trava, e a exibição interrompida **não vira comprovante** (nunca teve `terminadoEm`) nem fica órfã na fila para sempre | ☐ |
 | 7 | Reprodução 1080×1920 | Vídeo sem esticar, cortar errado ou faixa preta indevida; rotação aplicada de acordo com a montagem física real desta TV (`rotacaoTela` configurado) | ☐ |
