@@ -387,14 +387,37 @@ Duas garantias que este app depende do backend manter:
 
 ## Em aberto
 
-1. Ciclo de vida quando o Android mata o app mesmo assim.
-2. Atualização remota (OTA) em Android TV 8 sideloaded.
-3. PIN universal × PIN por tela do admin.
-4. Provisionamento **de campo** — sem ninguém decidir de antemão qual APK vai
-   para qual tela (ex.: escanear um QR code no primeiro boot). "Gerar um APK
-   já configurado por tela" (seção acima) resolveu o caso em que alguém já
-   sabe essa relação antes de gravar o pendrive; o caso genérico — tela
-   chega sem ninguém ter decidido nada ainda — continua em aberto.
+Só dois itens continuam genuinamente em aberto — os outros dois desta lista
+foram fechados pelo lote V1/V2 e pela auditoria de confiabilidade
+(23/09/2026), sem precisar de decisão nova:
 
-Retomada de índice depois de reinício (item que era o nº 1 desta lista) foi
+1. **PIN universal × PIN por tela do admin** — decisão de operação, não
+   limite de código. O mecanismo já suporta os dois: `pinPainel` é por
+   `dispositivoId`, guardado local e também aceito no `/config` remoto
+   (contrato, seção 5) — o admin pode mandar o mesmo PIN para toda a frota
+   ou um diferente por tela, é só escolher.
+2. **Provisionamento de campo** — sem ninguém decidir de antemão qual APK
+   vai para qual tela (ex.: escanear um QR code no primeiro boot). "Gerar um
+   APK já configurado por tela" (seção acima) resolveu o caso em que alguém
+   já sabe essa relação antes de gravar o pendrive; o caso genérico — tela
+   chega sem ninguém ter decidido nada ainda — continua em aberto, e
+   provisioning por QR foi explicitamente vetado nesta fase (fora de
+   escopo, ver handoff pro backend).
+
+**Fechados nesta rodada:**
+
+- ~~Ciclo de vida quando o Android mata o app mesmo assim~~ — `Watchdog`
+  (`AlarmManager`, sobrevive à morte do processo) + `BootReceiver` (rearma
+  o watchdog a cada boot) reabrem o player sozinhos. Implementado e testado
+  em código (`ROB-009`, `BootReceiverTest`); falta só a confirmação física
+  (`docs/checklist-fisico-producao.md`, item 5).
+- ~~Atualização remota (OTA) em Android TV 8 sideloaded~~ — implementada
+  inteira (contrato, seção 8): download, SHA-256, verificação de pacote,
+  `PackageInstaller`, cancelamento com janela de silêncio, retomada após
+  reinício. Implementada e testada em código; o ciclo completo
+  (instalar → publicar N+1 → atualizar) só é confirmável na TV
+  (`docs/checklist-fisico-producao.md`, item 14 — **obrigatório antes de
+  cliente real**).
+
+Retomada de índice depois de reinício (item nº 1 original desta lista) foi
 fechada com o GPT em 21/09/2026 — ver decisão 5 acima.

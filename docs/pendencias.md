@@ -1,12 +1,22 @@
 # Pendências — Mostraí Player
 
+## Fechamento de produção (25/09/2026)
+
+Levantamento de fechamento final: `docs/fechamento-producao-2026-09-25.md`.
+Único bloqueador de código puro: **keystore de release** (ver "Gerar e
+guardar o keystore" abaixo). Todo o resto que falta é físico — checklist
+consolidado de 15 itens em `docs/checklist-fisico-producao.md`, com o teste
+de proof-of-play ponta a ponta (item 10) e o de OTA real (item 14) como
+obrigatórios antes de qualquer cliente real.
+
 ## Só o dono faz
 
-- **Rodar o checklist físico da auditoria de confiabilidade** —
-  `docs/auditoria-confiabilidade-2026-09-23.md`, seção 8 (13 itens). A
-  auditoria só verificou o que roda sem a TV; abertura, rotação no primeiro
-  boot, relógio após falta de energia, `BOOT_COUNT`, watchdog, OTA e teclas
-  do controle dependem do aparelho.
+- **Rodar o checklist físico de fechamento** —
+  `docs/checklist-fisico-producao.md` (15 itens, PASS/FAIL). Complementa o
+  checklist de 13 itens da auditoria de confiabilidade
+  (`docs/auditoria-confiabilidade-2026-09-23.md`, seção 8) — abertura,
+  rotação no primeiro boot, relógio após falta de energia, `BOOT_COUNT`,
+  watchdog, OTA e teclas do controle dependem do aparelho.
 - **Decidir os riscos de produto da auditoria** (mesmo documento, seção 7):
   duração mínima de exibição para contar comprovante (RSK-008), primeira
   exibição esperando download (RSK-001), prazo de segurança para o vídeo de

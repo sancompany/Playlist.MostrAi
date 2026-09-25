@@ -208,6 +208,20 @@ Fechadas:
   significa instalado e rodando num aparelho real; esta sessão não tem
   hardware Android TV nem emulador viável (`CONSTRAINTS.md`). Único item que
   falta para fechar a estação 5 por completo.
+- **Fechamento final para produção (25/09/2026)** — pedido do dono, pós-PR
+  #2 mesclado. Levantamento completo em
+  `docs/fechamento-producao-2026-09-25.md`: contrato Player↔backend
+  reconferido endpoint a endpoint contra `docs/player-v2-contract.md` (sem
+  incompatibilidade nova); "Em aberto" do `README.md` atualizado — 2 dos 4
+  itens já estavam fechados em código (ciclo de vida via `Watchdog` +
+  `BootReceiver`, OTA completo) e não tinham sido marcados; build release
+  limpo confirmado verde mas **sem assinatura** (nenhum `keystore.properties`
+  no repositório — único bloqueador de código puro, passo a passo em
+  `RUNBOOK.md`); checklist físico consolidado de 15 itens em
+  `docs/checklist-fisico-producao.md`, com proof-of-play ponta a ponta e OTA
+  real marcados obrigatórios antes de cliente real. Nenhuma correção de
+  código nesta rodada — 283 testes, mesmos da auditoria de 23/09. Veredito:
+  **PLAYER TECNICAMENTE PRONTO — AGUARDANDO TESTE FÍSICO.**
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
