@@ -167,10 +167,6 @@ class DiarioBordo(context: Context) {
         FILA_LIMIAR(Severidade.ERRO),
         CONFIG_APLICADA(Severidade.INFO),
         CONFIG_FALHOU(Severidade.ERRO),
-        UPDATE_DETECTADO(Severidade.INFO),
-        UPDATE_BAIXADO(Severidade.INFO),
-        UPDATE_FALHOU(Severidade.ERRO),
-        UPDATE_INSTALACAO_PEDIDA(Severidade.INFO),
         CHAVE_ROTACIONADA(Severidade.INFO),
         FORA_DO_HORARIO(Severidade.INFO),
     }

@@ -8,7 +8,6 @@ import br.com.mostrai.player.cache.ServidorDeTeste
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.estado.DiarioBordo
 import br.com.mostrai.player.proof.ProofOfPlayDb
-import br.com.mostrai.player.update.Atualizador
 import java.io.File
 import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
@@ -34,7 +33,7 @@ class Harness {
     fun limparEstado() {
         listOf(
             "mostrai_config", "mostrai_watchdog", "mostrai_cache_playlist",
-            ProofOfPlayDb.PREFS_PERDAS, Atualizador.ARQUIVO_PREFS,
+            ProofOfPlayDb.PREFS_PERDAS,
         ).forEach { contexto.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit() }
         contexto.deleteDatabase(ProofOfPlayDb.NOME_ARQUIVO)
         contexto.deleteDatabase(DiarioBordo.NOME_ARQUIVO)

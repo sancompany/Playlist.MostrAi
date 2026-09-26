@@ -6,7 +6,6 @@ import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.ConfigRemota
 import br.com.mostrai.player.config.ConfigRemotaJson
 import br.com.mostrai.player.estado.DiarioBordo
-import br.com.mostrai.player.update.Atualizador
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -66,7 +65,7 @@ class ConfigConcorrenciaTest {
     fun `resposta atrasada de config antiga nao sobrescreve a nova`() {
         val api = ApiDeConfig(config)
         val diario = DiarioBordo(contexto)
-        val sync = SincronizacaoV2(config, api, diario, Atualizador(contexto, diario))
+        val sync = SincronizacaoV2(config, api, diario)
 
         val primeira = thread { sync.sincronizarConfigSeNecessario(12) }
         api.primeiraEntrou.await(5, TimeUnit.SECONDS)

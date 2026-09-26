@@ -33,9 +33,7 @@ import br.com.mostrai.player.config.ConfigExterna
 import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.estado.DiarioBordo
 import br.com.mostrai.player.estado.EstadoPlayer
-import br.com.mostrai.player.kiosk.Kiosk
 import br.com.mostrai.player.kiosk.Watchdog
-import br.com.mostrai.player.network.EstadoRede
 import br.com.mostrai.player.network.HeartbeatJson
 import br.com.mostrai.player.network.HelloJson
 import br.com.mostrai.player.network.MostraiApi
@@ -48,11 +46,8 @@ import br.com.mostrai.player.playlist.RelogioJanela
 import br.com.mostrai.player.playlist.ReposicionamentoPlaylist
 import br.com.mostrai.player.proof.FilaProofOfPlay
 import br.com.mostrai.player.ui.EstadoInstitucional
-import br.com.mostrai.player.ui.GestoPainel
-import br.com.mostrai.player.ui.PainelActivity
 import br.com.mostrai.player.ui.RotacaoTela
 import br.com.mostrai.player.ui.TelaInstitucional
-import br.com.mostrai.player.update.Atualizador
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -79,7 +74,6 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var fila: FilaProofOfPlay
     private lateinit var cacheMidia: CacheMidia
     private lateinit var diario: DiarioBordo
-    private lateinit var atualizador: Atualizador
     private lateinit var sincronizacao: SincronizacaoV2
 
     private lateinit var playerView: PlayerView
@@ -166,36 +160,13 @@ class PlayerActivity : AppCompatActivity() {
     /** Itens seguidos que não conseguiram tocar — zera a cada exibição que termina. */
     private var falhasSeguidas = 0
 
-    /** O ciclo parou para o diálogo de instalação e ainda não foi retomado. */
-    private var aguardandoInstalacao = false
-
     /** Origem da última busca de playlist — decide se a institucional mostra erro. */
     private var ultimaOrigemFetch: PlaylistRepositorio.Origem = PlaylistRepositorio.Origem.INSTITUCIONAL
 
     /** Cobre só a primeira vez, depois do vídeo de abertura — retomar do painel não mostra de novo. */
     private var primeiraCargaFeita = false
 
-    private val gestoPainel = GestoPainel { abrirPainel() }
-
     private val avancarPorTempo = Runnable { avancar() }
-
-    /**
-     * Rede de segurança do pedido de instalação (BUG-019). Se o diálogo
-     * nunca apareceu — sessão recusada, confirmação que não abriu — a
-     * Activity nunca sai de RESUMED, e nada mais retomaria o ciclo. Enquanto
-     * um diálogo estiver cobrindo a tela (Activity pausada), continua
-     * esperando: tocar atrás dele seria cobrar exibição que ninguém viu.
-     */
-    private val retomarAposPedidoDeInstalacao = object : Runnable {
-        override fun run() {
-            if (!aguardandoInstalacao) return
-            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                retomarCicloAposInstalacao()
-            } else {
-                handler.postDelayed(this, ESPERA_DIALOGO_INSTALACAO_MS)
-            }
-        }
-    }
 
     private val buscarPeriodicamente = object : Runnable {
         override fun run() {
@@ -295,8 +266,7 @@ class PlayerActivity : AppCompatActivity() {
         repositorio = PlaylistRepositorio(this, api)
         fila = FilaProofOfPlay(this, api)
         cacheMidia = CacheMidia(this)
-        atualizador = Atualizador(this, diario)
-        sincronizacao = SincronizacaoV2(config, api, diario, atualizador)
+        sincronizacao = SincronizacaoV2(config, api, diario)
 
         raiz = findViewById(R.id.raiz)
         rotor = findViewById(R.id.rotor)
@@ -309,7 +279,6 @@ class PlayerActivity : AppCompatActivity() {
         aplicarRotacaoEMargem()
 
         diario.registrar(DiarioBordo.Codigo.BOOT, "versão ${BuildConfig.VERSION_NAME}")
-        Kiosk.ativarLockTaskSePossivel(this)
     }
 
     private fun pedirPermissaoOuAplicarConfigExterna() {
@@ -480,22 +449,11 @@ class PlayerActivity : AppCompatActivity() {
         super.onResume()
         esconderInterfaceDoSistema()
         Watchdog.registrarSinalDeVida(this)
-        // Diálogo de instalação com tema de diálogo só pausa esta Activity:
-        // ao fechar, não há onStart para recomeçar o ciclo (BUG-019).
-        if (aguardandoInstalacao) retomarCicloAposInstalacao()
-    }
-
-    private fun retomarCicloAposInstalacao() {
-        aguardandoInstalacao = false
-        handler.removeCallbacks(retomarAposPedidoDeInstalacao)
-        avancar()
     }
 
     override fun onStop() {
         super.onStop()
         iniciada = false
-        // onStart recomeça o ciclo inteiro; não há o que retomar.
-        aguardandoInstalacao = false
         // Invalida qualquer mostrarVideo ainda resolvendo cache: ao voltar,
         // ele confere a geração, vê que ficou para trás e libera a própria
         // linha em vez de tentar tocar num player que já não existe.
@@ -607,10 +565,6 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun atualizarEstadoRede(resultado: PlaylistRepositorio.Resultado) {
-        EstadoRede.contratoNovo = !resultado.playlist.modoDegradado
-        EstadoRede.ultimaOrigem = resultado.origem.name
-        EstadoRede.ultimoErroAparelho = resultado.erroAparelho
-        EstadoRede.ultimaFalhaTransitoria = resultado.falhaTransitoria
         ultimaOrigemFetch = resultado.origem
 
         when {
@@ -870,14 +824,6 @@ class PlayerActivity : AppCompatActivity() {
                 fila.tentarEnviar()
             }
         }
-        // Janela segura: nenhuma exibição paga no ar entre um item e o
-        // próximo. É aqui, e só aqui, que a confirmação de instalação pode
-        // aparecer sem cortar o anúncio de ninguém.
-        if (tentarInstalarAtualizacao()) {
-            aguardandoInstalacao = true
-            handler.postDelayed(retomarAposPedidoDeInstalacao, ESPERA_DIALOGO_INSTALACAO_MS)
-            return
-        }
         avancar()
     }
 
@@ -944,7 +890,6 @@ class PlayerActivity : AppCompatActivity() {
                     erroEm = erro?.emIso,
                     erroMensagem = erro?.mensagem,
                     desvioRelogioMs = desvioRelogioMs(),
-                    updateEstado = atualizador.estado.name,
                 )
             )
 
@@ -980,18 +925,6 @@ class PlayerActivity : AppCompatActivity() {
         }
         aplicarHorarioOperacional()
         if (efeitos.atualizarPlaylist) atualizarPlaylist(forcarReposicionamento = false)
-    }
-
-    /**
-     * Pede a instalação se houver uma pronta. Devolve true quando o diálogo
-     * foi aberto — aí o ciclo de exibição para por aqui; se o operador
-     * cancelar, [Atualizador] agenda a próxima tentativa e o player volta ao
-     * normal no próximo item.
-     */
-    private fun tentarInstalarAtualizacao(): Boolean {
-        if (!atualizador.podePedirInstalacao()) return false
-        estadoAtual = EstadoPlayer.UPDATE_PENDING
-        return atualizador.pedirInstalacao()
     }
 
     // ------------------------------------------------------------------- tela
@@ -1035,7 +968,6 @@ class PlayerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ painel
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (gestoPainel.aoTeclar(keyCode)) return true
         // BUG-027: VOLTAR no controle da loja encerrava o player no meio do
         // anúncio pago e deixava o launcher da TV na tela até o watchdog
         // reabrir. Consumido aqui, o onKeyUp
@@ -1043,10 +975,6 @@ class PlayerActivity : AppCompatActivity() {
         // e de configurações do controle.
         if (keyCode == KeyEvent.KEYCODE_BACK) return true
         return super.onKeyDown(keyCode, event)
-    }
-
-    private fun abrirPainel() {
-        startActivity(Intent(this, PainelActivity::class.java))
     }
 
     internal companion object {
@@ -1094,9 +1022,6 @@ class PlayerActivity : AppCompatActivity() {
 
         /** Bem abaixo de [Watchdog.TOLERANCIA_MS], com folga para atraso do looper. */
         const val INTERVALO_SINAL_DE_VIDA_MS = 60_000L
-
-        /** Quanto esperar o diálogo de instalação aparecer antes de retomar a exibição. */
-        const val ESPERA_DIALOGO_INSTALACAO_MS = 30_000L
 
         /** Pausa depois de uma volta inteira da playlist sem nenhuma exibição. */
         const val ESPERA_APOS_VOLTA_SEM_EXIBICAO_MS = 10_000L

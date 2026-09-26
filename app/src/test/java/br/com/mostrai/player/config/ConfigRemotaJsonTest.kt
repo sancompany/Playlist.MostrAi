@@ -36,8 +36,6 @@ class ConfigRemotaJsonTest {
         assertEquals(2, config.versaoMinimaBuild)
         assertEquals(RegimeOperacao.CUSTOM, config.horario?.regime)
         assertEquals(1, config.horario?.porDiaDaSemana?.get(DayOfWeek.MONDAY)?.size)
-        assertEquals(false, config.politicaUpdate.baixarAutomaticamente)
-        assertEquals(12, config.politicaUpdate.horasEntreTentativas)
         assertEquals(2048, config.cache.tetoMegabytes)
     }
 
@@ -94,12 +92,4 @@ class ConfigRemotaJsonTest {
         assertEquals(1, config.horario?.porDiaDaSemana?.get(DayOfWeek.TUESDAY)?.size)
     }
 
-    @Test
-    fun `horasEntreTentativas e limitada a um intervalo razoavel`() {
-        val config = ConfigRemotaJson.parse(
-            """{"configVersion": 1, "update": {"horasEntreTentativas": 9999}}"""
-        )!!
-
-        assertTrue(config.politicaUpdate.horasEntreTentativas <= 72)
-    }
 }

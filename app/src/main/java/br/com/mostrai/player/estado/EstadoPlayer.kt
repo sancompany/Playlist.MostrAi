@@ -38,6 +38,4 @@ enum class EstadoPlayer {
     /** Configuração remota recebida não pôde ser aplicada. */
     CONFIG_ERROR,
 
-    /** Há atualização baixada e verificada esperando confirmação de instalação. */
-    UPDATE_PENDING,
 }

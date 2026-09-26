@@ -54,7 +54,6 @@ class MostraiApiAutenticacaoTest {
         erroEm = null,
         erroMensagem = null,
         desvioRelogioMs = null,
-        updateEstado = null,
     )
 
     @Before

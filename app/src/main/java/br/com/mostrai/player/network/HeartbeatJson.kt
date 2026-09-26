@@ -2,7 +2,6 @@ package br.com.mostrai.player.network
 
 import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.estado.EstadoPlayer
-import br.com.mostrai.player.update.UpdateManifesto
 import org.json.JSONObject
 
 /**
@@ -31,7 +30,6 @@ object HeartbeatJson {
         val erroEm: String?,
         val erroMensagem: String?,
         val desvioRelogioMs: Long?,
-        val updateEstado: String?,
     )
 
     fun corpo(dados: Corpo): String = JSONObject().apply {
@@ -60,7 +58,6 @@ object HeartbeatJson {
             },
         )
         dados.desvioRelogioMs?.let { put("desvioRelogioMs", it) }
-        dados.updateEstado?.let { put("update", JSONObject().put("estado", it)) }
     }.toString()
 
     data class Resposta(
@@ -69,7 +66,6 @@ object HeartbeatJson {
         /** Compatibilidade V1: o backend atual entrega margens por aqui. */
         val margens: MargensOverscan? = null,
         val atualizarPlaylist: Boolean = false,
-        val update: UpdateManifesto? = null,
         val novaChave: String? = null,
     )
 
@@ -92,7 +88,6 @@ object HeartbeatJson {
             },
             margens = json.optJSONObject("margens")?.let(::parseMargens),
             atualizarPlaylist = json.optJSONObject("playlist")?.optBoolean("atualizar", false) ?: false,
-            update = json.optJSONObject("update")?.let(UpdateManifesto::parse),
             novaChave = json.textoOuNulo("novaChave"),
         )
     }.getOrNull()

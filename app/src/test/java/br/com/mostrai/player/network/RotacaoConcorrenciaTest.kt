@@ -82,7 +82,7 @@ class RotacaoConcorrenciaTest {
                     estado = EstadoPlayer.PLAYING, configVersionAplicada = 0, criativoId = null,
                     ultimaPlaylistOkEm = null, filaPendentes = 0, filaMaisAntigoEm = null,
                     erroCodigo = null, erroEm = null, erroMensagem = null,
-                    desvioRelogioMs = null, updateEstado = null,
+                    desvioRelogioMs = null,
                 )
             )
         }

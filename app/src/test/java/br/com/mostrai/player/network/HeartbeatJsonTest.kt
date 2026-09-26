@@ -26,7 +26,6 @@ class HeartbeatJsonTest {
         erroEm = "2026-09-23T03:00:00-03:00",
         erroMensagem = "detalhe",
         desvioRelogioMs = -4200,
-        updateEstado = "NONE",
     )
 
     // ------------------------------------------------------------------ corpo
@@ -87,11 +86,7 @@ class HeartbeatJsonTest {
               "servidorAgora": "2026-09-23T13:00:00Z",
               "configVersion": 184,
               "playlist": {"atualizar": true},
-              "novaChave": "chave-nova",
-              "update": {
-                "available": true, "required": true, "version": "1.1.0", "build": 3,
-                "url": "https://exemplo.com/app.apk", "sha256": "${"a".repeat(64)}", "size": 123
-              }
+              "novaChave": "chave-nova"
             }
         """.trimIndent()
 
@@ -101,8 +96,6 @@ class HeartbeatJsonTest {
         assertEquals(184, resposta.configVersion)
         assertTrue(resposta.atualizarPlaylist)
         assertEquals("chave-nova", resposta.novaChave)
-        assertEquals(3, resposta.update?.build)
-        assertTrue(resposta.update!!.obrigatorio)
     }
 
     @Test
@@ -122,7 +115,6 @@ class HeartbeatJsonTest {
 
         assertNull(resposta.configVersion)
         assertNull(resposta.margens)
-        assertNull(resposta.update)
         assertFalse(resposta.atualizarPlaylist)
     }
 
@@ -136,7 +128,6 @@ class HeartbeatJsonTest {
     fun `corpo vazio continua valendo como nada a fazer`() {
         val resposta = HeartbeatJson.parseResposta("")!!
 
-        assertNull(resposta.update)
         assertFalse(resposta.atualizarPlaylist)
     }
 

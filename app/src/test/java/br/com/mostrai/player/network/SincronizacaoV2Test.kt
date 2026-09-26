@@ -8,7 +8,6 @@ import br.com.mostrai.player.config.ConfigRemotaJson
 import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.estado.DiarioBordo
 import br.com.mostrai.player.estado.EstadoPlayer
-import br.com.mostrai.player.update.Atualizador
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -66,7 +65,6 @@ class SincronizacaoV2Test {
         erroEm = null,
         erroMensagem = null,
         desvioRelogioMs = null,
-        updateEstado = null,
     )
 
     private val dadosHello = HelloJson.Dados(
@@ -84,8 +82,6 @@ class SincronizacaoV2Test {
     fun preparar() {
         contexto = ApplicationProvider.getApplicationContext()
         contexto.getSharedPreferences("mostrai_config", Context.MODE_PRIVATE).edit().clear().commit()
-        contexto.getSharedPreferences(Atualizador.ARQUIVO_PREFS, Context.MODE_PRIVATE)
-            .edit().clear().commit()
         contexto.deleteDatabase(DiarioBordo.NOME_ARQUIVO)
 
         config = ConfigAparelho(contexto)
@@ -95,7 +91,7 @@ class SincronizacaoV2Test {
 
         api = ApiFalsa(config)
         diario = DiarioBordo(contexto)
-        sync = SincronizacaoV2(config, api, diario, Atualizador(contexto, diario))
+        sync = SincronizacaoV2(config, api, diario)
     }
 
     // ------------------------------------------- compatibilidade V1 (Regra)
@@ -323,25 +319,4 @@ class SincronizacaoV2Test {
         assertNotNull(config.tokenProvisionamento)
     }
 
-    @Test
-    fun `atualizacao retirada pelo servidor nao e reoferecida depois da espera`() {
-        // Auditoria B: INSTALL_REQUESTED sem resposta volta a ser oferecido
-        // após 6h (BUG-015). Se nesse meio-tempo o backend retirou a versão
-        // (release quebrada), o heartbeat sem `update` precisa limpar antes
-        // que a tela ofereça de novo o APK retirado. Depende da ordem
-        // reavaliarAdiamento → considerar em aplicarResposta.
-        contexto.getSharedPreferences(Atualizador.ARQUIVO_PREFS, Context.MODE_PRIVATE).edit()
-            .putString("estado", br.com.mostrai.player.update.EstadoUpdate.INSTALL_REQUESTED.name)
-            .putInt("build_alvo", 99)
-            .putLong("proxima_tentativa_ms", 1L)
-            .commit()
-        java.io.File(contexto.cacheDir, "update").apply { mkdirs() }.resolve("99.apk").writeBytes(byteArrayOf(1))
-        api.respostaHeartbeat = ResultadoHttp.Ok(HeartbeatJson.Resposta(update = null))
-
-        sync.heartbeat(corpo)
-
-        val atualizador = Atualizador(contexto, diario)
-        assertFalse(atualizador.podePedirInstalacao())
-        assertEquals(br.com.mostrai.player.update.EstadoUpdate.NONE, atualizador.estado)
-    }
 }

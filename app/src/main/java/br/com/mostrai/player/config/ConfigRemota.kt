@@ -25,16 +25,8 @@ data class ConfigRemota(
     val pinPainel: String? = null,
     /** `versionCode` abaixo do qual o player se considera obsoleto. */
     val versaoMinimaBuild: Int? = null,
-    val politicaUpdate: PoliticaUpdate = PoliticaUpdate(),
     val cache: PoliticaCache = PoliticaCache(),
 ) {
-    data class PoliticaUpdate(
-        /** Player pode baixar sozinho; a instalação sempre pede confirmação sem Device Owner. */
-        val baixarAutomaticamente: Boolean = true,
-        /** Horas entre duas solicitações de instalação depois de um cancelamento. */
-        val horasEntreTentativas: Int = 6,
-    )
-
     data class PoliticaCache(
         val tetoMegabytes: Int? = null,
     )
@@ -65,8 +57,6 @@ object ConfigRemotaJson {
             horario = json.optJSONObject("operacao")?.let(::horario),
             pinPainel = json.textoOuNulo("pinPainel")?.takeIf { ConfigAparelho.ehPinValido(it) },
             versaoMinimaBuild = json.inteiroOuNulo("versaoMinimaBuild"),
-            politicaUpdate = json.optJSONObject("update")?.let(::politicaUpdate)
-                ?: ConfigRemota.PoliticaUpdate(),
             cache = ConfigRemota.PoliticaCache(
                 tetoMegabytes = json.optJSONObject("cache")?.inteiroOuNulo("tetoMegabytes"),
             ),
@@ -78,11 +68,6 @@ object ConfigRemotaJson {
         base = json.floatOuZero("inferior"),
         esquerda = json.floatOuZero("esquerda"),
         direita = json.floatOuZero("direita"),
-    )
-
-    private fun politicaUpdate(json: JSONObject) = ConfigRemota.PoliticaUpdate(
-        baixarAutomaticamente = json.optBoolean("baixarAutomaticamente", true),
-        horasEntreTentativas = json.inteiroOuNulo("horasEntreTentativas")?.coerceIn(1, 72) ?: 6,
     )
 
     private fun horario(json: JSONObject): HorarioOperacional {
