@@ -10,6 +10,8 @@ Projeto da San & Co. Segue as leis do plugin `san-co`.
 - `docs/pendencias.md` — o trabalho que falta, e o que só o dono faz
 - `RUNBOOK.md` — como operar, reverter e restaurar
 - `README.md` — como rodar e testar
+- `sancompany/MostrAi` → `docs/player-mvp-contract.md` — **o** protocolo com o backend (fonte da verdade); conferência em `docs/player-mvp-matriz.md`
+- `docs/historico/` — V1/V2, OTA, Device Owner, painel, provisionamento por JSON/ADB: só histórico, nada disso existe mais
 
 ## Classificação (estação 2)
 
@@ -24,10 +26,9 @@ Os quatro apontam para **projeto**, sem ambiguidade.
 
 **O que consome de plataforma:** nada de estrutura San & Co. (sem Checkout —
 não há pagamento no app; sem Cloudflare Access — não há área administrativa
-web, o painel é on-device com PIN local; sem Google Workspace/Drive). O único
-consumo externo é a **API do backend `sancompany/mostrai`** (projeto
-irmão, não estrutura — contrato em `docs/funcional.md`, seção "Contrato com
-o backend").
+no app, só o PIN de saída; sem Google Workspace/Drive). O único consumo
+externo é a **API do backend `sancompany/MostrAi`** (projeto irmão, não
+estrutura — contrato em `docs/player-mvp-contract.md` do backend, 5 rotas).
 
 **Onde roda:** hardware físico (SEMP TCL 32S6500S, Android TV 8), sideload
 por pendrive. Não é hospedagem escolhida entre opções — é o parque instalado
@@ -231,24 +232,45 @@ Fechadas:
   (instalador do fabricante) ·
   `docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`.
 
+- **Reestruturação para o MVP de produção — 2.0.0 (26/09/2026)** — pedido
+  do dono, backend já finalizado e read-only nesta sessão. O Player passou a
+  falar **só** `sancompany/MostrAi` → `docs/player-mvp-contract.md`: 5 rotas
+  (`/player/provisionar`, `/playlist/:id`, `/played`, `/heartbeat`,
+  `/config`), matriz final 5/5 MATCH em `docs/player-mvp-matriz.md`.
+  Fixos no APK (`Produto.kt`): `BASE_URL = https://mostrai.sancocore.com.br`,
+  `ROTATION = 90`, `HEARTBEAT = 15s`; `POP_RETENTION = 7 dias`;
+  `PROVISIONING = M-xxxx + XXXX-XXXX` digitados na TV. Removidos: V1/modo
+  degradado, `/hello`, OTA (`update/`, `REQUEST_INSTALL_PACKAGES`), Device
+  Owner/lock task/`Kiosk`, `PainelActivity` e gesto de 3 toques,
+  provisionamento por JSON/pendrive/`BuildConfig`/ADB, `baseUrl` e rotação
+  configuráveis, rotação de credencial. Novos: tela de instalação e PIN de
+  saída dentro do `rotor` (D-pad remapeado), `saidaAutorizada` que o
+  `Watchdog` respeita, heartbeat de 15 s com `fila`/`erro`, config
+  serializada e marcada como aplicada só depois de aplicada, 401 →
+  reinstalação mantendo a fila, 403 → cartão mantendo a fila. Fix do `HOME`
+  da TCL preservado (`GuardaMvpTest`). 283 → 276 testes (guardas do que
+  saiu incluídas), 5.608 → 4.127 linhas de produção, 5 → 3 permissões,
+  29 → 14 chaves de estado. versionCode 3, versionName 2.0.0. Checklist
+  físico novo de 36 itens em `docs/checklist-fisico-producao.md`.
+
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
 
 ## Mapa de caminhos
 
-- Entrada da aplicação: `app/src/main/java/br/com/mostrai/player/PlayerActivity.kt`
-- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi`, `HttpCliente`, `PlaylistJson`, `PlayedJson`)
+- Entrada da aplicação (única Activity): `app/src/main/java/br/com/mostrai/player/PlayerActivity.kt`
+- Valores fixos do produto: `app/src/main/java/br/com/mostrai/player/Produto.kt` (`BASE_URL`, `ROTACAO_GRAUS`, intervalos); `HostDaApi` em `app/src/release/` (constante) e `app/src/debug/` (trocável só por teste)
+- Provisionamento: `app/src/main/java/br/com/mostrai/player/provisionamento/` (`Codigos` normaliza ID e código, `Provisionador` troca pela credencial) + `ui/TelaProvisionamento.kt`
+- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi` = as 5 rotas, `ResultadoHttp` separa as famílias de falha, `Sincronizacao` aplica os efeitos do heartbeat, `HeartbeatJson`/`PlaylistJson`/`PlayedJson` são os corpos)
 - Playlist e reposicionamento: `app/src/main/java/br/com/mostrai/player/playlist/`
+- Cache de mídia: `app/src/main/java/br/com/mostrai/player/cache/`
 - Proof-of-play (fila durável): `app/src/main/java/br/com/mostrai/player/proof/`
-- Configuração do aparelho: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda; `ConfigExterna` lê `mostrai-config.json` do pendrive; `ConfigRemota` é a config versionada do backend; `HorarioOperacional` é o regime, puro e testável)
-- Contrato V2 e degradação para V1: `app/src/main/java/br/com/mostrai/player/network/` (`SincronizacaoV2` decide, `ResultadoHttp` separa as famílias de falha, `HelloJson`/`HeartbeatJson` são os corpos)
-- Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer`)
-- Atualização remota: `app/src/main/java/br/com/mostrai/player/update/`
-- Kiosk: `app/src/main/java/br/com/mostrai/player/kiosk/` (`Watchdog`, `Kiosk` com Device Owner opcional)
-- Painel de manutenção: `app/src/main/java/br/com/mostrai/player/ui/PainelActivity.kt` — **só diagnóstico**, nunca configuração cotidiana
-- Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`
-- Variáveis/segredos: nenhum `.env` — três caminhos de provisionamento, nesta ordem de precedência: build embutido (`-PconfigDispositivo`, README "Gerar um APK já configurado por tela") → arquivo externo (`mostrai-config.json` no pendrive, README "Configurar por um arquivo no pendrive") → extras de Intent por `adb` (caminho de depuração: sobrescreve sempre no APK debug; no release só provisiona aparelho ainda não provisionado, porque qualquer app da TV pode abrir o player com extras — README "Instalar e provisionar em bancada"). Nenhum dos três versiona segredo — `dispositivos/*.json` e `mostrai-config.json` ficam de fora do Git.
-- Handoff pro backend (`sancompany/mostrai`): `docs/player-v2-contract.md` (o contrato exato implementado) e `docs/player-v2-mostrai-checklist.md` (a lista de trabalho do lado de lá). `PARA-O-BACKEND.md` continua como resumo curto de entrada.
+- Configuração: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda credencial e config aplicada; `ConfigRemota` lê `GET /config`; `HorarioOperacional` é o horário do ponto, puro e testável)
+- Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer` = os 9 estados do contrato)
+- Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `BootReceiver.kt`
+- Rotação e D-pad: `ui/RotacaoTela.kt`, `ui/DpadRotacionado.kt`
+- Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`; `GuardaMvpTest` falha se algo removido voltar
+- Variáveis/segredos: nenhum `.env` e nenhum caminho de provisionamento fora da TV. Keystore de release: `keystore.properties` fora do Git (`RUNBOOK.md`)
 
 ## Conformidade
 
@@ -257,5 +279,5 @@ conformidade: ou corrige, ou vira exceção registrada no `CONSTRAINTS.md`.
 
 ## Pendências que bloqueiam a esteira
 
-- Verificação "no ar" da estação 5 em hardware real — só o dono faz (ver `docs/pendencias.md`)
+- Verificação "no ar" da estação 5 em hardware real — checklist de 36 itens, só o dono faz (ver `docs/pendencias.md`)
 - CI (`.github/workflows/ci.yml`) pode precisar ser aplicado manualmente pelo dono se a ferramenta recusar o push do workflow (ver `docs/pendencias.md`)

@@ -1,3 +1,11 @@
+> **HISTÓRICO — não é a regra atual.** Documento de antes da reestruturação
+> para o MVP (26/09/2026, versão 2.0.0). V1, `/hello`, OTA, Device Owner,
+> kiosk, painel técnico, provisionamento por JSON/pendrive/ADB, `baseUrl` e
+> rotação variáveis **não existem mais** no Player. O protocolo em vigor é
+> `sancompany/MostrAi` → `docs/player-mvp-contract.md`; o estado atual está
+> em `README.md` e `docs/funcional.md`. Mantido só pelo histórico de bugs e
+> decisões.
+
 # Checklist do backend/admin da Mostraí — Player V2
 
 Para a sessão que mantém `sancompany/mostrai` (backend, admin, Rede, Tela,

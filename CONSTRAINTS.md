@@ -6,11 +6,13 @@ para o porquê de cada decisão de escopo.
 ## Vetos formais (não se negociam, ver `docs/specs/`)
 
 - **Nunca usuário e senha na TV.** A tela se autentica só por chave de
-  aparelho revogável, emitida no painel admin. Qualquer proposta de tela de
-  login é rejeitada de saída.
-- **Nenhum segredo versionado.** Chave, token, keystore de assinatura, URL de
-  infraestrutura e credencial ficam fora do Git (`.gitignore`). O keystore de
-  release fica com o dono, fora do repositório.
+  aparelho revogável, obtida trocando o ID da tela + código de instalação
+  do admin. Qualquer proposta de tela de login é rejeitada de saída.
+- **Nenhum segredo versionado.** Chave do aparelho, keystore de assinatura,
+  senhas e credenciais ficam fora do Git (`.gitignore`). O keystore de
+  release fica com o dono, fora do repositório. A URL de produção
+  (`https://mostrai.sancocore.com.br`) **não** é segredo: é o endereço
+  público do serviço, fixo no APK por decisão de produto (`Produto.kt`).
 - **A tela não decide nada sozinha.** Hora, ordem e o que conta são do
   servidor. O app executa e relata — nunca infere crédito, nunca decide
   elegibilidade.
@@ -22,21 +24,31 @@ para o porquê de cada decisão de escopo.
   hora), é só para *quando* agir, nunca para *o quê* creditar — documentado
   no ponto de uso (`PlayerActivity.agendarViradaDeHora`).
 
-## Fora de escopo na v1 (veto desta versão, não "nunca")
+## Fora do MVP (2.0.0)
 
-- **Relatório na TV.** Sem tela de relatório/dashboard local — quem precisa
-  de números usa o backend/admin.
-- **Múltiplas orientações exóticas.** Só paisagem, fixo no manifesto.
-- **Telemetria rica além do proof-of-play.** Sem analytics de uso, sem
-  captura de erro com serviço de terceiro (Sentry etc.) nesta versão —
-  desproporcional a um app sem dado pessoal e sem usuário interativo.
-- **Atualização remota (OTA).** Item 7.3 em aberto no prompt original — as
-  opções reais para Android TV 8 sideloaded ainda não foram levantadas.
-- **Login de usuário.** Nenhum, por veto formal acima — não é "fora de
-  escopo", é vetado permanentemente.
-- **Cache de mídia com eviction sofisticada (LRU com métrica de acesso).** A
-  v1 usa um teto de tamanho simples com descarte do mais antigo — ver
-  `docs/funcional.md`, RN da seção de cache.
+Se não é necessário para instalar, reproduzir, ficar offline, comprovar,
+receber config, ajustar margens, respeitar horário, sair com PIN ou se
+recuperar, não entra. Em especial, **não** reintroduzir:
+
+- **OTA** (atualização remota). Atualizar é sideload de um APK assinado com a
+  mesma chave (`RUNBOOK.md`).
+- **Device Owner, MDM, lock task, launcher `HOME`.** O `HOME` foi provado
+  incompatível com o instalador da TCL (`docs/erros/2026-09-25-…`). Quem
+  traz o player de volta é o `Watchdog`.
+- **Painel técnico na TV** (gesto de 3 toques, tela de diagnóstico). O único
+  diálogo local é o PIN de saída.
+- **Provisionamento por JSON, pendrive, `BuildConfig` por tela ou extras de
+  ADB.** A única forma é ID da tela + código de instalação digitados na TV.
+- **`baseUrl` variável, multi-host, rotação configurável ou
+  multi-orientação.** URL e rotação são constantes de `Produto.kt`. Se a TV
+  mostrar de ponta-cabeça, a correção é uma build nova com 270°.
+- **Contrato V1, `/hello`, rotação de credencial.** O backend não fala nada
+  disso (`player-mvp-contract.md`).
+- **WebSocket, SSE, comandos remotos, telemetria sofisticada** (Sentry,
+  analytics). O heartbeat de 15 s com `estado`/`erro`/`fila` é todo o
+  sinal que o servidor recebe.
+- **Relatório na TV** e **login de usuário** (este último vetado sempre).
+- **Cache com eviction sofisticada.** Teto de 1 GB, descarte do mais antigo.
 
 ## Exceção de classificação (estação 1)
 
@@ -49,8 +61,8 @@ sideload, sem interface web. Consequências assumidas:
   SEO técnico, formulário, e-mail, formato brasileiro) não existem neste
   produto. O checklist de fechamento da estação 5 é o mapa de blocos MVP do
   prompt original (seção 3), replicado em "Estado na esteira" do `CLAUDE.md`.
-- **Cloudflare Access não se aplica.** O "painel de manutenção" é on-device,
-  protegido por PIN local — não é área administrativa web.
+- **Cloudflare Access não se aplica.** Não há área administrativa no app; o
+  único diálogo local é o PIN de saída.
 - **"A versão inicial no ar" (fechamento da estação 5) não tem o mesmo
   sentido de URL que responde.** Para um app sideloaded, o equivalente é
   instalado e rodando de verdade num aparelho real. Esta sessão não tem
@@ -62,20 +74,18 @@ sideload, sem interface web. Consequências assumidas:
 
 ## Limites assumidos (Lei 7)
 
-- **Fila de proof-of-play**: até 5.000 eventos pendentes por aparelho. Acima
-  disso, descarta o mais antigo e conta a perda (visível no painel). Número
-  do prompt original (seção 6.4), não medido — `// limite:` no código
-  (`FilaProofOfPlay.TAMANHO_MAXIMO_FILA`) aponta para revisão se a operação
-  real mostrar necessidade de mais.
-- **Lote de envio de `/played`**: até 50 eventos por requisição — número do
-  contrato (seção 6.2), não ajustável sem mudar o contrato do backend.
-- **Backoff de reenvio**: 5s → 15s → 60s → 5min → 15min → teto de 30min,
-  nunca desistência (seção 6.4).
-- **Horizonte de expiração local**: 7 dias — depois disso um evento pendente
-  é contado como perda e sai da fila (seção 6.5). Medido pelo relógio de
-  parede do aparelho (não pelo monotônico): é contabilidade local de
-  descarte, não decisão de negócio, então a proibição de depender do relógio
-  não se aplica aqui — decisão registrada, não omissão.
+- **Fila de proof-of-play**: até 50.000 eventos pendentes por aparelho
+  (`FilaProofOfPlay.TAMANHO_MAXIMO_FILA`). Acima disso, descarta o mais
+  antigo e conta a perda. Aviso no diário a partir de 10.000.
+- **Lote de `/played`**: 50 eventos por requisição (o contrato aceita até
+  500; lote pequeno mantém o corpo longe dos 100 KB).
+- **Espera de reenvio**: 5 s → 15 s → 60 s → 5 min → 15 min → teto de 30 min,
+  nunca desistência. 429 respeita `Retry-After` (1 s a 1 h).
+- **Horizonte local**: 7 dias + 1 h. O servidor aceita até 7 dias depois do
+  fim da janela; a hora a mais cobre a própria janela. Medido pelo relógio
+  de parede — contabilidade local de descarte, não decisão de negócio.
+- **Cache de mídia**: 1 GB.
+- **PIN de saída**: 3 erros → bloqueio de 5 s, dobrando até 5 min.
 
 ## Dependências (proporcionalidade, Lei 0)
 
@@ -88,37 +98,13 @@ suficiente para não precisar de ORM. `kotlinx-coroutines-android` e
 ferramentas de concorrência padrão do ecossistema Android/Kotlin, não
 dependências de negócio.
 
-## Chave embutida num APK gerado localmente não é segredo versionado
+## Riscos de segurança aceitos
 
-`-PconfigDispositivo=<arquivo>.json` (README, "Gerar um APK já configurado
-por tela") embute `dispositivoId`/`chaveAparelho`/`baseUrl`/`pin` no
-`BuildConfig` de um APK específico. O arquivo `.json` com os valores reais
-nunca é commitado (`.gitignore` cobre `dispositivos/*.json`) — só o
-`.example` fica no Git. Isso não é uma exceção ao veto "nenhum segredo
-versionado": o segredo não entra no repositório em momento nenhum, só no
-binário que cada pessoa gera na própria máquina. O risco assumido —
-extrair a chave decompilando um APK instalado — já existia antes de forma
-equivalente (a mesma chave também fica em texto claro em
-`SharedPreferences` depois do provisionamento por `adb`), e a mitigação é a
-mesma: a chave é revogável por aparelho, então o pior caso continua sendo
-uma tela, não a rede inteira.
-
-## Riscos de segurança aceitos (achados da revisão, estação 5)
-
-- **`baseUrl` não é validado como HTTPS.** Se o aparelho for provisionado com
-  uma URL `http://`, a chave revogável (`X-Aparelho-Id`) trafega em texto
-  claro na rede do comércio. Não corrigido em código de propósito: enforçar
-  HTTPS quebraria bancada local (`http://localhost` na fase de testes).
-  Mitigação real: a chave é revogável (veto formal), então o pior caso é
-  revogar e reemitir, não um segredo permanente exposto. Quem provisiona em
-  campo é responsável por usar `https://` (`README.md`, "Instalar e
-  provisionar em bancada").
-- **PIN do painel sem limite de tentativas.** `PainelActivity` aceita
-  qualquer número de tentativas seguidas sem atraso. Aceito porque o painel é
-  **somente leitura** na v1 (`docs/funcional.md`, seção 3) — o pior caso de
-  um PIN quebrado por força bruta física é ver `dispositivoId`, chave
-  truncada e contadores, não uma ação destrutiva. Reavaliar se o painel
-  ganhar ação de escrita numa versão futura.
+- **A chave do aparelho fica em texto claro no armazenamento privado do
+  app.** Extraí-la exige acesso root ou físico à TV. A chave é revogável por
+  tela no admin: o pior caso é uma tela, não a rede.
+- **O APK de teste físico é debug.** Assinado com a chave de debug — não é
+  produção e não deve ir para cliente real (`RUNBOOK.md`).
 
 ## CI (estação 3)
 

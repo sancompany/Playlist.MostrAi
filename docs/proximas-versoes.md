@@ -2,6 +2,11 @@
 
 Ideias para depois. Entrada aqui não autoriza construir nada.
 
+> **Depois do MVP 2.0.0 (26/09/2026):** OTA, painel técnico (`PainelActivity`),
+> Device Owner e provisionamento por JSON saíram do app. As entradas abaixo que
+> os citam são histórico da discussão; nenhuma volta sem decisão explícita do
+> dono (`CONSTRAINTS.md`, "Fora do MVP").
+
 ## Relatório na TV
 
 - **O quê**: tela de diagnóstico mais rica no painel (gráfico simples de

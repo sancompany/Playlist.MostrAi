@@ -1,342 +1,201 @@
-# Definição funcional — Mostraí Player
+# Definição funcional — Mostraí Player (MVP 2.0.0)
 
-O que o sistema faz. Adaptado de um app web para um app Android TV nativo:
-não há URL nem tela no sentido de página — "tela" aqui é estado visual do
-único Activity principal (`PlayerActivity`) mais o painel de manutenção
-(`PainelActivity`).
+O que o sistema faz. App Android TV nativo com **uma Activity só**
+(`PlayerActivity`): "tela" aqui é estado visual dela, nunca outra Activity.
+
+O protocolo com o backend não é definido aqui. A fonte da verdade é
+`sancompany/MostrAi` → `docs/player-mvp-contract.md`; a conferência campo a
+campo está em `docs/player-mvp-matriz.md`. Se este documento divergir do
+contrato, o contrato vence.
+
+## 0. Valores fixos do produto
+
+Constantes no APK (`Produto.kt`), nunca configuráveis por preferência, JSON,
+pendrive, ADB ou backend:
+
+| Item | Valor |
+|---|---|
+| `BASE_URL` | `https://mostrai.sancocore.com.br` |
+| `ROTATION` | 90° (conteúdo girado no sentido horário; se a TV mostrar de ponta-cabeça, **outra build** com 270° — nunca rotação dinâmica) |
+| `HEARTBEAT` | 15 s |
+| Busca da playlist | virada de cada hora, a cada 15 min, quando o heartbeat pedir, quando a rede voltar |
+| Envio de proof-of-play | a cada 60 s e quando a rede volta |
+| `POP_RETENTION` | 7 dias (o servidor aceita até 7 dias depois do fim da janela) |
+| `PROVISIONING` | ID da tela `M-xxxx` + código de instalação `XXXX-XXXX` |
 
 ## 1. Público-alvo
 
-- **Espectador do comércio** — não interage com o app, só assiste. Quer ver
-  vídeo em laço sem interrupção, sem barra de sistema, sem cursor. Não sabe
-  nem precisa saber que o app existe.
-- **Operador de manutenção** (funcionário do comércio ou técnico do
-  Mostraí) — abre o painel para checar se a tela está funcionando ou para
-  trocar a margem de overscan. Sabe usar um controle remoto de TV; não
-  necessariamente sabe o que é um PIN até alguém explicar.
-- **Backend `sancompany/mostrai`** — não é papel humano, mas é quem manda:
-  decide playlist, janela, e o que conta como comprovante. O app nunca age
-  sem ele (ou sem a última resposta dele em cache).
+- **Espectador do comércio** — só assiste. Vídeo em laço, tela cheia, mudo,
+  sem barra de sistema.
+- **Instalador** (técnico do Mostraí ou do ponto) — instala o APK, digita
+  o ID da tela e o código de instalação que o admin mostra, e vai embora.
+- **Quem precisa sair do app na TV** (manutenção) — aperta VOLTAR e digita o
+  PIN de saída definido no admin.
+- **Backend `sancompany/MostrAi`** — decide playlist, janela, config, PIN e
+  o que conta como comprovante. O app executa e relata.
 
-## 2. Jornada principal
+## 2. Jornadas
 
-**Espectador (implícita — o app roda sozinho):**
-1. TV liga → app sobe automaticamente (`BootReceiver`), sem interação.
-2. App busca a playlist do servidor (ou usa a última em cache).
-3. App toca os itens em laço, tela cheia, mudo.
-4. Cada exibição completa (`STATE_ENDED`) vira um evento na fila de
-   proof-of-play, enviado ao servidor em segundo plano.
+**Instalação (uma vez por TV):**
+1. Instala o APK (pendrive, instalador da TV).
+2. Abre o app: toca o vídeo de abertura e cai na tela de instalação.
+3. Digita o **ID da tela** (`235`, `0235`, `M0235`, `m-0235`… viram
+   `M-0235`) e o **código de instalação** (8 caracteres, com ou sem hífen,
+   maiúscula ou minúscula) que o admin mostra em Rede → Ponto → Tela.
+4. CONECTAR → o app troca o código pela credencial, guarda, some com a tela
+   de instalação e começa a operar.
 
-*Isso é tudo que essa pessoa precisa fazer* — nenhuma jornada secundária,
-não há interação nenhuma prevista para o espectador.
+**Operação (sozinha, todo dia):**
+1. TV liga → `BootReceiver` abre o app.
+2. Heartbeat a cada 15 s; config (margens, horário, PIN) quando a versão
+   muda; playlist da hora.
+3. Toca os itens em laço; cada exibição concluída vira proof-of-play na fila
+   durável e é enviada em lote.
 
-**Operador de manutenção:**
-1. Aperta OK/CENTER 3 vezes em até 3 segundos no controle remoto.
-2. Digita o PIN de 4 dígitos na grade numérica na tela (D-pad).
-3. PIN certo → vê tela e chave configuradas, modo de contrato, origem da
-   última playlist, erro do aparelho (se houver), fila de proof-of-play
-   (pendentes/perdas).
-4. PIN errado → mensagem de erro, campo limpo, tenta de novo.
-5. `VOLTAR` → fecha o painel, volta à reprodução normal sem interromper o
-   vídeo em andamento (o player continua rodando por trás).
-6. Sem nenhuma tecla por 3 minutos, o painel fecha sozinho — o player segue
-   contando exibição por trás dele, então um painel esquecido aberto não
-   pode cobrir a tela por dias.
-7. Na tela do player (fora do painel), `VOLTAR` não faz nada: um toque
-   acidental no controle da loja não interrompe o anúncio. Para sair do app,
-   use as teclas HOME ou de configurações do controle.
+**Saída autorizada:**
+1. VOLTAR no controle → aparece "PIN PARA SAIR" (o vídeo segue por trás).
+2. PIN certo → o app fecha e o watchdog **não** o reabre.
+3. Abrir o app de novo (ícone ou reboot) → operação normal e watchdog
+   rearmado.
 
-## 3. Telas
+## 3. Estados visuais
 
-| Tela | Quem acessa | O que mostra | O que dá pra fazer | Para onde leva |
-|---|---|---|---|---|
-| Player (tela cheia) | Espectador (passivo) | Vídeo do anunciante em laço, ou peça institucional desenhada no aparelho (inclusive quando a playlist vem vazia) | Nada (sem interação prevista; `VOLTAR` é ignorado) | Painel, via gesto |
-| Painel — PIN | Operador | Teclado numérico 0–9, máscara do PIN digitado | Digitar PIN | Painel — informações (PIN certo) ou continua aqui (PIN errado) |
-| Painel — informações | Operador | Tela, chave (truncada), servidor, provisionado, margem, atraso da virada, modo de contrato, origem da playlist, erro do aparelho, fila de proof-of-play | Ler (somente leitura na v1) | Player, via `VOLTAR` |
+| Estado | Quando | O que aparece | `estado` no heartbeat |
+|---|---|---|---|
+| Abertura | Primeiro `onStart` do processo | Vídeo de marca (`res/raw/video_abertura.mp4`), uma vez, sem proof-of-play | — |
+| Não provisionado | Sem credencial, ou credencial recusada (401) | Tela de instalação: ID da tela, código, CONECTAR, teclado na tela | `NOT_PROVISIONED` (não é enviado — sem credencial não há heartbeat) |
+| Carregando | Provisionado, antes da primeira playlist | Arte "Atualizando conteúdo…" | `IDLE` |
+| Player | Item com `url` | Vídeo tela cheia | `PLAYING` |
+| Cartão local | Item sem `url` (pelo tempo do item), tela em reparo/inativa (403), fora do horário | Degradê de marca, sem legenda | `IDLE` ou `OUT_OF_SCHEDULE` |
+| Sem conteúdo / erro | Playlist vazia, sem servidor e sem cache, ou uma volta inteira sem nenhuma exibição | Arte "Não foi possível carregar a programação" | `NO_PLAYLIST`, `DOWNLOAD_ERROR` ou `PLAYBACK_ERROR` |
+| Pedido de PIN | VOLTAR com o app operando e `pinSaida` recebido | Sobreposição "PIN PARA SAIR" com teclado numérico | o do vídeo que continua por trás |
 
-Lista fechada: as três telas cobrem as duas jornadas acima, nenhuma sobra.
+Tudo é desenhado dentro do contêiner girado (`rotor`), então a tela de
+instalação e o PIN também aparecem na orientação certa. O D-pad é remapeado
+para a rotação (`DpadRotacionado`): "cima" no controle é "cima" para quem
+olha a TV.
 
-## 4. Estados de cada tela
+## 4. Regras de negócio
 
-**Player:**
-- Abertura: no boot do processo (nunca ao voltar do painel), toca o vídeo
-  de marca uma vez, mudo, num player próprio separado do player normal —
-  não é exibição de anunciante, não entra na fila de proof-of-play.
-  `PlayerActivity.tocarIntroducao`.
-- Vazio (playlist sem itens): não se aplica — `Playlist.somenteInstitucional()`
-  garante que sempre há pelo menos um item institucional.
-- Carregando: depois do vídeo de abertura, enquanto a primeira playlist não
-  chega, mostra a arte "Atualizando conteúdo…" — só se o aparelho já está
-  provisionado (sem provisionamento, já mostra direto o estado abaixo).
-- Aparelho não provisionado: arte "Aparelho não conectado" — configuração
-  local (`ConfigAparelho.provisionado`) incompleta, não depende de rede.
-- Erro ao carregar (rede caiu, aparelho sem chave, servidor rejeitou, **e**
-  não há cache pra cair): arte "Não foi possível carregar a programação".
-  Com cache disponível, usa o cache normalmente, sem mostrar erro nenhum —
-  nunca tela preta, nunca crash visível.
-- Sem programação para esta hora: item institucional que o próprio backend
-  manda (sem `url`) — desenhado em runtime (degradê + legenda), não é arte
-  fixa; não é uma decisão deste app, é conteúdo da playlist
-  (`docs/pendencias.md`).
-- Sucesso: vídeo tocando, tela cheia.
-- Sem permissão: não se aplica — não há controle de acesso na tela do
-  player, é sempre visível (é uma TV pública).
-- Lista longa demais: não se aplica — a playlist é a de uma hora, tamanho
-  controlado pelo servidor.
+- **RN-01 — Só `STATE_ENDED` conta.** Exibição interrompida, falha de
+  reprodução ou item trocado no meio não geram evento.
+  `PlayerActivity.concluirExibicao`, `FilaProofOfPlay.registrarFalha`.
 
-**Painel — PIN:**
-- Vazio: máscara mostra os 4 espaços vazios (`· · · ·`) ao abrir.
-- Carregando: não se aplica — leitura local, sem rede.
-- Erro: PIN incorreto → mensagem vermelha, campo limpo, foco na primeira
-  tecla.
-- Sucesso: PIN correto → transição para "informações".
-- Sem permissão: não se aplica — o próprio PIN é o controle de acesso.
-- Lista longa demais: não se aplica.
+- **RN-02 — `execucaoId` nasce antes do `play()`**, persistido em SQLite, e
+  é o mesmo em todas as retentativas (idempotência). `PlayerActivity.mostrarVideo`.
 
-**Painel — informações:**
-- Vazio: aparelho não provisionado → campos mostram "—" em vez de string
-  vazia ou `null`.
-- Carregando: não se aplica — leitura local (SQLite + SharedPreferences),
-  sem chamada de rede ao abrir.
-- Erro: não se aplica como estado de tela — erros de rede aparecem como
-  **conteúdo** informativo ("Erro do aparelho: HTTP 401"), não como falha da
-  tela em si.
-- Sucesso: informações completas.
-- Sem permissão: não se aplica — só chega aqui quem digitou o PIN certo.
-- Lista longa demais: não se aplica — quantidade de campos é fixa.
+- **RN-03 — `contabiliza: false` nunca gera evento** (institucional,
+  autoanúncio, mídia própria). `FilaProofOfPlay.registrarInicio`.
 
-## 5. Regras de negócio
+- **RN-04 — Posição na hora vem do servidor.** Início frio e janela nova
+  calculam o índice por `janelaInicio`/`servidorAgora` + relógio monotônico
+  (`PosicaoNaPlaylist`); item pego no meio é pulado, nunca há seek. Na mesma
+  janela, reancora pelo `itemProgramacaoId` sem cortar o item no ar
+  (`ReposicionamentoPlaylist`).
 
-- **RN-01 — Só `STATE_ENDED` conta.** Uma exibição vira linha elegível para
-  envio de proof-of-play somente quando o ExoPlayer atinge `STATE_ENDED`
-  daquele item. Violada (erro de reprodução, item trocado no meio): a linha
-  é descartada sem contar como perda — nunca é enviada como comprovante.
-  Consequência visível: nenhuma (é o comportamento correto, silencioso por
-  natureza). `PlayerActivity.onPlayerError`, `FilaProofOfPlay.registrarFalha`.
-
-- **RN-02 — `execucaoId` nasce antes do `play()`.** A linha na fila é
-  persistida em SQLite antes de `exo.prepare()`/`playWhenReady = true`.
-  Violada: impossível por construção (`mostrarVideo` só chama `prepare()`
-  depois que a corrotina de `registrarInicio` retorna). `PlayerActivity.mostrarVideo`.
-
-- **RN-03 — Item institucional e autoanúncio nunca contam.** `contabiliza`
-  vem do backend (contrato novo) ou é derivado (`!institucional && !autoanuncio`,
-  contrato antigo). Violada: não se aplica — `registrarInicio` retorna
-  `null` e nunca cria linha para esses itens; o operador nunca vê esses
-  itens na fila do painel. `FilaProofOfPlay.registrarInicio`, `PlaylistJson`.
-
-- **RN-04 — Reentrada é sempre por posição temporal, nunca por índice
-  salvo.** Depois de um começo frio ou troca de janela, o índice inicial é
-  calculado por `PosicaoNaPlaylist.calcular`, nunca por um índice persistido
-  entre sessões. Violada: não se aplica — não existe persistência de índice
-  no código, só de `execucaoId`s na fila. Quem vê: ninguém diretamente — é
-  comportamento interno; o efeito observável é que o app nunca fica preso
-  tocando sempre o início da lista depois de reiniciar. `PlayerActivity.calcularIndiceInicial`.
-
-- **RN-05 — Item pego no meio é pulado, nunca há seek.** Ao reposicionar,
-  se o instante calculado cai no meio de um item (além da tolerância de
-  500ms), o app pula esse item inteiro e começa o próximo do zero. Violada:
-  não se aplica — é regra pura, coberta por teste (`PosicaoNaPlaylistTest`).
-
-- **RN-06 — Sem `servidorAgora` confiável, não retoma posição nenhuma.**
-  Detectado por `RelogioJanela.valida()` (relógio monotônico não pode
-  "andar para trás" em relação à âncora — sinal de reboot real). Violada:
-  cai para índice 0 (`calcularIndiceInicial` retorna 0 sem âncora válida) —
-  nunca inventa uma posição. Quem vê: o espectador vê a playlist recomeçar
-  do início após um reboot sem sincronização; não há mensagem específica.
-
-- **RN-07 — Proof-of-play só sai da fila em três casos** (seção 6.5 do
-  contrato): status definitivo do servidor, `400` de payload malformado, ou
-  expiração local de 7 dias. Nunca por timeout, `5xx`, erro de socket ou
-  reinício do app. Violada: não se aplica por construção — `tentarEnviar()`
-  só chama `db.remover`/`removerLote` nesses três casos.
-  `FilaProofOfPlay.tentarEnviar`.
-
-- **RN-08 — Fila limitada a 5.000 linhas.** Estourado, descarta a mais
-  antiga e incrementa o contador de perdas. Quem vê: operador, no painel
-  ("Eventos perdidos"). `FilaProofOfPlay.limitarTamanho`.
-
-- **RN-09 — Reancoragem por `itemProgramacaoId`, não por índice de array,**
-  ao atualizar a playlist dentro da mesma janela. Violada: não se aplica —
-  é o comportamento implementado; evita o bug do player web (seção 5 do
-  prompt original) em que um item que sai da elegibilidade desloca o índice
-  de quem ficou. `PlayerActivity.atualizarPlaylist`.
-
-- **RN-10 — Configuração embutida no build só se aplica se o aparelho ainda
-  não estiver provisionado.** `-PconfigDispositivo=<arquivo>.json` (README,
-  "Gerar um APK já configurado por tela") nunca sobrescreve um
-  provisionamento já existente — nem o de uma instalação anterior, nem o
-  que o provisionamento de bancada por `adb` aplicar depois (esse último
-  sobrescreve sempre no APK de depuração; no de release, só provisiona
-  aparelho ainda não provisionado — qualquer app da TV pode abrir o player
-  com extras). Quem vê: ninguém
-  diretamente — é o que faz o app subir sozinho no primeiro boot quando o
-  APK já veio configurado, sem tela de erro nem intervenção.
-  `ConfigAparelho.aplicarConfiguracaoEmbutidaSeNecessaria`.
-
-- **RN-11 — Configuração por arquivo externo (`mostrai-config.json`) só é
-  tentada se ainda não houver configuração embutida nem provisionamento
-  prévio.** README, "Configurar por um arquivo no pendrive". Pede
-  permissão de armazenamento em runtime só quando vai precisar dela (nunca
-  antes) — negada, ou sem ninguém pra conceder no primeiro boot, o app
-  segue sem travar, sem provisionar, mostrando a tela institucional. Quem
-  vê: o operador, no diálogo de permissão do próprio Android (não é tela
-  deste app). `ConfigExterna.procurarEAplicar`,
-  `PlayerActivity.pedirPermissaoOuAplicarConfigExterna`.
-
-- **RN-12 — Rotação de tela só aceita {0, 90, 180, 270}.** Compensa um
-  painel montado fisicamente de lado (comum em sinalização digital em
-  espaço estreito) — o Android não sabe disso sozinho, o app gira o próprio
-  conteúdo em runtime. Qualquer valor fora desse conjunto, vindo de
-  qualquer um dos três caminhos de provisionamento, vira 0 — nunca gira a
-  esmo. Quem vê: o espectador (player) e o operador (painel), ambos
-  compensados juntos, mesma configuração. `ConfigAparelho.rotacaoTela`,
-  `RotacaoTela.aplicar`.
-
-- **RN-13 — PIN do painel só aceita exatamente 4 dígitos numéricos**, o
-  tamanho que o teclado do painel consegue digitar de volta — um PIN fora
-  desse formato, vindo de qualquer provisionamento, nunca poderia ser
-  digitado de volta e trancaria o painel de manutenção para sempre.
-  Violada: o valor é ignorado, mantém o PIN anterior (o provisório de
-  fábrica, se ainda não houver nenhum) — nunca lança exceção nem trava o
-  app. `ConfigAparelho.pinPainel`.
-
-- **RN-14 — Institucional de decisão local nunca usa o desenho do PADRAO,
-  e vice-versa.** As três artes fixas (não provisionado, erro ao carregar,
-  carregando) só aparecem por uma condição do próprio aparelho
-  (`ConfigAparelho.provisionado`, `PlaylistRepositorio.Origem`) — nunca
-  porque o backend mandou um item institucional. O item institucional que
-  vem do backend (sem `url`, "sem programação para esta hora") sempre usa
-  o desenho em runtime (degradê + legenda), nunca uma das três artes fixas.
-  Violada: não se aplica — é decisão pura em
-  `PlayerActivity.estadoInstitucional`, os dois casos não se sobrepõem.
-  `TelaInstitucional`, `EstadoInstitucional`.
-
-- **RN-15 — Só a presença de `url` decide se um item toca vídeo, nunca a
-  flag `institucional`.** Um item com `institucional: true` **e** `url`
-  preenchida toca essa `url` normalmente — é o caminho pensado para um
-  futuro vídeo de fundo institucional servido pelo backend
-  (`PARA-O-BACKEND.md`). Sem `url` (o único caso que existe hoje), cai na
-  tela institucional local, institucional ou não — proteção contra item
-  malformado, não um caminho normal. Violada: não se aplica, é uma
-  condição única (`item.url.isNullOrBlank()`) sem ramo especial pra
+- **RN-05 — Só a presença de `url` decide vídeo × cartão**, nunca a flag
   `institucional`. `PlayerActivity.tocarItemAtual`.
 
-- **RN-16 — Margem de overscan é assimétrica (4 lados independentes) e
-  sempre em termos visuais.** `margemVminTopo/Base/Esquerda/Direita`
-  descrevem o que o operador vê olhando pra tela já montada — nunca a
-  borda física do painel. Isso importa porque o padding é aplicado em
-  `rotor` (que já representa o quadro visual, depois de compensada
-  `rotacaoTela`), não em `raiz`: aplicar em `raiz` não sobrevive a uma
-  rotação de 90°/270°, que troca largura por altura antes do padding
-  "chegar" no lado visual certo. Violada: não se aplica — é a única forma
-  de aplicar que `RotacaoTela.aplicar` implementa.
-  `ConfigAparelho.margensOverscan`, `RotacaoTela.aplicar`.
+- **RN-06 — Proof-of-play sai da fila só por status final do servidor**
+  (os 6 do contrato §8), por quarentena depois de bisseção (400/413) ou por
+  passar do horizonte de 7 dias + 1 h. Nunca por timeout, 5xx, 401, 403 ou
+  reinício. Lotes de até 50; espera 5 s → 15 s → 60 s → 5 min → 15 min →
+  teto de 30 min; 429 respeita `Retry-After`. Fila limitada a 50.000
+  linhas. `FilaProofOfPlay`.
 
-- **RN-17 — Margem que o backend manda no heartbeat sobrescreve a local,
-  nunca a zera.** `POST /player/:dispositivoId/heartbeat` (migration 069 de
-  `sancompany/mostrai`) devolve `{margens: {superior, direita, inferior,
-  esquerda}}` em vmin; `MostraiApi.heartbeat()` devolve `MargensOverscan?`
-  (`null` pra heartbeat que falhou ou resposta sem `margens`). Só quando não
-  é `null` é que `ConfigAparelho` é atualizado e `RotacaoTela.aplicar`
-  reaplicado — um heartbeat que falha (rede caiu, servidor fora) mantém a
-  última margem conhecida, nunca volta pro valor de provisionamento local
-  nem zera. Violada: não se aplica — `PlayerActivity.heartbeatPeriodico` só
-  escreve em `ConfigAparelho` dentro do `if (margens != null)`.
-  `network.HeartbeatJson`, `PlayerActivity.heartbeatPeriodico`.
+- **RN-07 — Offline não para a tela.** Sem rede ou com 5xx, continua a
+  última playlist válida (guardada em disco) e as mídias do cache
+  (endereçadas por `contentHash`, SHA-256 conferido). Na virada da hora sem
+  rede, segue a última que tinha. Hash divergente nunca toca a URL remota.
 
-## 6. Textos que o sistema diz
+- **RN-08 — Config só é marcada como aplicada depois de aplicada.**
+  `configVersion` do heartbeat diferente da aplicada → `GET /config`
+  (serializado, uma busca por vez); versão e conteúdo são gravados num
+  commit só; margens e horário valem na hora, sem reiniciar app nem vídeo.
+  Falha → `CONFIG_FALHOU` no diário e nova tentativa no próximo heartbeat.
+  `Sincronizacao`, `ConfigAparelho.aplicarConfig`.
+
+- **RN-09 — Saída só com PIN, e só com PIN recebido.** `pinSaida` é global,
+  4 a 8 dígitos, vem da config. Com `pinSaida: null` o VOLTAR não abre
+  nada — não existe PIN padrão. 3 erros bloqueiam por 5 s, dobrando até
+  5 min. PIN certo grava `saidaAutorizada` (commit síncrono), cancela o
+  alarme do watchdog e fecha o app. `onStart` e `BootReceiver` rearmam.
+  `TelaPinSaida`, `Watchdog`.
+
+- **RN-10 — Watchdog.** Alarme a cada 2 min (crescendo até 32 min enquanto a reabertura
+  não pega); 5 min sem sinal de vida e sem saída autorizada → reabre o
+  app. Substitui o launcher `HOME`, que o instalador da TCL recusa
+  (`docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`).
+
+- **RN-11 — Margens são visuais.** 4 lados em vmin (0 a 10), aplicados como
+  padding do `rotor`, que já é o quadro depois da rotação: "superior" é o
+  topo que o espectador vê. `RotacaoTela.aplicar`.
+
+- **RN-12 — Horário é o do ponto.** `operacao` da config: fuso, 7 dias,
+  feriados que substituem o dia, faixa que cruza a meia-noite pertence ao
+  dia em que começou. Ponto sem horário (ou config nunca recebida) = aberto
+  24 h. Fora do horário: cartão local, nenhum anúncio, `OUT_OF_SCHEDULE`.
+  Decidido offline com a última `operacao` guardada. `HorarioOperacional`.
+
+- **RN-13 — Credencial.** `dispositivoId` + `chaveAparelho` guardados no
+  armazenamento privado. A chave nunca aparece em tela, log, diário,
+  exceção ou toast (`DiarioBordo` mascara). O código de instalação nunca é
+  gravado e é apagado do campo depois do sucesso. Resposta 200 perdida →
+  reenviar o mesmo par em até 5 min devolve a mesma credencial (o app tenta
+  de novo sozinho só em falha transitória: 2 s, 5 s, 10 s, 20 s, 40 s, 60 s).
+  Reinstalar como outra tela apaga a config e a playlist guardada da
+  anterior.
+
+- **RN-14 — 401 em qualquer rota autenticada** apaga a credencial (só se
+  ainda for a mesma que foi recusada) e volta para a tela de instalação,
+  **mantendo** a fila de proof-of-play. **403** (`/playlist`, `/played`):
+  para de exibir anúncios (cartão local), apaga a playlist guardada e mantém
+  a fila.
+
+## 5. Textos que o sistema diz
 
 | Texto | Onde | Arquivo |
 |---|---|---|
-| "Mostraí" (marca, institucional) | Tela institucional, estado PADRAO | `TelaInstitucional.kt` |
-| "Sem programação para esta hora" | Institucional PADRAO, provisionado mas sem itens | `strings.xml` |
-| "Aparelho não conectado / configure o aparelho corretamente" | Institucional, antes do 1º provisionamento — texto embutido na arte | `drawable-nodpi/institucional_nao_provisionado.png` |
-| "Não foi possível carregar a programação" | Institucional, erro de carregamento sem cache — texto embutido na arte | `drawable-nodpi/institucional_erro.png` |
-| "Atualizando conteúdo…" | Institucional, carregando a primeira playlist — texto embutido na arte | `drawable-nodpi/institucional_carregando.png` |
-| "Painel de manutenção" | Título do painel | `strings.xml` |
-| "PIN incorreto" | Erro de PIN | `strings.xml` |
-| "Pressione VOLTAR para sair" | Dica no painel | `strings.xml` |
-| "ATENÇÃO: PIN ainda é o provisório de fábrica." | Aviso no painel, PIN nunca trocado | `PainelActivity.kt` |
+| "MOSTRAÍ PLAYER", "ID DA TELA", "CÓDIGO DE INSTALAÇÃO", "CONECTAR" | Tela de instalação | `strings.xml` |
+| "Conectando…" | Instalação, durante a troca | `strings.xml` |
+| "Confira o ID da tela (ex.: M-0235)." / "Confira o código de instalação (8 letras e números)." | Formato inválido, antes de ir à rede | `strings.xml` |
+| "Confira o ID e o código." | 400 | `strings.xml` |
+| "ID da tela ou código de instalação inválido, expirado ou já usado." | 401 | `strings.xml` |
+| "Muitas tentativas. Aguarde N s." | 429 na instalação; bloqueio do PIN | `strings.xml` |
+| "Sem conexão com o servidor. Confira a internet e tente de novo." | Rede/5xx depois das retentativas | `strings.xml` |
+| "Não foi possível salvar no aparelho. Tente de novo." | Falha ao gravar a credencial | `strings.xml` |
+| "PIN PARA SAIR" / "PIN incorreto" | Pedido de PIN | `strings.xml` |
+| "Atualizando conteúdo…" | Carregando (texto na arte) | `drawable-nodpi/institucional_carregando.png` |
+| "Não foi possível carregar a programação" | Sem conteúdo (texto na arte) | `drawable-nodpi/institucional_erro.png` |
 
-## 7. Quando dá errado
+## 6. Quando dá errado
 
-- **Rede cai no meio de uma exibição em andamento**: a exibição continua
-  normalmente (é local, ExoPlayer não depende de rede depois que o vídeo já
-  fez buffer) — só a busca da próxima playlist e o envio de proof-of-play
-  ficam pendentes, sem afetar o que já está tocando.
-- **Servidor não responde ao buscar playlist**: cai para a última cache
-  válida (`PlaylistRepositorio.carregarFallback`); sem cache, cai para
-  institucional. Nunca crash, nunca tela preta.
-- **Envio de proof-of-play falha (timeout, 5xx)**: linha fica na fila,
-  backoff exponencial agenda a próxima tentativa (5s a 30min, sem
-  desistência). `FilaProofOfPlay.adiarComBackoff`.
-- **Chave do aparelho revogada no admin (401/403)**: fila de proof-of-play
-  fica intacta (não descarta nada), erro fica visível no painel
-  ("Erro do aparelho: HTTP 401/403"). Reprodução continua com a última
-  playlist em cache.
-- **Reboot real do aparelho** (não só reinício do app): âncora de tempo
-  monotônico invalida (`RelogioJanela.valida()` = false), app não tenta
-  retomar posição — reposiciona do zero na próxima playlist válida (RN-06).
-- **Duplo envio do mesmo `execucaoId`** (retentativa depois de resposta
-  perdida): servidor responde `duplicado` — tratado como sucesso, remove da
-  fila (não é erro).
+- **Rede cai no meio de uma exibição**: o vídeo segue; busca e envio ficam
+  para depois. Quando a rede volta: envia a fila, manda heartbeat e busca a
+  playlist se a atual não veio do servidor.
+- **Servidor fora na virada da hora**: segue a última playlist válida.
+- **Sem servidor e sem cache**: "Não foi possível carregar a programação",
+  nova tentativa a cada 60 s.
+- **Mídia não toca**: pula o item; uma volta inteira sem nenhuma exibição
+  mostra o cartão de erro e espera 10 s antes de tentar de novo — nunca
+  laço apertado.
+- **Admin revoga o Player**: próximo heartbeat (≤ 15 s) recebe 401 → tela
+  de instalação. A fila fica; depois de reprovisionar como a mesma tela, ela
+  é enviada.
+- **Reboot**: `BootReceiver` rearma o watchdog e abre o app; a posição na
+  hora é recalculada pela próxima playlist.
 
-## 8. Direitos e obrigações que viram tela
+## 7. Direitos e obrigações que viram tela
 
-Não se aplica — não há dado pessoal processado neste app (ver
-`docs/inventario-de-dados.md`), não há conta de usuário, não há coleta de
-dado de espectador. Nenhuma obrigação de titular de dado (LGPD) vira tela
-aqui.
+Não se aplica — nenhum dado pessoal (`docs/inventario-de-dados.md`).
 
-## 9. A métrica de sucesso e os eventos que a alimentam
+## 8. Métrica de sucesso
 
-**Métrica principal**: proporção de exibições concluídas (`STATE_ENDED`)
-que resultam em `contabilizado` ou `duplicado` no servidor, sem
-intervenção manual — instrumentada pelo próprio contrato de proof-of-play,
-não por um evento de analytics separado.
+Proporção de exibições concluídas (`STATE_ENDED`) que viram `contabilizado`
+ou `duplicado` no servidor, sem intervenção manual. Medida pela resposta de
+`/played` (servidor) e pela fila local (`fila.pendentes`/`maisAntigoEm`,
+que vão em todo heartbeat). Não há serviço de telemetria (`CONSTRAINTS.md`).
 
-Eventos (nomeados por convenção `categoria:objeto_acao`):
+## 9. O que fica fora
 
-| Evento | Onde é emitido | Propriedades | Pergunta que responde |
-|---|---|---|---|
-| `exibicao:execucao_iniciada` | Aparelho, antes do `play()` | `execucaoId`, `janelaId`, `itemProgramacaoId`, `criativoId` | Quantas exibições começaram? |
-| `exibicao:execucao_terminada` | Aparelho, no `STATE_ENDED` | `execucaoId`, `terminadoEm` | Quantas terminaram de verdade (vs. começaram)? |
-| `proofofplay:lote_enviado` | Aparelho, ao chamar `POST /played` | tamanho do lote | Quantos eventos por envio (eficiência do lote)? |
-| `proofofplay:evento_resolvido` | **Servidor**, na resposta de `/played` | `execucaoId`, `status` (contabilizado/duplicado/etc.) | Quantos viraram comprovante — a métrica principal |
-| `proofofplay:evento_perdido` | Aparelho, ao descartar por estouro de fila ou expiração de 7 dias | motivo (`estouro`/`expirado`/`payload_invalido`) | Quanto está sendo perdido, e por quê? |
-
-Os dois primeiros (`execucao_iniciada`, `execucao_terminada`) hoje só
-existem como estado na tabela SQLite (`terminado_em IS NULL` vs. preenchido),
-não como evento emitido explicitamente para um coletor externo — não há
-serviço de telemetria neste projeto (`CONSTRAINTS.md`, fora de escopo). A
-pergunta de negócio "quantos ontem?" (estação 6) é respondida consultando a
-fila local (`FilaProofOfPlay.pendentes()`/`perdas()`) e, do lado do
-servidor, pela resposta de `/played` — que é onde a métrica principal de
-fato se consolida, porque é lá que "contabilizado" vira crédito de verdade.
-
-## 10. O que fica fora desta versão
-
-Ver `CONSTRAINTS.md` (relatório na TV, telemetria rica, OTA, login) e
-`docs/proximas-versoes.md`.
-
-## Contrato com o backend
-
-O contrato novo (envelope com `versaoContrato`, `janelaId`,
-`itemProgramacaoId`, `criativoId`, `POST /played` em lote com `execucaoId`)
-está sendo implementado em paralelo no backend `sancompany/mostrai`, em
-outra sessão. Este app opera nas duas formas desde o começo (ver
-`network.PlaylistJson`): array puro do contrato antigo → modo degradado;
-envelope com `versaoContrato` → contrato novo.
-
-Duas garantias que este app depende do backend manter:
-
-- `itemProgramacaoId` deriva da posição na sequência congelada da hora, não
-  do índice do array da resposta (RN-09 depende disso).
-- `criativoId → url` é imutável — criativo trocado é `criativoId` novo (usa-se
-  como chave de cache de mídia sem revalidar, ver bloco de cache local).
-
-`POST /player/:dispositivoId/heartbeat` (chamado a cada 5 min, já rodava
-antes por outro motivo) ganhou `margens` na resposta em 22/09/2026 —
-migration 069 do backend — fechando a pendência de `margemVmin` por lado
-(RN-17, `PARA-O-BACKEND.md`).
+Ver `CONSTRAINTS.md`, seção "Fora do MVP".
