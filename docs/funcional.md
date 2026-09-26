@@ -123,9 +123,13 @@ coordenadas do layout — "cima" no controle já é "cima" para o instalador.
   alarme do watchdog e fecha o app. `onStart` e `BootReceiver` rearmam.
   `TelaPinSaida`, `Watchdog`.
 
-- **RN-10 — Watchdog.** Alarme a cada 2 min (crescendo até 32 min enquanto a reabertura
-  não pega); 5 min sem sinal de vida e sem saída autorizada → reabre o
-  app. Substitui o launcher `HOME`, que o instalador da TCL recusa
+- **RN-10 — Watchdog.** Alarme a cada 2 min (crescendo até 32 min enquanto
+  a reabertura não pega); 5 min sem sinal de vida → reabre o app. Quatro
+  estados: **não provisionado** → não reabre (o instalador pode estar
+  configurando Wi-Fi ou a TV), mas o alarme segue agendado; **provisionado**
+  → reabre; **saída autorizada por PIN** → não reabre nem reagenda; **abrir
+  o app de novo** (ícone ou boot) → rearma. Substitui o launcher `HOME`, que
+  o instalador da TCL recusa
   (`docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`).
 
 - **RN-11 — Margens são visuais.** 4 lados em vmin (0 a 10), aplicados como

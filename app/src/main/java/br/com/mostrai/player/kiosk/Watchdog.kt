@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import br.com.mostrai.player.PlayerActivity
+import br.com.mostrai.player.config.ConfigAparelho
 
 /**
  * Traz o player de volta se ele sumir da frente — crash, processo morto,
@@ -23,6 +24,11 @@ import br.com.mostrai.player.PlayerActivity
  * [autorizarSaida]: o watchdog para de reabrir. Abrir o app de novo (à mão
  * ou pelo boot) chama [rearmar] e tudo volta ao normal — uma saída
  * autorizada nunca vira uma TV apagada para sempre.
+ *
+ * **Antes da instalação, não puxa de volta.** Sem credencial não há anúncio
+ * a proteger, e o instalador pode precisar sair do app para configurar
+ * Wi-Fi ou a própria TV. O alarme continua agendado: assim que a tela é
+ * provisionada, o watchdog vale normalmente.
  *
  * **Sem laço de crash.** Cada reabertura consecutiva sem sinal de vida dobra
  * o intervalo, até [INTERVALO_MAXIMO_MS]; o contador zera assim que a
@@ -87,8 +93,15 @@ object Watchdog {
      * Decide o que fazer agora. Pura de propósito, para caber em teste sem
      * `AlarmManager`: recebe o estado e devolve a decisão.
      */
-    fun decidir(vivoEmMs: Long, agoraMs: Long, tentativas: Int, saidaAutorizada: Boolean = false): Decisao {
+    fun decidir(
+        vivoEmMs: Long,
+        agoraMs: Long,
+        tentativas: Int,
+        saidaAutorizada: Boolean = false,
+        provisionado: Boolean = true,
+    ): Decisao {
         if (saidaAutorizada) return Decisao(abrirPlayer = false, proximoAtrasoMs = null)
+        if (!provisionado) return Decisao(abrirPlayer = false, proximoAtrasoMs = INTERVALO_BASE_MS)
         val silencioso = vivoEmMs <= 0L || agoraMs - vivoEmMs > TOLERANCIA_MS
         // O relógio monotônico zera no reboot: um "vivoEm" no futuro é
         // resquício do boot anterior, não sinal de vida desta sessão.
@@ -124,6 +137,7 @@ object Watchdog {
                 agoraMs = SystemClock.elapsedRealtime(),
                 tentativas = tentativas,
                 saidaAutorizada = prefs.getBoolean(CHAVE_SAIDA_AUTORIZADA, false),
+                provisionado = ConfigAparelho(context).provisionado,
             )
 
             if (decisao.abrirPlayer) {

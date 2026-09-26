@@ -263,6 +263,11 @@ Fechadas:
   playlist e o primeiro heartbeat dizia `NOT_PROVISIONED` — corrigido em
   `PlayerActivity`. (3) `HeartbeatCicloTest` "playlist atualizar" dependia
   de o primeiro heartbeat já ter voltado — agora espera. 276 → 275 testes.
+- **Watchdog pré-instalação (26/09/2026, decisão do dono)** — sem
+  credencial, o watchdog não puxa o Player de volta (o instalador pode
+  sair para configurar Wi-Fi); instalado, vale normalmente; saída por PIN
+  desarma; abrir o app rearma. `Watchdog.decidir(provisionado)`,
+  `WatchdogInstalacaoTest` (os quatro estados). 275 → 280 testes.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.

@@ -81,4 +81,11 @@ class WatchdogTest {
     }
 
 
+
+    @Test
+    fun `tela ainda nao instalada nao e puxada de volta, mas o alarme continua`() {
+        val decisao = Watchdog.decidir(vivoEmMs = 0, agoraMs = 10_000_000, tentativas = 0, provisionado = false)
+        assertFalse(decisao.abrirPlayer)
+        assertEquals(Watchdog.INTERVALO_BASE_MS, decisao.proximoAtrasoMs)
+    }
 }
