@@ -71,9 +71,10 @@ pendrive, ADB ou backend:
 | Pedido de PIN | VOLTAR com o app operando e `pinSaida` recebido | Sobreposição "PIN PARA SAIR" com teclado numérico | o do vídeo que continua por trás |
 
 Tudo é desenhado dentro do contêiner girado (`rotor`), então a tela de
-instalação e o PIN também aparecem na orientação certa. O D-pad é remapeado
-para a rotação (`DpadRotacionado`): "cima" no controle é "cima" para quem
-olha a TV.
+instalação e o PIN também aparecem na orientação certa. As setas do controle
+**não** se remapeiam: como o conteúdo gira junto com a TV montada de lado, o
+layout já está de pé para quem olha, e a busca de foco do Android anda nas
+coordenadas do layout — "cima" no controle já é "cima" para o instalador.
 
 ## 4. Regras de negócio
 

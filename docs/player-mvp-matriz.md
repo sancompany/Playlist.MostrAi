@@ -58,5 +58,5 @@ Antes: `cf3980e` (baseline reconciliada, com o fix do `HOME`). Depois: 2.0.0.
 | Funções principais | playlist, cache, POP, heartbeat, config, hello, V1 degradado, OTA, kiosk/Device Owner, painel técnico, PIN do painel, rotação e `baseUrl` configuráveis, rotação de credencial | playlist, cache, POP, heartbeat, config, provisionamento, PIN de saída, watchdog |
 
 O número de arquivos quase não cai porque o provisionamento na TV, o PIN de
-saída e o remapeamento do D-pad são arquivos novos; a redução real está nas
+saída são arquivos novos; a redução real está nas
 linhas, nas chaves de estado e em tudo que deixou de existir.

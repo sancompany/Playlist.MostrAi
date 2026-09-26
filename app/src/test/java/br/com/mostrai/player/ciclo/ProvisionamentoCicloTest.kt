@@ -46,6 +46,26 @@ class ProvisionamentoCicloTest {
     }
 
     @Test
+    fun `setas do controle andam na direcao que o instalador ve, com a tela girada`() {
+        // A TV está montada de lado e o conteúdo gira junto: para quem olha,
+        // o layout está de pé. A ViewRootImpl move o foco pela tecla ORIGINAL
+        // (focusSearch nas coordenadas do layout, sem a rotação) — que são as
+        // mesmas que o instalador vê. Não há o que remapear.
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        h.pularIntroducao()
+        val atividade = h.subir().get()
+        h.avancar(1_000L)
+        assertEquals(90f, h.vista<View>(atividade, R.id.rotor).rotation)
+        val teclado = h.vista<android.widget.GridLayout>(atividade, R.id.tecladoProvisionamento)
+        fun texto(v: View?) = (v as? TextView)?.text?.toString()
+        val um = teclado.getChildAt(0)
+
+        assertEquals("2", texto(um.focusSearch(View.FOCUS_RIGHT)))
+        assertEquals(texto(teclado.getChildAt(teclado.columnCount)), texto(um.focusSearch(View.FOCUS_DOWN)))
+        assertEquals("CONECTAR", texto(um.focusSearch(View.FOCUS_UP)))
+    }
+
+    @Test
     fun `instalar pelo controle remoto leva direto a playlist`() {
         h.servidor.rotas["/player/provisionar"] =
             ServidorDeTeste.Resposta(200, """{"dispositivoId":"M-0235","chaveAparelho":"$chave"}""")
@@ -103,6 +123,36 @@ class ProvisionamentoCicloTest {
         assertEquals("M-0042", config.dispositivoId)
         assertEquals("M-0042", h.vista<TextView>(atividade, R.id.campoId).text.toString())
         assertEquals("", h.vista<TextView>(atividade, R.id.campoCodigo).text.toString())
+    }
+
+    @Test
+    fun `reinstalar depois de um 401 mostra o carregando e nao informa NOT_PROVISIONED`() {
+        h.pularIntroducao()
+        h.provisionar(id = "M-0042", chave = "revogada")
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(401, """{"erro":"aparelho não autorizado"}""")
+        h.servidor.rotas["/player/"] = ServidorDeTeste.Resposta(401, """{"erro":"aparelho não autorizado"}""")
+        val atividade = h.subir().get()
+        val tela = h.vista<View>(atividade, R.id.telaProvisionamento)
+        h.esperar { tela.visibility == View.VISIBLE }
+
+        // Reinstalação: a playlist demora (servidor lento) — a tela não pode
+        // ficar preta, e o primeiro sinal já é de uma tela instalada.
+        h.servidor.rotas["/player/provisionar"] =
+            ServidorDeTeste.Resposta(200, """{"dispositivoId":"M-0042","chaveAparelho":"$chave"}""")
+        h.servidor.rotas["/player/"] = ServidorDeTeste.Resposta(200, """{"configVersion":0,"playlist":{"atualizar":false}}""")
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(pendurar = true)
+        h.vista<TextView>(atividade, R.id.campoCodigo).performClick()
+        "7K4M9Q2W".forEach { h.tecla(atividade, R.id.tecladoProvisionamento, it.toString()) }
+        // O heartbeat recusado do ciclo anterior também conta: espera um novo.
+        val antes = h.servidor.contar("/player/M-0042/heartbeat")
+        h.vista<TextView>(atividade, R.id.botaoConectar).performClick()
+        h.esperar { h.servidor.contar("/player/M-0042/heartbeat") > antes }
+
+        val institucional = h.vista<br.com.mostrai.player.ui.TelaInstitucional>(atividade, R.id.institucional)
+        assertEquals(View.VISIBLE, institucional.visibility)
+        assertEquals(br.com.mostrai.player.ui.EstadoInstitucional.CARREGANDO, institucional.estado)
+        val primeiro = JSONObject(h.servidor.ultima("/player/M-0042/heartbeat")!!.corpo)
+        assertTrue("estado ${primeiro.getString("estado")}", primeiro.getString("estado") != "NOT_PROVISIONED")
     }
 
     @Test

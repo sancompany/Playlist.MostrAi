@@ -81,8 +81,12 @@ class HeartbeatCicloTest {
 
     @Test
     fun `playlist atualizar do heartbeat busca a playlist na hora`() {
-        h.subir()
-        h.esperar { h.servidor.contar("/playlist/") == 1 && heartbeats() >= 1 }
+        val atividade = h.subir().get()
+        val emVoo = h.campo<java.util.concurrent.atomic.AtomicBoolean>(atividade, "heartbeatEmVoo")
+        // Com o primeiro ainda em voo, o de 15 s seguintes é pulado de
+        // propósito (nunca empilha) — e o teste esperaria mais 15 s que o
+        // looper pausado não anda.
+        h.esperar { h.servidor.contar("/playlist/") == 1 && heartbeats() >= 1 && !emVoo.get() }
 
         h.servidor.rotas["/player/"] = ServidorDeTeste.Resposta(200, """{"configVersion":0,"playlist":{"atualizar":true}}""")
         h.avancar(15_000L)
