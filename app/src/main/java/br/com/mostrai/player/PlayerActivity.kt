@@ -1037,8 +1037,8 @@ class PlayerActivity : AppCompatActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (gestoPainel.aoTeclar(keyCode)) return true
         // BUG-027: VOLTAR no controle da loja encerrava o player no meio do
-        // anúncio pago e, sem o Mostraí como HOME padrão, deixava o launcher
-        // da TV na tela até o watchdog reabrir. Consumido aqui, o onKeyUp
+        // anúncio pago e deixava o launcher da TV na tela até o watchdog
+        // reabrir. Consumido aqui, o onKeyUp
         // não chega a chamar onBackPressed. O técnico sai pelas teclas HOME
         // e de configurações do controle.
         if (keyCode == KeyEvent.KEYCODE_BACK) return true
@@ -1051,7 +1051,7 @@ class PlayerActivity : AppCompatActivity() {
 
     internal companion object {
         /**
-         * Esta Activity é exportada (LAUNCHER e HOME), e o Android não diz
+         * Esta Activity é exportada (LAUNCHER), e o Android não diz
          * quem mandou o Intent (BUG-023). Sem esta regra, qualquer app
          * instalado na TV trocava o `baseUrl` de uma tela em operação — a
          * chave do aparelho ia no header da requisição seguinte para o

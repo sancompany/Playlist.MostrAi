@@ -34,16 +34,14 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
             <!--
-                 Torna o player elegível a launcher padrão. Não força nada: o
-                 Android só o usa se alguém escolher "sempre" uma vez, na
-                 instalação. É o quiosque possível sem Device Owner — com ele,
-                 a tecla Home volta para o player em vez de sair dele.
+                 Sem intent-filter de HOME de propósito: o instalador da SEMP
+                 TCL 32S6500S (o parque instalado) recusou com "instalação
+                 anormal" o player declarado como launcher (categoria HOME).
+                 Provado na TV em 25/09/2026: dois APKs idênticos exceto por
+                 este filtro, só o sem ele instalou. Quem traz o player de
+                 volta à frente é o Watchdog.
+                 Ver docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md
             -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
         </activity>
 
         <!--
