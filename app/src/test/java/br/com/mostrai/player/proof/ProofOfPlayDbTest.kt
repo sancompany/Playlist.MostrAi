@@ -31,8 +31,6 @@ class ProofOfPlayDbTest {
         janelaId = "janela-1",
         itemProgramacaoId = "slot-1",
         criativoId = "crv-1",
-        anuncianteId = "anun-1",
-        formatoLegado = false,
         iniciadoEm = "2026-09-21T13:00:00-03:00",
         terminadoEm = terminadoEm,
         tentativas = 0,

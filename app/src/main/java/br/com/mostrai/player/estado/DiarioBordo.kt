@@ -147,7 +147,7 @@ class DiarioBordo(context: Context) {
 
         /** Corta tamanho e tira o que nunca pode sair do aparelho. */
         fun sanitizar(texto: String): String = texto
-            .replace(Regex("(?i)(chave|token|key|authorization|senha|password)\\s*[=:]\\s*\\S+"), "$1=***")
+            .replace(Regex("(?i)(chave|token|key|authorization|senha|password|pin|codigo)\\s*[=:]\\s*\\S+"), "$1=***")
             .take(200)
     }
 
@@ -158,16 +158,15 @@ class DiarioBordo(context: Context) {
     enum class Codigo(val severidade: Severidade) {
         BOOT(Severidade.INFO),
         PROVISIONADO(Severidade.INFO),
-        PLAYLIST_OK(Severidade.INFO),
+        PROVISIONAMENTO_FALHOU(Severidade.ERRO),
         PLAYLIST_FALHOU(Severidade.ERRO),
         AUTH_FALHOU(Severidade.ERRO),
-        MIDIA_FALHOU(Severidade.ERRO),
+        TELA_SUSPENSA(Severidade.INFO),
         MIDIA_HASH_DIVERGENTE(Severidade.ERRO),
         PLAYBACK_FALHOU(Severidade.ERRO),
         FILA_LIMIAR(Severidade.ERRO),
         CONFIG_APLICADA(Severidade.INFO),
         CONFIG_FALHOU(Severidade.ERRO),
-        CHAVE_ROTACIONADA(Severidade.INFO),
         FORA_DO_HORARIO(Severidade.INFO),
     }
 }

@@ -17,9 +17,6 @@ class CacheMidiaTest {
         criativoId = "crv-1",
         duracaoSegundos = 10,
         url = "ftp://exemplo.invalido/video.mp4",
-        anuncianteId = "anunciante",
-        autoanuncio = false,
-        institucional = false,
         contabiliza = true,
     )
 

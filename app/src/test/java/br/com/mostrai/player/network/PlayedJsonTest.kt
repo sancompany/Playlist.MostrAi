@@ -1,75 +1,60 @@
 package br.com.mostrai.player.network
 
 import br.com.mostrai.player.proof.EventoExibicao
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
 
+/** Corpo e resposta de `POST /played` exatamente como o contrato §8. */
 class PlayedJsonTest {
 
     private fun evento(id: String) = EventoExibicao(
         execucaoId = id,
-        janelaId = "janela-1",
-        itemProgramacaoId = "slot-1",
-        criativoId = "crv-1",
-        anuncianteId = "anun-1",
-        formatoLegado = false,
-        iniciadoEm = "2026-09-21T13:00:00-03:00",
-        terminadoEm = "2026-09-21T13:00:20-03:00",
+        janelaId = "235|2026-09-26T14:00:00.000Z",
+        itemProgramacaoId = "235|2026-09-26T14:00:00.000Z|0|17",
+        criativoId = "88",
+        iniciadoEm = "2026-09-26T14:07:31-03:00",
+        terminadoEm = "2026-09-26T14:07:46-03:00",
         tentativas = 0,
-        proximoEnvioElegivelEm = 0,
-        criadoEmMs = 0,
+        proximoEnvioElegivelEm = 0L,
+        criadoEmMs = 0L,
     )
 
     @Test
-    fun `corpoLote embrulha em eventos, mais antigo primeiro na ordem dada`() {
-        val corpo = PlayedJson.corpoLote(listOf(evento("e1"), evento("e2")))
-        val json = JSONObject(corpo)
+    fun `corpoLote tem exatamente os campos do contrato, na ordem dada`() {
+        val json = JSONObject(PlayedJson.corpoLote(listOf(evento("a"), evento("b"))))
+
         val eventos = json.getJSONArray("eventos")
         assertEquals(2, eventos.length())
-        assertEquals("e1", eventos.getJSONObject(0).getString("execucaoId"))
-        assertEquals("janela-1", eventos.getJSONObject(0).getString("janelaId"))
+        assertEquals("a", eventos.getJSONObject(0).getString("execucaoId"))
+        val primeiro = eventos.getJSONObject(0)
+        assertEquals(
+            setOf("execucaoId", "janelaId", "itemProgramacaoId", "criativoId", "iniciadoEm", "terminadoEm"),
+            primeiro.keys().asSequence().toSet(),
+        )
+        assertEquals("235|2026-09-26T14:00:00.000Z|0|17", primeiro.getString("itemProgramacaoId"))
+        assertEquals(setOf("eventos"), json.keys().asSequence().toSet())
     }
 
     @Test
     fun `parseResultados le status por execucaoId`() {
-        val corpo = """
-            {"resultados": [
-                {"execucaoId": "e1", "status": "contabilizado"},
-                {"execucaoId": "e2", "status": "duplicado"}
-            ]}
-        """.trimIndent()
+        val corpo = """{"resultados":[{"execucaoId":"a","status":"contabilizado"},
+            {"execucaoId":"b","status":"duplicado"}]}"""
 
-        val resultados = PlayedJson.parseResultados(corpo)
-
-        assertEquals("contabilizado", resultados["e1"])
-        assertEquals("duplicado", resultados["e2"])
+        assertEquals(mapOf("a" to "contabilizado", "b" to "duplicado"), PlayedJson.parseResultados(corpo))
     }
 
     @Test
     fun `um resultado malformado nao descarta os outros`() {
-        // Descartar a resposta inteira deixava na fila comprovantes que o
-        // servidor JÁ contou; reenviados até expirar, viravam "perda".
-        val corpo = """{"resultados": [null, 7, {"execucaoId": "e1", "status": "contabilizado"}]}"""
+        val corpo = """{"resultados":[42,{"execucaoId":"a","status":"teto_atingido"}]}"""
 
-        assertEquals(mapOf("e1" to "contabilizado"), PlayedJson.parseResultados(corpo))
+        assertEquals(mapOf("a" to "teto_atingido"), PlayedJson.parseResultados(corpo))
     }
 
     @Test
-    fun `corpoLegado manda so anuncianteId`() {
-        val corpo = PlayedJson.corpoLegado("anun-1")
-        assertEquals("anun-1", JSONObject(corpo).getString("anuncianteId"))
-    }
-
-    @Test
-    fun `parseContouLegado le contou explicito`() {
-        assertEquals(false, PlayedJson.parseContouLegado("""{"ok":true,"contou":false}"""))
-        assertEquals(true, PlayedJson.parseContouLegado("""{"ok":true,"contou":true}"""))
-    }
-
-    @Test
-    fun `parseContouLegado sem contou assume que creditou`() {
-        assertTrue(PlayedJson.parseContouLegado("""{"ok":true}"""))
+    fun `corpo fora do contrato nao se passa por lote resolvido`() {
+        assertNull(PlayedJson.parseResultados("<html>erro</html>"))
+        assertNull(PlayedJson.parseResultados("""{"ok":true}"""))
     }
 }

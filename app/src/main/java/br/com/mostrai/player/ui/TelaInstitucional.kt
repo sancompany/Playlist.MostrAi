@@ -18,20 +18,19 @@ import kotlin.math.hypot
 import kotlin.math.min
 
 /**
- * Peça institucional desenhada no próprio aparelho.
+ * Cartões locais do Player — nunca conteúdo do backend (o institucional da
+ * rede chega como vídeo na playlist e toca como qualquer mídia).
  *
- * [EstadoInstitucional.PADRAO] é o item institucional que o próprio backend
- * manda (sem url) quando não há programação pra aquela hora — desenhado
- * aqui (degradê + legenda), não é arte fixa. Os outros três estados são
- * situações locais do aparelho (nunca vêm do backend) e usam a arte de
- * marca entregue pelo dono, um PNG cheio por estado — ver
- * `docs/funcional.md`, seção 4.
+ * - [CARTAO]: marca sobre degradê, desenhado aqui. Item sem `url`, fora do
+ *   horário do ponto e tela suspensa no cadastro.
+ * - [CARREGANDO] e [SEM_CONTEUDO]: arte de marca do dono, um PNG cheio.
+ *   SEM_CONTEUDO é "nem servidor nem última playlist válida" — o Player
+ *   tenta de novo sozinho.
  */
 enum class EstadoInstitucional(val drawableRes: Int?) {
-    PADRAO(null),
-    NAO_PROVISIONADO(R.drawable.institucional_nao_provisionado),
-    ERRO_CARREGAR(R.drawable.institucional_erro),
+    CARTAO(null),
     CARREGANDO(R.drawable.institucional_carregando),
+    SEM_CONTEUDO(R.drawable.institucional_erro),
 }
 
 class TelaInstitucional @JvmOverloads constructor(
@@ -39,13 +38,7 @@ class TelaInstitucional @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
 
-    var legenda: String? = null
-        set(valor) {
-            field = valor
-            invalidate()
-        }
-
-    var estado: EstadoInstitucional = EstadoInstitucional.PADRAO
+    var estado: EstadoInstitucional = EstadoInstitucional.CARTAO
         set(valor) {
             if (field == valor) return
             field = valor
@@ -62,15 +55,10 @@ class TelaInstitucional @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
 
-    private val secundario = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#9AA0A6")
-        typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
-        textAlign = Paint.Align.CENTER
-    }
 
     private val linha = Paint().apply { color = Color.parseColor("#2A2F3A") }
 
-    /** Bitmap do estado atual — null enquanto decodifica, ou o tempo todo no PADRAO. */
+    /** Bitmap do estado atual — null enquanto decodifica, ou o tempo todo no CARTAO. */
     private var bitmapEstado: Bitmap? = null
 
     /** Só a decodificação da geração mais recente pode gravar [bitmapEstado] — descarta as demais. */
@@ -96,15 +84,15 @@ class TelaInstitucional @JvmOverloads constructor(
         if (estado.drawableRes != null) {
             desenharBitmapDoEstado(canvas)
         } else {
-            desenharPadrao(canvas)
+            desenharCartao(canvas)
         }
     }
 
     /**
      * Decodifica fora da UI thread — um PNG de ~1080x1920 é rápido, mas
      * `onDraw` é o pior lugar pra fazer isso: qualquer E/S ali é uma trava
-     * de frame na hora exata em que a tela institucional aparece (erro,
-     * carregando, não provisionado). Guardado por geração, mesmo padrão de
+     * de frame na hora exata em que o cartão aparece (sem conteúdo,
+     * carregando). Guardado por geração, mesmo padrão de
      * `PlayerActivity.geracaoReproducao`: se o estado mudar nas duas vezes
      * antes da primeira decodificação terminar, o resultado antigo é
      * descartado, nunca sobrescreve o bitmap do estado atual.
@@ -124,7 +112,7 @@ class TelaInstitucional @JvmOverloads constructor(
     }
 
     /**
-     * As quatro artes (erro, carregando, não provisionado) já vêm no formato
+     * As artes (sem conteúdo, carregando) já vêm no formato
      * portrait cheio (mesma proporção do `rotor` compensado por
      * [RotacaoTela]) — "fit center" preserva a proporção sem cortar nem
      * distorcer, mesmo quando a margem de overscan ou uma TV com proporção
@@ -151,12 +139,11 @@ class TelaInstitucional @JvmOverloads constructor(
         )
     }
 
-    private fun desenharPadrao(canvas: Canvas) {
+    private fun desenharCartao(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fundo)
 
         val vmin = min(width, height).toFloat()
         marca.textSize = vmin * 0.14f
-        secundario.textSize = vmin * 0.045f
 
         val cx = width / 2f
         val cy = height / 2f
@@ -165,9 +152,5 @@ class TelaInstitucional @JvmOverloads constructor(
         val larguraLinha = vmin * 0.10f
         val yLinha = cy + vmin * 0.05f
         canvas.drawRect(cx - larguraLinha, yLinha, cx + larguraLinha, yLinha + vmin * 0.004f, linha)
-
-        legenda?.let {
-            canvas.drawText(it, cx, cy + vmin * 0.14f, secundario)
-        }
     }
 }

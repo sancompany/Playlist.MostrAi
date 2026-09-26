@@ -20,7 +20,7 @@ class HorarioHostilTest {
 
     private fun horario(inicio: String, fim: String): HorarioOperacional = ConfigRemotaJson.parse(
         """
-        {"configVersion": 1, "operacao": {"regime": "CUSTOM",
+        {"configVersion": 1, "operacao": {
           "porDiaDaSemana": {"ter": [{"inicio": "$inicio", "fim": "$fim"}]}}}
         """.trimIndent()
     )!!.horario!!
@@ -45,7 +45,7 @@ class HorarioHostilTest {
     fun `lista vazia continua sendo fechado o dia inteiro`() {
         // Esse é o jeito explícito de dizer "fechado" (§7) e não pode mudar.
         val h = ConfigRemotaJson.parse(
-            """{"configVersion": 1, "operacao": {"regime": "CUSTOM", "porDiaDaSemana": {"ter": []}}}""",
+            """{"configVersion": 1, "operacao": { "porDiaDaSemana": {"ter": []}}}""",
         )!!.horario!!
 
         assertFalse(h.estaDentro(terca(10)))

@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
      raiz preenche a tela física inteira (o framebuffer nativo do painel,
-     sempre landscape). rotor é quem carrega o conteúdo de verdade — seu
-     tamanho e rotação são calculados em runtime (PlayerActivity) a partir
-     de ConfigAparelho.rotacaoTela, para compensar um painel montado
-     fisicamente de lado (comum em sinalização digital em espaço estreito).
-     Sem rotação configurada (o caso comum), rotor preenche raiz normalmente.
+     sempre landscape). rotor carrega todo o conteúdo e é quem gira —
+     Produto.ROTACAO_GRAUS, fixo no APK — com as margens da config como
+     padding (RotacaoTela). Uma Activity só: vídeo, cartões locais,
+     instalação e PIN de saída são camadas dentro de rotor.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -34,5 +33,9 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="gone" />
+
+        <include layout="@layout/tela_provisionamento" />
+
+        <include layout="@layout/tela_pin_saida" />
     </FrameLayout>
 </FrameLayout>

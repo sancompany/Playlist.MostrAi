@@ -14,9 +14,6 @@ class PosicaoNaPlaylistTest {
         criativoId = null,
         duracaoSegundos = duracaoSegundos,
         url = "https://exemplo/video.mp4",
-        anuncianteId = "anunciante",
-        autoanuncio = false,
-        institucional = false,
         contabiliza = true,
     )
 

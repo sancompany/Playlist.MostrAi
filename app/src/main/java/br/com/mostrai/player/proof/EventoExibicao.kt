@@ -13,9 +13,6 @@ data class EventoExibicao(
     val janelaId: String?,
     val itemProgramacaoId: String?,
     val criativoId: String?,
-    val anuncianteId: String?,
-    /** Playlist estava em modo degradado (array antigo) quando este evento nasceu. */
-    val formatoLegado: Boolean,
     /** ISO 8601 com offset, relógio do aparelho — auditoria apenas. */
     val iniciadoEm: String,
     val terminadoEm: String?,
@@ -24,7 +21,7 @@ data class EventoExibicao(
     val criadoEmMs: Long,
     /**
      * Preenchido quando o servidor rejeitou este evento de forma definitiva
-     * (HTTP 400 isolado por [br.com.mostrai.player.proof.FilaProofOfPlay]).
+     * (HTTP 400/413 isolado por [br.com.mostrai.player.proof.FilaProofOfPlay]).
      * Sai da fila de envio mas continua visível no diagnóstico até expirar.
      */
     val quarentenaMotivo: String? = null,

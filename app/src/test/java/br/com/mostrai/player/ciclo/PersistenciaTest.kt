@@ -62,8 +62,7 @@ class PersistenciaTest {
 
     private val item = ItemPlaylist(
         itemProgramacaoId = "i1", criativoId = "c1", duracaoSegundos = 10,
-        url = "https://exemplo.com/v.mp4", anuncianteId = "a1",
-        autoanuncio = false, institucional = false, contabiliza = true,
+        url = "https://exemplo.com/v.mp4", contabiliza = true,
     )
 
     @Test
@@ -98,15 +97,10 @@ class PersistenciaTest {
     @Test
     fun `fila inutilizavel nao lanca em nenhuma operacao`() {
         inutilizar(ProofOfPlayDb.NOME_ARQUIVO)
-        val config = ConfigAparelho(h.contexto).apply {
-            baseUrl = h.servidor.baseUrl
-            dispositivoId = "tela-1"
-            chaveAparelho = "chave"
-        }
+        val config = ConfigAparelho(h.contexto).apply { gravarCredenciais("M-0001", "chave") }
         val fila = FilaProofOfPlay(h.contexto, MostraiApi(config))
         val playlist = Playlist(
-            versaoContrato = 1, janelaId = "j1", janelaInicio = null, janelaFim = null,
-            servidorAgora = null, itens = listOf(item),
+            janelaId = "j1", janelaInicio = null, servidorAgora = null, itens = listOf(item),
         )
 
         assertNull(fila.registrarInicio(item, playlist))

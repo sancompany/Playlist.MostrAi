@@ -9,29 +9,27 @@ import java.net.URL
  * Wrapper fino sobre HttpURLConnection.
  *
  * Sem dependência externa de propósito: a frequência de chamadas deste app
- * (poll a cada 15 min, played em lote, heartbeat a cada 5 min) não pede o
+ * (heartbeat a cada 15 s, played em lote, playlist a cada 15 min) não pede o
  * que um cliente HTTP maior ofereceria, e cada dependência a menos é uma
  * fonte a menos de problema de resolução numa TV com internet de comércio.
  */
-// open: os testes de MostraiApi substituem o transporte para exercitar a
-// classificação de HTTP (R8) sem servidor de verdade.
-open class HttpCliente(
+class HttpCliente(
     private val timeoutConexaoMs: Int = 10_000,
     private val timeoutLeituraMs: Int = 15_000,
 ) {
-    data class Resposta(val codigo: Int, val corpo: String, val cabecalhos: Map<String, List<String>>)
+    data class Resposta(val codigo: Int, val corpo: String, val cabecalhos: Map<String?, List<String>>)
 
     @Throws(IOException::class)
-    open fun get(url: String, cabecalhos: Map<String, String>): Resposta =
+    fun get(url: String, cabecalhos: Map<String, String>): Resposta =
         chamar("GET", url, cabecalhos, null)
 
     @Throws(IOException::class)
-    open fun post(url: String, cabecalhos: Map<String, String>, corpo: String): Resposta =
+    fun post(url: String, cabecalhos: Map<String, String>, corpo: String): Resposta =
         chamar("POST", url, cabecalhos + ("Content-Type" to "application/json; charset=utf-8"), corpo)
 
     @Throws(IOException::class)
     private fun chamar(metodo: String, url: String, cabecalhos: Map<String, String>, corpo: String?): Resposta {
-        // openConnection() não valida o esquema — uma baseUrl mal configurada
+        // openConnection() não valida o esquema — uma URL mal formada
         // (ex.: sem "http"/"https", ou outro esquema qualquer) devolve uma
         // conexão de outro tipo, e o cast falha com ClassCastException, não
         // IOException. Sem converter aqui, isso escaparia do catch de quem

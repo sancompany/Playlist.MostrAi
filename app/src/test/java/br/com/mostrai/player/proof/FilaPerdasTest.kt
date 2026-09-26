@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import org.junit.Assert.assertEquals
@@ -21,9 +22,9 @@ import org.robolectric.RobolectricTestRunner
 class FilaPerdasTest {
 
     private class Api(config: ConfigAparelho) : MostraiApi(config) {
-        var resposta: RespostaPlayed = RespostaPlayed.Transitorio("x")
+        var resposta: ResultadoHttp<Map<String, String>> = ResultadoHttp.SemRede("x")
         var envios = 0
-        override fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
+        override fun enviarLote(eventos: List<EventoExibicao>): ResultadoHttp<Map<String, String>> {
             envios++
             return resposta
         }
@@ -34,12 +35,10 @@ class FilaPerdasTest {
     private lateinit var fila: FilaProofOfPlay
 
     private val playlist = Playlist(
-        versaoContrato = 1, janelaId = "j1", janelaInicio = null, janelaFim = null,
-        servidorAgora = null, itens = emptyList(),
+        janelaId = "j1", janelaInicio = null, servidorAgora = null, itens = emptyList(),
     )
     private val item = ItemPlaylist(
-        itemProgramacaoId = "i1", criativoId = "c1", duracaoSegundos = 10, url = "https://x/v.mp4",
-        anuncianteId = "a1", autoanuncio = false, institucional = false, contabiliza = true,
+        itemProgramacaoId = "i1", criativoId = "c1", duracaoSegundos = 10, url = "https://x/v.mp4", contabiliza = true,
     )
 
     @Before
@@ -62,7 +61,7 @@ class FilaPerdasTest {
         // comprovante. Nenhum dos dois pode somar de novo ao expirar.
         val rejeitado = fila.registrarInicio(item, playlist)!!
         fila.registrarFim(rejeitado)
-        api.resposta = MostraiApi.RespostaPlayed.ErroPayload(400)
+        api.resposta = ResultadoHttp.RespostaInvalida("HTTP 400")
         fila.tentarEnviar()
         assertEquals(1, fila.perdas())
 
@@ -107,7 +106,7 @@ class FilaPerdasTest {
         // o comprovante expira sem nunca ter sido reenviado.
         val id = fila.registrarInicio(item, playlist)!!
         fila.registrarFim(id)
-        api.resposta = MostraiApi.RespostaPlayed.RespeitarEspera(1_000_000_000)
+        api.resposta = ResultadoHttp.Limitado(1_000_000_000)
 
         fila.tentarEnviar()
 
@@ -123,7 +122,7 @@ class FilaPerdasTest {
         // cada 10-30s só para voltar 401 — e os comprovantes ficam intactos.
         val id = fila.registrarInicio(item, playlist)!!
         fila.registrarFim(id)
-        api.resposta = MostraiApi.RespostaPlayed.ErroAparelho(401)
+        api.resposta = ResultadoHttp.CredencialRecusada(401)
 
         repeat(5) { fila.tentarEnviar() }
 
@@ -155,9 +154,9 @@ class FilaPerdasTest {
         // retentativa viraria cobrança dupla da mesma exibição.
         val ids = mutableListOf<List<String>>()
         val espiao = object : MostraiApi(ConfigAparelho(contexto)) {
-            override fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
+            override fun enviarLote(eventos: List<EventoExibicao>): ResultadoHttp<Map<String, String>> {
                 ids += eventos.map { it.execucaoId }
-                return RespostaPlayed.Transitorio("x")
+                return ResultadoHttp.SemRede("x")
             }
         }
         val filaEspia = FilaProofOfPlay(contexto, espiao)

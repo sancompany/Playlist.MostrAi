@@ -45,32 +45,22 @@ data class FaixaHoraria(val inicioMinutos: Int, val fimMinutos: Int) {
     }
 }
 
-enum class RegimeOperacao {
-    /** Segue o horário do ponto, entregue pelo backend nas mesmas faixas. */
-    FOLLOW_POINT,
-
-    /** Nunca apaga. É o comportamento do player desde sempre, e o padrão. */
-    HORAS_24,
-
-    /** Faixas próprias desta tela. */
-    CUSTOM,
-}
-
 /**
- * Quando esta tela deve estar exibindo publicidade.
+ * Quando esta tela deve estar exibindo publicidade — sempre o horário do
+ * PONTO, entregue em `operacao` na config (contrato §6). Mesma semântica de
+ * `deveriaOperar` no backend (`src/lib/operacao-tela.js`).
  *
  * Precisa viver **inteiro no aparelho**: uma loja sem internet continua
  * abrindo e fechando no horário de sempre, e o player não pode depender de
  * perguntar ao servidor que horas são para decidir se acende.
  *
- * **Padrão deliberadamente permissivo.** Sem dados de horário — regime não
- * configurado, faixas vazias, timezone inválida — o resultado é sempre
- * "está dentro". Uma tela acesa fora de hora é um desperdício; uma tela
- * apagada em horário comercial por causa de config faltando é receita
- * perdida e uma reclamação do dono do ponto. Na dúvida, acende.
+ * **Padrão deliberadamente permissivo.** Sem dados de horário — config
+ * ainda não recebida, mapa vazio — o resultado é sempre "está dentro";
+ * timezone inválida cai em `America/Sao_Paulo`. Uma tela acesa fora de hora
+ * é um desperdício; uma tela apagada em horário comercial por causa de
+ * config faltando é receita perdida. Na dúvida, acende.
  */
 data class HorarioOperacional(
-    val regime: RegimeOperacao = RegimeOperacao.HORAS_24,
     val timezone: String = TIMEZONE_PADRAO,
     val porDiaDaSemana: Map<DayOfWeek, List<FaixaHoraria>> = emptyMap(),
     /** Data → faixas naquele dia. Lista vazia significa fechado o dia inteiro. */
@@ -78,7 +68,6 @@ data class HorarioOperacional(
 ) {
 
     fun estaDentro(instante: Instant): Boolean {
-        if (regime == RegimeOperacao.HORAS_24) return true
         if (porDiaDaSemana.isEmpty() && feriados.isEmpty()) return true
 
         val zona = zonaOuPadrao()
@@ -110,7 +99,7 @@ data class HorarioOperacional(
     companion object {
         const val TIMEZONE_PADRAO = "America/Sao_Paulo"
 
-        /** Aceita `seg|mon|1` … — o backend ainda não fixou a grafia. */
+        /** O contrato usa `seg`…`dom`; as outras grafias são tolerância. */
         fun diaDeTexto(texto: String): DayOfWeek? = when (texto.trim().lowercase()) {
             "seg", "segunda", "mon", "monday", "1" -> DayOfWeek.MONDAY
             "ter", "terca", "terça", "tue", "tuesday", "2" -> DayOfWeek.TUESDAY
@@ -122,10 +111,5 @@ data class HorarioOperacional(
             else -> null
         }
 
-        fun regimeDeTexto(texto: String?): RegimeOperacao = when (texto?.trim()?.uppercase()) {
-            "FOLLOW_POINT" -> RegimeOperacao.FOLLOW_POINT
-            "CUSTOM" -> RegimeOperacao.CUSTOM
-            else -> RegimeOperacao.HORAS_24
-        }
     }
 }

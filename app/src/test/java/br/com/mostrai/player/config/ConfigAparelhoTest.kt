@@ -1,133 +1,126 @@
 package br.com.mostrai.player.config
 
+import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-/**
- * `rotacaoTela` guarda a compensação de um painel montado fisicamente de
- * lado (sinalização digital em espaço estreito) — testa que só o conjunto
- * fechado {0, 90, 180, 270} é aceito, nunca gira a esmo com um valor
- * inesperado.
- *
- * `pinPainel` só pode ser o que o teclado de
- * [br.com.mostrai.player.ui.PainelActivity] consegue digitar de volta: 4
- * dígitos numéricos, nada mais. Um PIN fora disso, vindo de qualquer
- * provisionamento (build embutido, `adb`, `mostrai-config.json`), trancaria
- * o painel para sempre — por isso o valor inválido é ignorado, não gravado.
- */
+/** O que o aparelho guarda (contrato §10) — e só isso. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [26])
 class ConfigAparelhoTest {
 
+    private lateinit var contexto: Context
     private lateinit var config: ConfigAparelho
 
     @Before
-    fun setUp() {
-        config = ConfigAparelho(ApplicationProvider.getApplicationContext())
+    fun preparar() {
+        contexto = ApplicationProvider.getApplicationContext()
+        contexto.getSharedPreferences(ConfigAparelho.ARQUIVO, Context.MODE_PRIVATE).edit().clear().commit()
+        config = ConfigAparelho(contexto)
+    }
+
+    private fun aplicar(corpo: String) = config.aplicarConfig(ConfigRemotaJson.parse(corpo)!!, corpo)
+
+    @Test
+    fun `aparelho novo nao esta provisionado`() {
+        assertFalse(config.provisionado)
+        assertNull(config.dispositivoId)
+        assertNull(config.chaveAparelho)
     }
 
     @Test
-    fun `sem configurar, rotacao e zero`() {
-        assertEquals(0, config.rotacaoTela)
+    fun `credencial gravada vale depois de reiniciar o processo`() {
+        assertTrue(config.gravarCredenciais("M-0235", "chave"))
+
+        val depois = ConfigAparelho(contexto)
+        assertTrue(depois.provisionado)
+        assertEquals("M-0235", depois.dispositivoId)
+        assertEquals("chave", depois.chaveAparelho)
     }
 
     @Test
-    fun `aceita os quatro valores validos`() {
-        for (valor in listOf(0, 90, 180, 270)) {
-            config.rotacaoTela = valor
-            assertEquals(valor, config.rotacaoTela)
-        }
+    fun `401 apaga so a chave, o ID fica para preencher a instalacao`() {
+        config.gravarCredenciais("M-0235", "chave")
+
+        assertTrue(config.esquecerCredencialSeFor("chave"))
+
+        assertFalse(config.provisionado)
+        assertNull(config.chaveAparelho)
+        assertEquals("M-0235", config.dispositivoId)
     }
 
     @Test
-    fun `valor fora do conjunto vira zero, nunca gira a esmo`() {
-        config.rotacaoTela = 45
-        assertEquals(0, config.rotacaoTela)
+    fun `401 atrasado de uma chave antiga nao apaga a chave nova`() {
+        config.gravarCredenciais("M-0235", "nova")
 
-        config.rotacaoTela = -90
-        assertEquals(0, config.rotacaoTela)
-
-        config.rotacaoTela = 360
-        assertEquals(0, config.rotacaoTela)
+        assertFalse(config.esquecerCredencialSeFor("antiga"))
+        assertEquals("nova", config.chaveAparelho)
     }
 
     @Test
-    fun `sem configurar, pin e o provisorio de fabrica`() {
-        assertEquals("0000", config.pinPainel)
+    fun `reinstalar em outra tela descarta a config da anterior`() {
+        config.gravarCredenciais("M-0001", "chave")
+        aplicar("""{"configVersion": 9, "margens": {"superior": 3}}""")
+
+        config.gravarCredenciais("M-0002", "outra")
+
+        assertEquals(0, config.configVersionAplicada)
+        assertEquals(MargensOverscan(), config.margens)
     }
 
     @Test
-    fun `aceita pin de 4 digitos numericos`() {
-        config.pinPainel = "1357"
-        assertEquals("1357", config.pinPainel)
+    fun `reinstalar na mesma tela mantem a config`() {
+        config.gravarCredenciais("M-0001", "chave")
+        aplicar("""{"configVersion": 9, "margens": {"superior": 3}}""")
+
+        config.gravarCredenciais("M-0001", "nova")
+
+        assertEquals(9, config.configVersionAplicada)
     }
 
     @Test
-    fun `pin com menos de 4 digitos e ignorado, mantem o anterior`() {
-        config.pinPainel = "123"
-        assertEquals("0000", config.pinPainel)
+    fun `sem config ainda, margem zero, horario aberto e nenhum PIN`() {
+        assertEquals(0, config.configVersionAplicada)
+        assertEquals(MargensOverscan(), config.margens)
+        assertTrue(config.horarioOperacional().estaDentro(java.time.Instant.now()))
+        assertNull("nunca existe PIN padrão", config.pinSaida)
     }
 
     @Test
-    fun `pin com mais de 4 digitos e ignorado, mantem o anterior`() {
-        config.pinPainel = "12345"
-        assertEquals("0000", config.pinPainel)
+    fun `config aplicada vale offline, depois de reiniciar`() {
+        aplicar("""{"configVersion": 7, "margens": {"superior": 1, "direita": 2, "inferior": 3, "esquerda": 4},
+            "pinSaida": "4821"}""")
+
+        val depois = ConfigAparelho(contexto)
+        assertEquals(7, depois.configVersionAplicada)
+        assertEquals(MargensOverscan(topo = 1f, base = 3f, esquerda = 4f, direita = 2f), depois.margens)
+        assertEquals("4821", depois.pinSaida)
     }
 
     @Test
-    fun `pin nao numerico e ignorado, nunca tranca o painel`() {
-        config.pinPainel = "12ab"
-        assertEquals("0000", config.pinPainel)
-
-        config.pinPainel = "12-4"
-        assertEquals("0000", config.pinPainel)
+    fun `PIN trocado no admin substitui o anterior`() {
+        aplicar("""{"configVersion": 1, "pinSaida": "4821"}""")
+        aplicar("""{"configVersion": 2, "pinSaida": "73915"}""")
+        assertEquals("73915", config.pinSaida)
     }
 
     @Test
-    fun `pin invalido nao sobrescreve um pin valido ja gravado`() {
-        config.pinPainel = "9876"
-        config.pinPainel = "abcde"
-        assertEquals("9876", config.pinPainel)
-    }
+    fun `chaves de versoes antigas sao apagadas`() {
+        val prefs = contexto.getSharedPreferences(ConfigAparelho.ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putString("base_url", "https://antigo").putInt("rotacao_tela", 180)
+            .putString("token_provisionamento", "tok").putString("pin_painel", "0000").commit()
 
-    @Test
-    fun `ehPinValido cobre os casos`() {
-        assertTrue(ConfigAparelho.ehPinValido("0000"))
-        assertTrue(ConfigAparelho.ehPinValido("9999"))
-        assertFalse(ConfigAparelho.ehPinValido(""))
-        assertFalse(ConfigAparelho.ehPinValido("123"))
-        assertFalse(ConfigAparelho.ehPinValido("12345"))
-        assertFalse(ConfigAparelho.ehPinValido("12a4"))
-    }
+        config.limparChavesObsoletas()
 
-    @Test
-    fun `sem configurar, os 4 lados da margem sao zero`() {
-        assertEquals(MargensOverscan(), config.margensOverscan)
-    }
-
-    @Test
-    fun `cada lado da margem e independente dos outros`() {
-        config.margemVminTopo = 2.5f
-        config.margemVminBase = 1f
-        config.margemVminEsquerda = 3f
-        config.margemVminDireita = 0.5f
-
-        assertEquals(MargensOverscan(topo = 2.5f, base = 1f, esquerda = 3f, direita = 0.5f), config.margensOverscan)
-    }
-
-    @Test
-    fun `margem de cada lado e limitada entre 0 e 10`() {
-        config.margemVminTopo = -5f
-        assertEquals(0f, config.margemVminTopo)
-
-        config.margemVminTopo = 50f
-        assertEquals(10f, config.margemVminTopo)
+        assertFalse(prefs.contains("base_url"))
+        assertFalse(prefs.contains("rotacao_tela"))
+        assertFalse(prefs.contains("token_provisionamento"))
+        assertFalse(prefs.contains("pin_painel"))
     }
 }

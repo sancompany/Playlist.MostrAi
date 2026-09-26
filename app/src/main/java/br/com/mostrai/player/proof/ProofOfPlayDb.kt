@@ -14,6 +14,11 @@ import android.database.sqlite.SQLiteOpenHelper
  * consultas são simples; `SQLiteOpenHelper` já entrega a durabilidade que a
  * decisão exige sem esticar a árvore de dependências do projeto.
  *
+ * As colunas `anunciante_id` e `formato_legado` são do contrato antigo e
+ * não são mais lidas; ficam na tabela porque removê-las exigiria recriar a
+ * tabela da única cópia do comprovante — `formato_legado` segue gravado 0
+ * (é `NOT NULL`).
+ *
  * **Migração é incremental, nunca destrutiva** (R6): a fila é a única cópia
  * do comprovante de exibição de um anunciante até o servidor confirmar. Um
  * `DROP TABLE` num bump de esquema apagaria receita já entregue, então
@@ -215,7 +220,7 @@ class ProofOfPlayDb(context: Context) :
         ).use { return it.moveToFirst() }
     }
 
-    /** Horizonte local de 7 dias (seção 6.5) — contabilidade, não decisão de crédito. */
+    /** Horizonte local ([FilaProofOfPlay.HORIZONTE_EXPIRACAO_MS]) — contabilidade, não decisão de crédito. */
     fun removerExpirados(limiteMs: Long): Int =
         writableDatabase.delete(TABELA, "criado_em_ms < ?", arrayOf(limiteMs.toString()))
 
@@ -224,8 +229,8 @@ class ProofOfPlayDb(context: Context) :
         put("janela_id", janelaId)
         put("item_programacao_id", itemProgramacaoId)
         put("criativo_id", criativoId)
-        put("anunciante_id", anuncianteId)
-        put("formato_legado", if (formatoLegado) 1 else 0)
+        putNull("anunciante_id")
+        put("formato_legado", 0)
         put("iniciado_em", iniciadoEm)
         put("terminado_em", terminadoEm)
         put("tentativas", tentativas)
@@ -239,8 +244,6 @@ class ProofOfPlayDb(context: Context) :
         janelaId = stringOuNulo("janela_id"),
         itemProgramacaoId = stringOuNulo("item_programacao_id"),
         criativoId = stringOuNulo("criativo_id"),
-        anuncianteId = stringOuNulo("anunciante_id"),
-        formatoLegado = getInt(getColumnIndexOrThrow("formato_legado")) == 1,
         iniciadoEm = getString(getColumnIndexOrThrow("iniciado_em")),
         terminadoEm = stringOuNulo("terminado_em"),
         tentativas = getInt(getColumnIndexOrThrow("tentativas")),

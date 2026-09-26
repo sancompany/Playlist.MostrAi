@@ -4,7 +4,7 @@ import br.com.mostrai.player.proof.EventoExibicao
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Monta e lê os corpos de POST /played nas duas formas do contrato (seção 6.2 e 6.6). */
+/** Corpo e resposta de `POST /player/:dispositivoId/played` (contrato §8). */
 object PlayedJson {
 
     fun corpoLote(eventos: List<EventoExibicao>): String {
@@ -13,21 +13,23 @@ object PlayedJson {
             array.put(
                 JSONObject().apply {
                     put("execucaoId", e.execucaoId)
-                    put("janelaId", e.janelaId)
-                    put("itemProgramacaoId", e.itemProgramacaoId)
-                    put("criativoId", e.criativoId)
+                    put("janelaId", e.janelaId ?: JSONObject.NULL)
+                    put("itemProgramacaoId", e.itemProgramacaoId ?: JSONObject.NULL)
+                    put("criativoId", e.criativoId ?: JSONObject.NULL)
                     put("iniciadoEm", e.iniciadoEm)
-                    put("terminadoEm", e.terminadoEm)
+                    put("terminadoEm", e.terminadoEm ?: JSONObject.NULL)
                 }
             )
         }
         return JSONObject().put("eventos", array).toString()
     }
 
-    /** execucaoId -> status, exatamente como a resposta trouxe (seção 6.3). */
-    fun parseResultados(corpoBruto: String): Map<String, String> {
-        val json = JSONObject(corpoBruto)
-        val resultados = json.optJSONArray("resultados") ?: JSONArray()
+    /**
+     * `execucaoId → status`, exatamente como veio. `null` se o corpo não é o
+     * do contrato — o lote fica na fila, nunca é dado como resolvido.
+     */
+    fun parseResultados(corpoBruto: String): Map<String, String>? = runCatching {
+        val resultados = JSONObject(corpoBruto).optJSONArray("resultados") ?: return null
         val mapa = mutableMapOf<String, String>()
         for (i in 0 until resultados.length()) {
             // ROB-006: um elemento que não é objeto não invalida os outros.
@@ -36,15 +38,6 @@ object PlayedJson {
             val status = item.optString("status", "")
             if (id.isNotEmpty() && status.isNotEmpty()) mapa[id] = status
         }
-        return mapa
-    }
-
-    fun corpoLegado(anuncianteId: String): String =
-        JSONObject().put("anuncianteId", anuncianteId).toString()
-
-    /** true/false conforme o corpo antigo `{ok:true, contou:...}` / `{ok:true}`. */
-    fun parseContouLegado(corpoBruto: String): Boolean = runCatching {
-        val json = JSONObject(corpoBruto)
-        if (json.has("contou")) json.optBoolean("contou") else true
-    }.getOrDefault(true)
+        mapa
+    }.getOrNull()
 }

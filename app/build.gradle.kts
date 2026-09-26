@@ -1,59 +1,9 @@
-import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
 }
-
-/**
- * Configuração de um aparelho específico, embutida no build via
- * `-PconfigDispositivo=<arquivo>.json` (ver README, "Gerar um APK já
- * configurado por tela"). Sem essa propriedade, os oito campos ficam
- * vazios e o app se comporta exatamente como antes: precisa de
- * provisionamento por adb ou tela.
- *
- * O arquivo em si NUNCA é commitado (só `dispositivos/exemplo.json.example`
- * é) — a chave revogável de um aparelho real não é segredo versionado
- * (CONSTRAINTS.md), fica só no APK que você mesmo gera localmente.
- */
-data class ConfigEmbutidaDoDispositivo(
-    val dispositivoId: String = "",
-    val chaveAparelho: String = "",
-    val baseUrl: String = "",
-    val pin: String = "",
-    val margemVminTopo: String = "",
-    val margemVminBase: String = "",
-    val margemVminEsquerda: String = "",
-    val margemVminDireita: String = "",
-    val rotacaoTela: String = "",
-)
-
-fun lerConfigDispositivo(): ConfigEmbutidaDoDispositivo {
-    val caminho = project.findProperty("configDispositivo") as String? ?: return ConfigEmbutidaDoDispositivo()
-    val arquivo = rootProject.file(caminho)
-    check(arquivo.exists()) { "configDispositivo apontou para um arquivo que não existe: ${arquivo.absolutePath}" }
-
-    @Suppress("UNCHECKED_CAST")
-    val json = JsonSlurper().parse(arquivo) as Map<String, Any?>
-    return ConfigEmbutidaDoDispositivo(
-        dispositivoId = json["dispositivoId"] as? String ?: "",
-        chaveAparelho = json["chaveAparelho"] as? String ?: "",
-        baseUrl = json["baseUrl"] as? String ?: "",
-        pin = json["pin"] as? String ?: "",
-        margemVminTopo = json["margemVminTopo"]?.toString() ?: "",
-        margemVminBase = json["margemVminBase"]?.toString() ?: "",
-        margemVminEsquerda = json["margemVminEsquerda"]?.toString() ?: "",
-        margemVminDireita = json["margemVminDireita"]?.toString() ?: "",
-        rotacaoTela = json["rotacaoTela"]?.toString() ?: "",
-    )
-}
-
-/** Escapa para virar literal de String em Kotlin/Java gerado no BuildConfig. */
-fun paraLiteralJava(valor: String): String =
-    "\"" + valor.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-
-val configDispositivo = lerConfigDispositivo()
 
 /**
  * Credenciais de assinatura, lidas de `keystore.properties` na raiz do
@@ -86,24 +36,11 @@ android {
         applicationId = "br.com.mostrai.player"
         minSdk = 26
         targetSdk = 26
-        // Toda atualização OTA compara `versionCode`. Subir aqui é o que faz
-        // um player em campo reconhecer que existe versão nova.
-        versionCode = 2
-        versionName = "1.0.0"
-
-        buildConfigField("String", "DISPOSITIVO_ID_EMBUTIDO", paraLiteralJava(configDispositivo.dispositivoId))
-        buildConfigField("String", "CHAVE_APARELHO_EMBUTIDA", paraLiteralJava(configDispositivo.chaveAparelho))
-        buildConfigField("String", "BASE_URL_EMBUTIDA", paraLiteralJava(configDispositivo.baseUrl))
-        buildConfigField("String", "PIN_EMBUTIDO", paraLiteralJava(configDispositivo.pin))
-        buildConfigField("String", "MARGEM_VMIN_TOPO_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminTopo))
-        buildConfigField("String", "MARGEM_VMIN_BASE_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminBase))
-        buildConfigField(
-            "String", "MARGEM_VMIN_ESQUERDA_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminEsquerda),
-        )
-        buildConfigField(
-            "String", "MARGEM_VMIN_DIREITA_EMBUTIDA", paraLiteralJava(configDispositivo.margemVminDireita),
-        )
-        buildConfigField("String", "ROTACAO_TELA_EMBUTIDA", paraLiteralJava(configDispositivo.rotacaoTela))
+        // Atualização é manual (sideload). O Android só instala por cima de
+        // uma versão com `versionCode` menor — subir a cada build de campo.
+        // 3 / 2.0.0: Player MVP (contrato docs/player-mvp-contract.md).
+        versionCode = 3
+        versionName = "2.0.0"
     }
 
     buildFeatures {

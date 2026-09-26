@@ -46,7 +46,7 @@ class WatchdogTest {
         val primeira = Watchdog.decidir(vivoEmMs = 0, agoraMs = agora, tentativas = 0)
         val terceira = Watchdog.decidir(vivoEmMs = 0, agoraMs = agora, tentativas = 2)
 
-        assertTrue(terceira.proximoAtrasoMs > primeira.proximoAtrasoMs)
+        assertTrue(terceira.proximoAtrasoMs!! > primeira.proximoAtrasoMs!!)
     }
 
     @Test

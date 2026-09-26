@@ -9,7 +9,7 @@ import android.provider.Settings
  *
  * Guarda também a âncora de tempo ([RelogioJanela]) que veio junto — sem
  * ela, uma retomada por posição temporal não é possível, e o app não deve
- * inventar uma (cai para a tela institucional em vez disso).
+ * inventar uma (começa do primeiro item em vez disso).
  */
 class PlaylistCache(context: Context) {
 
@@ -24,6 +24,10 @@ class PlaylistCache(context: Context) {
             .putLong(CHAVE_ANCORA_ELAPSED, ancora?.elapsedRealtimeNaAncoraMs ?: -1L)
             .putInt(CHAVE_ANCORA_BOOT, contagemDeBoot())
             .apply()
+    }
+
+    fun limpar() {
+        prefs.edit().clear().apply()
     }
 
     fun carregar(): Salva? {

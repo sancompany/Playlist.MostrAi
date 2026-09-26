@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Mostraí Player</string>
-    <string name="painel_pin_errado">PIN incorreto</string>
-    <string name="painel_pin_bloqueado">Muitas tentativas. Aguarde %1$d s.</string>
-    <string name="institucional_sem_programacao">Sem programação para esta hora</string>
+
+    <string name="prov_titulo">MOSTRAÍ PLAYER</string>
+    <string name="prov_id">ID DA TELA</string>
+    <string name="prov_codigo">CÓDIGO DE INSTALAÇÃO</string>
+    <string name="prov_conectar">CONECTAR</string>
+    <string name="prov_conectando">Conectando…</string>
+    <string name="prov_id_invalido">Confira o ID da tela (ex.: M-0235).</string>
+    <string name="prov_codigo_invalido">Confira o código de instalação (8 letras e números).</string>
+    <string name="prov_confira">Confira o ID e o código.</string>
+    <string name="prov_recusado">ID da tela ou código de instalação inválido, expirado ou já usado.</string>
+    <string name="prov_limitado">Muitas tentativas. Aguarde %1$d s.</string>
+    <string name="prov_sem_conexao">Sem conexão com o servidor. Confira a internet e tente de novo.</string>
+    <string name="prov_nao_gravou">Não foi possível salvar no aparelho. Tente de novo.</string>
+
+    <string name="pin_titulo">PIN PARA SAIR</string>
+    <string name="pin_errado">PIN incorreto</string>
+    <string name="pin_bloqueado">Muitas tentativas. Aguarde %1$d s.</string>
 </resources>

@@ -25,7 +25,10 @@ class ServidorDeTeste {
         val codigo: Int = 200,
         val corpo: ByteArray = ByteArray(0),
         val tipo: String? = null,
-    )
+        val cabecalhos: Map<String, String> = emptyMap(),
+    ) {
+        constructor(codigo: Int, corpo: String) : this(codigo, corpo.toByteArray())
+    }
 
     @Volatile
     var corpo: ByteArray = ByteArray(0)
@@ -41,6 +44,13 @@ class ServidorDeTeste {
 
     /** Cada requisição recebida, como "METODO /caminho", na ordem de chegada. */
     val recebidas = CopyOnWriteArrayList<String>()
+
+    /** Requisição completa, para conferir o contrato: cabeçalhos (em minúsculas) e corpo. */
+    data class Requisicao(val metodo: String, val caminho: String, val cabecalhos: Map<String, String>, val corpo: String)
+
+    val detalhadas = CopyOnWriteArrayList<Requisicao>()
+
+    fun ultima(prefixo: String): Requisicao? = detalhadas.lastOrNull { it.caminho.startsWith(prefixo) }
 
     private val socket = ServerSocket(0)
 
@@ -78,24 +88,29 @@ class ServidorDeTeste {
                 }
                 val primeira = linha() ?: return
                 var tamanhoCorpo = 0
+                val cabecalhos = mutableMapOf<String, String>()
                 while (true) {
                     val cabecalho = linha() ?: break
                     if (cabecalho.isEmpty()) break
+                    cabecalhos[cabecalho.substringBefore(':').trim().lowercase()] = cabecalho.substringAfter(':').trim()
                     if (cabecalho.startsWith("Content-Length:", ignoreCase = true)) {
                         tamanhoCorpo = cabecalho.substringAfter(':').trim().toIntOrNull() ?: 0
                     }
                 }
+                val corpoRecebido = java.io.ByteArrayOutputStream()
                 var restante = tamanhoCorpo
-                val descarte = ByteArray(4096)
+                val bloco = ByteArray(4096)
                 while (restante > 0) {
-                    val lidos = entrada.read(descarte, 0, minOf(restante, descarte.size))
+                    val lidos = entrada.read(bloco, 0, minOf(restante, bloco.size))
                     if (lidos < 0) break
+                    corpoRecebido.write(bloco, 0, lidos)
                     restante -= lidos
                 }
 
                 val partes = primeira.split(" ")
                 val metodo = partes.getOrElse(0) { "" }
                 val caminho = partes.getOrElse(1) { "" }
+                detalhadas += Requisicao(metodo, caminho, cabecalhos, corpoRecebido.toString(Charsets.UTF_8.name()))
                 recebidas += "$metodo $caminho"
 
                 travas.entries
@@ -112,6 +127,7 @@ class ServidorDeTeste {
                     append("HTTP/1.1 ${resposta.codigo} ${if (resposta.codigo in 200..299) "OK" else "Erro"}\r\n")
                     append("Content-Length: ${resposta.corpo.size}\r\n")
                     resposta.tipo?.let { append("Content-Type: $it\r\n") }
+                    resposta.cabecalhos.forEach { (nome, valor) -> append("$nome: $valor\r\n") }
                     append("Connection: close\r\n\r\n")
                 }
                 cliente.getOutputStream().apply {

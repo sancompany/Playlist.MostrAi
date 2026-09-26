@@ -83,13 +83,4 @@ class PinRateLimitTest {
         assertEquals(0L, config.pinBloqueadoPorMs(agora))
     }
 
-    @Test
-    fun `o ultimo PIN valido sobrevive para operacao offline`() {
-        config.pinPainel = "4821"
-        // Uma config remota que chega com PIN inválido não pode apagar o que
-        // funciona — senão uma tela sem internet fica sem manutenção.
-        config.pinPainel = "abc"
-
-        assertEquals("4821", config.pinPainel)
-    }
 }

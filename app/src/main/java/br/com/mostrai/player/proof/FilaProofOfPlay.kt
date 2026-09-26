@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteException
 import android.util.Log
 import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import java.time.OffsetDateTime
@@ -14,9 +15,10 @@ import kotlin.math.min
 /**
  * Fila durável de proof-of-play: cria a linha antes do play(), envia em lote
  * quando o item termina de verdade, e só remove a linha quando o servidor
- * responde um status definitivo — ou nos outros dois casos fechados na
- * seção 6.5: payload malformado (400, isolado item a item) e expiração local
- * de 7 dias. Nunca por timeout, 5xx, erro de socket ou reinício do app.
+ * responde um dos 6 status finais (contrato §8) — ou nos outros dois casos:
+ * lote recusado (400/413, isolado evento a evento até sobrar o culpado) e
+ * expiração local depois do prazo em que o servidor ainda aceitaria. Nunca
+ * por timeout, 5xx, 401/403, erro de socket ou reinício do app.
  *
  * Chamar sempre de uma thread de fundo — faz E/S de disco e de rede.
  *
@@ -60,10 +62,10 @@ class FilaProofOfPlay(
     }
 
     /**
-     * Cria a linha ANTES do play(), com o execucaoId já definido (decisão 3,
-     * seção 4). Retorna null para itens que não contam (institucional,
-     * autoanúncio) — esses nunca entram na fila — e quando o banco não
-     * aceita a linha: o item toca, sem comprovante.
+     * Cria a linha ANTES do play(), com o execucaoId já definido. Ela só vira
+     * comprovante em [registrarFim] (STATE_ENDED). Retorna null para itens
+     * que não contam (`contabiliza: false`) — esses nunca entram na fila — e
+     * quando o banco não aceita a linha: o item toca, sem comprovante.
      */
     @Synchronized
     fun registrarInicio(item: ItemPlaylist, playlist: Playlist): String? = seguro(null) {
@@ -78,8 +80,6 @@ class FilaProofOfPlay(
                 janelaId = playlist.janelaId,
                 itemProgramacaoId = item.itemProgramacaoId,
                 criativoId = item.criativoId,
-                anuncianteId = item.anuncianteId,
-                formatoLegado = playlist.modoDegradado,
                 iniciadoEm = OffsetDateTime.now().toString(),
                 terminadoEm = null,
                 tentativas = 0,
@@ -130,23 +130,21 @@ class FilaProofOfPlay(
                 val elegiveis = db.elegiveisParaEnvio(agora, LIMITE_LOTE)
                 if (elegiveis.isEmpty()) return
 
-                val (legados, novos) = elegiveis.partition { it.formatoLegado }
-                if (novos.isNotEmpty()) enviarLoteNovo(novos)
-                legados.forEach { enviarUmLegado(it) }
+                enviarLote(elegiveis)
             }
         } finally {
             enviando.set(false)
         }
     }
 
-    private fun enviarLoteNovo(eventos: List<EventoExibicao>) {
+    private fun enviarLote(eventos: List<EventoExibicao>) {
         when (val resposta = api.enviarLote(eventos)) {
-            is MostraiApi.RespostaPlayed.Sucesso -> {
+            is ResultadoHttp.Ok -> {
                 val paraRemover = mutableListOf<String>()
                 for (evento in eventos) {
-                    val status = resposta.resultadosPorId[evento.execucaoId]
+                    val status = resposta.valor[evento.execucaoId]
                     when {
-                        status != null && status in STATUS_DEFINITIVOS -> paraRemover.add(evento.execucaoId)
+                        status != null && status in STATUS_FINAIS -> paraRemover.add(evento.execucaoId)
                         status != null -> {
                             Log.w(TAG, "status desconhecido '$status' para ${evento.execucaoId}, mantendo na fila")
                             adiarComBackoff(evento)
@@ -156,27 +154,29 @@ class FilaProofOfPlay(
                 }
                 db.removerLote(paraRemover)
             }
-            is MostraiApi.RespostaPlayed.ErroPayload -> isolarPayloadRejeitado(eventos)
-            is MostraiApi.RespostaPlayed.ErroAparelho -> {
-                Log.w(TAG, "erro do aparelho (${resposta.codigo}) ao enviar proof-of-play, fila mantida")
-                // Não descarta nada — problema do aparelho, fica visível no
-                // painel. Mas reagenda (ROB-005): sem isso, o lote inteiro ia
-                // de novo ao fim de cada exibição só para voltar 401.
-                eventos.forEach { adiarComBackoff(it) }
+            // 400: lote malformado; 413: corpo acima de 100 KB. Nos dois, dividir resolve.
+            is ResultadoHttp.RespostaInvalida -> {
+                if (resposta.motivo == "HTTP 400" || resposta.motivo == "HTTP 413") {
+                    isolarLoteRecusado(eventos)
+                } else {
+                    eventos.forEach { adiarComBackoff(it) }
+                }
             }
-            is MostraiApi.RespostaPlayed.RespeitarEspera -> {
+            is ResultadoHttp.Limitado -> {
                 val proximo = fimDaEspera(resposta.segundos)
                 eventos.forEach { db.adiarReenvio(it.execucaoId, proximo, it.tentativas + 1) }
             }
-            is MostraiApi.RespostaPlayed.Transitorio -> eventos.forEach { adiarComBackoff(it) }
-            is MostraiApi.RespostaPlayed.SucessoLegado -> Unit // não ocorre no envio em lote
+            // 401 (a Activity volta para a instalação), 403 (tela em reparo),
+            // 5xx, rede: o comprovante fica. Reagenda (ROB-005) — sem isso o
+            // lote inteiro iria de novo ao fim de cada exibição.
+            else -> eventos.forEach { adiarComBackoff(it) }
         }
     }
 
     /**
      * Busca binária pelo evento que o servidor rejeita (R4).
      *
-     * Um 400 num lote não diz QUAL evento está malformado. A versão anterior
+     * Um 400 (ou 413) num lote não diz QUAL evento o servidor recusa. A versão anterior
      * descartava os 50 de uma vez — jogava fora até 49 comprovantes bons por
      * causa de um ruim, sem deixar rastro. Aqui o lote é partido ao meio e
      * reenviado até sobrar um único evento; só esse vai para quarentena, e
@@ -186,40 +186,18 @@ class FilaProofOfPlay(
      * o resto do lote. Um lote de tamanho 1 que leva 400 é conclusivo: o
      * problema é aquele evento.
      */
-    private fun isolarPayloadRejeitado(eventos: List<EventoExibicao>) {
+    private fun isolarLoteRecusado(eventos: List<EventoExibicao>) {
         if (eventos.size == 1) {
             val evento = eventos.first()
-            Log.e(TAG, "evento ${evento.execucaoId} rejeitado como malformado (400), em quarentena")
+            Log.e(TAG, "evento ${evento.execucaoId} recusado sozinho pelo servidor, em quarentena")
             db.marcarQuarentena(evento.execucaoId, MOTIVO_QUARENTENA)
             incrementarPerdas(1)
             return
         }
 
         val meio = eventos.size / 2
-        enviarLoteNovo(eventos.subList(0, meio))
-        enviarLoteNovo(eventos.subList(meio, eventos.size))
-    }
-
-    private fun enviarUmLegado(evento: EventoExibicao) {
-        val anuncianteId = evento.anuncianteId
-        if (anuncianteId == null) {
-            db.marcarQuarentena(evento.execucaoId, "sem anuncianteId no formato legado")
-            incrementarPerdas(1)
-            return
-        }
-        when (val resposta = api.enviarLegado(anuncianteId)) {
-            is MostraiApi.RespostaPlayed.SucessoLegado -> db.remover(evento.execucaoId)
-            is MostraiApi.RespostaPlayed.ErroPayload -> {
-                db.marcarQuarentena(evento.execucaoId, MOTIVO_QUARENTENA)
-                incrementarPerdas(1)
-            }
-            is MostraiApi.RespostaPlayed.ErroAparelho -> adiarComBackoff(evento) // fila mantida, reagendada
-            is MostraiApi.RespostaPlayed.RespeitarEspera -> {
-                db.adiarReenvio(evento.execucaoId, fimDaEspera(resposta.segundos), evento.tentativas + 1)
-            }
-            is MostraiApi.RespostaPlayed.Transitorio -> adiarComBackoff(evento)
-            is MostraiApi.RespostaPlayed.Sucesso -> Unit // não ocorre no envio legado
-        }
+        enviarLote(eventos.subList(0, meio))
+        enviarLote(eventos.subList(meio, eventos.size))
     }
 
     /**
@@ -277,6 +255,7 @@ class FilaProofOfPlay(
 
     companion object {
         private const val TAG = "FilaProofOfPlay"
+        /** ~15 KB por lote: o contrato aceita 500, mas o corpo tem teto de 100 KB (413). */
         const val LIMITE_LOTE = 50
 
         /**
@@ -286,18 +265,24 @@ class FilaProofOfPlay(
          * "perdeu a receita do feriado".
          */
         const val TAMANHO_MAXIMO_FILA = 50_000
-        const val HORIZONTE_EXPIRACAO_MS = 7L * 24 * 60 * 60 * 1000
+
+        /**
+         * O servidor aceita até 7 dias depois do FIM da janela (contrato §8);
+         * a janela dura 1 h e o evento nasce dentro dela. 7 dias + 1 h depois
+         * da criação nunca descarta o que o servidor ainda aceitaria.
+         */
+        const val HORIZONTE_EXPIRACAO_MS = (7L * 24 + 1) * 60 * 60 * 1000
 
         /** Teto do `Retry-After` — igual ao maior degrau do backoff. */
         const val ESPERA_MAXIMA_SEGUNDOS = 30 * 60
 
-        /** Acima disto o admin mostra atenção; ver docs/player-v2-contract.md. */
-        const val LIMIAR_ATENCAO = 2_000
+        /** Fila acima disto vira evento no diário — e, pelo heartbeat, erro no admin. */
         const val LIMIAR_ALERTA = 10_000
 
-        const val MOTIVO_QUARENTENA = "rejeitado pelo servidor (400)"
+        const val MOTIVO_QUARENTENA = "recusado pelo servidor (400/413)"
 
-        val STATUS_DEFINITIVOS = setOf(
+        /** Os 6 status finais do contrato (§8): o evento sai da fila. */
+        val STATUS_FINAIS = setOf(
             "contabilizado", "duplicado", "teto_atingido",
             "janela_desconhecida", "item_invalido", "janela_expirada",
         )

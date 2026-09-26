@@ -39,7 +39,8 @@ class HorarioCicloTest {
     fun `exibicao que termina de resolver depois do fechamento nao toca nem reabre a tela`() {
         h.provisionar()
         h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+        // O servidor já está na config que o teste aplica à mão logo abaixo.
+        h.servidor.rotas["/player/"] = ServidorDeTeste.Resposta(200, """{"configVersion":1}""")
         val midia = CountDownLatch(1)
         h.servidor.travas["/midia"] = midia
         h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(corpo = "bytes".toByteArray())
@@ -47,10 +48,10 @@ class HorarioCicloTest {
         val atividade = h.subir().get()
         h.esperar { h.servidor.contar("/midia") > 0 } // resolvendo o cache
 
-        // Loja fecha: CUSTOM sem faixa em dia nenhum.
-        val fechado = """{"configVersion": 1, "operacao": {"regime": "CUSTOM",
+        // Loja fecha: sem faixa em dia nenhum.
+        val fechado = """{"configVersion": 1, "operacao": {"timezone": "America/Sao_Paulo",
             "porDiaDaSemana": {"seg": [], "ter": [], "qua": [], "qui": [], "sex": [], "sab": [], "dom": []}}}"""
-        ConfigAparelho(h.contexto).aplicarConfigRemota(ConfigRemotaJson.parse(fechado)!!, fechado)
+        ConfigAparelho(h.contexto).aplicarConfig(ConfigRemotaJson.parse(fechado)!!, fechado)
         h.avancar(61_000L) // checarHorario
         assertEquals(EstadoPlayer.OUT_OF_SCHEDULE, estado(atividade))
 
