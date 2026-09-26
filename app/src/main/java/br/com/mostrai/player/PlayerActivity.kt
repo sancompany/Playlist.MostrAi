@@ -40,7 +40,6 @@ import br.com.mostrai.player.playlist.RelogioJanela
 import br.com.mostrai.player.playlist.ReposicionamentoPlaylist
 import br.com.mostrai.player.proof.FilaProofOfPlay
 import br.com.mostrai.player.provisionamento.Provisionador
-import br.com.mostrai.player.ui.DpadRotacionado
 import br.com.mostrai.player.ui.EstadoInstitucional
 import br.com.mostrai.player.ui.RotacaoTela
 import br.com.mostrai.player.ui.TelaInstitucional
@@ -154,7 +153,11 @@ class PlayerActivity : AppCompatActivity() {
     /** Origem da última busca de playlist — decide o cartão local e o estado. */
     private var ultimaOrigemFetch: Origem = Origem.NENHUMA
 
-    /** Cobre só a primeira vez, depois do vídeo de abertura. */
+    /**
+     * "Carregando" já mostrado nesta instalação: depois do vídeo de abertura,
+     * e de novo depois de uma reinstalação (senão a tela fica preta até a
+     * primeira playlist).
+     */
     private var primeiraCargaFeita = false
 
     private val avancarPorTempo = Runnable { avancar() }
@@ -338,6 +341,7 @@ class PlayerActivity : AppCompatActivity() {
         pararCiclo()
         telaPin.esconder()
         estadoAtual = EstadoPlayer.NOT_PROVISIONED
+        primeiraCargaFeita = false
         playerView.visibility = View.GONE
         institucional.visibility = View.GONE
         telaProvisionamento.mostrar(config.dispositivoId)
@@ -390,6 +394,8 @@ class PlayerActivity : AppCompatActivity() {
         if (cicloAtivo || !iniciada) return
         cicloAtivo = true
         telaProvisionamento.esconder()
+        // Instalada agora: o primeiro heartbeat não pode dizer o contrário.
+        if (estadoAtual == EstadoPlayer.NOT_PROVISIONED) estadoAtual = EstadoPlayer.IDLE
 
         if (!primeiraCargaFeita) {
             primeiraCargaFeita = true
@@ -848,16 +854,10 @@ class PlayerActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (telaPin.visivel) telaPin.registrarAtividade()
         if (telaProvisionamento.aoTeclar(event) || telaPin.aoTeclar(event)) return true
-        // As setas do controle apontam para onde o espectador olha, não para
-        // o layout sem rotação (DpadRotacionado).
-        val codigo = DpadRotacionado.remapear(event.keyCode, Produto.ROTACAO_GRAUS)
-        if (codigo == event.keyCode) return super.dispatchKeyEvent(event)
-        return super.dispatchKeyEvent(
-            KeyEvent(
-                event.downTime, event.eventTime, event.action, codigo, event.repeatCount,
-                event.metaState, event.deviceId, event.scanCode, event.flags, event.source,
-            )
-        )
+        // As setas não se remapeiam: o conteúdo gira junto com a TV montada de
+        // lado, então o layout já está de pé para quem olha, e a ViewRootImpl
+        // move o foco pela tecla original.
+        return super.dispatchKeyEvent(event)
     }
 
     /**

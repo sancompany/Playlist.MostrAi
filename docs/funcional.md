@@ -71,9 +71,10 @@ pendrive, ADB ou backend:
 | Pedido de PIN | VOLTAR com o app operando e `pinSaida` recebido | Sobreposição "PIN PARA SAIR" com teclado numérico | o do vídeo que continua por trás |
 
 Tudo é desenhado dentro do contêiner girado (`rotor`), então a tela de
-instalação e o PIN também aparecem na orientação certa. O D-pad é remapeado
-para a rotação (`DpadRotacionado`): "cima" no controle é "cima" para quem
-olha a TV.
+instalação e o PIN também aparecem na orientação certa. As setas do controle
+**não** se remapeiam: como o conteúdo gira junto com a TV montada de lado, o
+layout já está de pé para quem olha, e a busca de foco do Android anda nas
+coordenadas do layout — "cima" no controle já é "cima" para o instalador.
 
 ## 4. Regras de negócio
 
@@ -122,9 +123,13 @@ olha a TV.
   alarme do watchdog e fecha o app. `onStart` e `BootReceiver` rearmam.
   `TelaPinSaida`, `Watchdog`.
 
-- **RN-10 — Watchdog.** Alarme a cada 2 min (crescendo até 32 min enquanto a reabertura
-  não pega); 5 min sem sinal de vida e sem saída autorizada → reabre o
-  app. Substitui o launcher `HOME`, que o instalador da TCL recusa
+- **RN-10 — Watchdog.** Alarme a cada 2 min (crescendo até 32 min enquanto
+  a reabertura não pega); 5 min sem sinal de vida → reabre o app. Quatro
+  estados: **não provisionado** → não reabre (o instalador pode estar
+  configurando Wi-Fi ou a TV), mas o alarme segue agendado; **provisionado**
+  → reabre; **saída autorizada por PIN** → não reabre nem reagenda; **abrir
+  o app de novo** (ícone ou boot) → rearma. Substitui o launcher `HOME`, que
+  o instalador da TCL recusa
   (`docs/erros/2026-09-25-instalador-tcl-recusava-app-com-category-home.md`).
 
 - **RN-11 — Margens são visuais.** 4 lados em vmin (0 a 10), aplicados como

@@ -244,7 +244,7 @@ Fechadas:
   Owner/lock task/`Kiosk`, `PainelActivity` e gesto de 3 toques,
   provisionamento por JSON/pendrive/`BuildConfig`/ADB, `baseUrl` e rotação
   configuráveis, rotação de credencial. Novos: tela de instalação e PIN de
-  saída dentro do `rotor` (D-pad remapeado), `saidaAutorizada` que o
+  saída dentro do `rotor`, `saidaAutorizada` que o
   `Watchdog` respeita, heartbeat de 15 s com `fila`/`erro`, config
   serializada e marcada como aplicada só depois de aplicada, 401 →
   reinstalação mantendo a fila, 403 → cartão mantendo a fila. Fix do `HOME`
@@ -252,6 +252,22 @@ Fechadas:
   saiu incluídas), 5.608 → 4.127 linhas de produção, 5 → 3 permissões,
   29 → 14 chaves de estado. versionCode 3, versionName 2.0.0. Checklist
   físico novo de 36 itens em `docs/checklist-fisico-producao.md`.
+
+- **Caça a bugs pós-2.0.0 (26/09/2026, skill `revisar`)** — pedido do
+  dono. 2 ciclos: o primeiro com 2 achados e 1 teste frágil, o segundo
+  limpo. (1) `DpadRotacionado` era inerte (a `ViewRootImpl` move o foco
+  pelo evento original) e partia de premissa errada (o layout já está de pé
+  para quem olha) — removido ·
+  `docs/erros/2026-09-26-remapeamento-do-dpad-sem-efeito-e-premissa-errada.md`.
+  (2) Reinstalar depois de um 401 deixava a tela preta até a primeira
+  playlist e o primeiro heartbeat dizia `NOT_PROVISIONED` — corrigido em
+  `PlayerActivity`. (3) `HeartbeatCicloTest` "playlist atualizar" dependia
+  de o primeiro heartbeat já ter voltado — agora espera. 276 → 275 testes.
+- **Watchdog pré-instalação (26/09/2026, decisão do dono)** — sem
+  credencial, o watchdog não puxa o Player de volta (o instalador pode
+  sair para configurar Wi-Fi); instalado, vale normalmente; saída por PIN
+  desarma; abrir o app rearma. `Watchdog.decidir(provisionado)`,
+  `WatchdogInstalacaoTest` (os quatro estados). 275 → 280 testes.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
@@ -268,7 +284,7 @@ que o dono confirmar o app rodando em aparelho real.
 - Configuração: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda credencial e config aplicada; `ConfigRemota` lê `GET /config`; `HorarioOperacional` é o horário do ponto, puro e testável)
 - Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer` = os 9 estados do contrato)
 - Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `BootReceiver.kt`
-- Rotação e D-pad: `ui/RotacaoTela.kt`, `ui/DpadRotacionado.kt`
+- Rotação: `ui/RotacaoTela.kt` (as setas do controle não se remapeiam — `docs/funcional.md`, seção 3)
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`; `GuardaMvpTest` falha se algo removido voltar
 - Variáveis/segredos: nenhum `.env` e nenhum caminho de provisionamento fora da TV. Keystore de release: `keystore.properties` fora do Git (`RUNBOOK.md`)
 

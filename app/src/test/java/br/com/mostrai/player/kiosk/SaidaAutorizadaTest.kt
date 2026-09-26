@@ -14,6 +14,8 @@ class SaidaAutorizadaTest {
     @Test
     fun `alarme depois da saida autorizada nao abre o player`() {
         val contexto = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        // Instalada: sem isto o watchdog já não reabriria, e o teste não provaria nada.
+        check(br.com.mostrai.player.config.ConfigAparelho(contexto).gravarCredenciais("M-0001", "chave"))
         Watchdog.autorizarSaida(contexto)
 
         Watchdog.Receptor().onReceive(contexto, android.content.Intent())
