@@ -1,5 +1,9 @@
 # Mostraí Player — escopo validado
 
+> **Nota de 26/09/2026:** escopo original da 1.x. O escopo em vigor é o do MVP
+> 2.0.0 — `README.md`, `CONSTRAINTS.md` ("Fora do MVP") e o contrato
+> `sancompany/MostrAi` → `docs/player-mvp-contract.md`.
+
 Registro retroativo da estação 1. O escopo deste projeto foi decidido **antes**
 desta sessão — co-projetado pelo dono (Bruno), o ChatGPT e outra sessão do
 Claude Code — e chegou aqui já fechado, no prompt de abertura. Esta estação

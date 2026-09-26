@@ -6,7 +6,6 @@ import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.ConfigRemota
 import br.com.mostrai.player.config.ConfigRemotaJson
 import br.com.mostrai.player.estado.DiarioBordo
-import br.com.mostrai.player.update.Atualizador
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -17,7 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Ciclo 2 — configuração remota sob sincronizações simultâneas. */
+/** Config aplicada de forma serializada (contrato §6; BUG-010). */
 @RunWith(RobolectricTestRunner::class)
 class ConfigConcorrenciaTest {
 
@@ -35,14 +34,14 @@ class ConfigConcorrenciaTest {
             return if (chamadas.incrementAndGet() == 1) {
                 primeiraEntrou.countDown()
                 primeiraLiberada.await(10, TimeUnit.SECONDS)
-                corpo(12, 90)
+                corpo(12, 1.0)
             } else {
-                corpo(13, 180)
+                corpo(13, 4.0)
             }
         }
 
-        private fun corpo(versao: Int, rotacao: Int): ResultadoHttp<Pair<ConfigRemota, String>> {
-            val texto = """{"configVersion": $versao, "rotacaoTela": $rotacao}"""
+        private fun corpo(versao: Int, margem: Double): ResultadoHttp<Pair<ConfigRemota, String>> {
+            val texto = """{"configVersion": $versao, "margens": {"superior": $margem}}"""
             return ResultadoHttp.Ok(ConfigRemotaJson.parse(texto)!! to texto)
         }
     }
@@ -53,20 +52,15 @@ class ConfigConcorrenciaTest {
     @Before
     fun preparar() {
         contexto = ApplicationProvider.getApplicationContext()
-        contexto.getSharedPreferences("mostrai_config", Context.MODE_PRIVATE).edit().clear().commit()
+        contexto.getSharedPreferences(ConfigAparelho.ARQUIVO, Context.MODE_PRIVATE).edit().clear().commit()
         contexto.deleteDatabase(DiarioBordo.NOME_ARQUIVO)
-        config = ConfigAparelho(contexto).apply {
-            baseUrl = "https://exemplo.com"
-            dispositivoId = "tela-1"
-            chaveAparelho = "chave"
-        }
+        config = ConfigAparelho(contexto).apply { gravarCredenciais("M-0001", "chave") }
     }
 
     @Test
     fun `resposta atrasada de config antiga nao sobrescreve a nova`() {
         val api = ApiDeConfig(config)
-        val diario = DiarioBordo(contexto)
-        val sync = SincronizacaoV2(config, api, diario, Atualizador(contexto, diario))
+        val sync = Sincronizacao(config, api, DiarioBordo(contexto))
 
         val primeira = thread { sync.sincronizarConfigSeNecessario(12) }
         api.primeiraEntrou.await(5, TimeUnit.SECONDS)
@@ -77,6 +71,6 @@ class ConfigConcorrenciaTest {
         segunda.join(5_000)
 
         assertEquals("config regrediu para uma versão antiga", 13, config.configVersionAplicada)
-        assertEquals(180, config.rotacaoTela)
+        assertEquals(4f, config.margens.topo)
     }
 }

@@ -8,17 +8,17 @@ import java.security.MessageDigest
  *
  * Três identidades possíveis, em ordem de confiabilidade decrescente:
  *
- * 1. **`contentHash`** (contrato V2) — endereçamento por conteúdo. O nome do
+ * 1. **`contentHash`** (contrato §7) — endereçamento por conteúdo. O nome do
  *    arquivo É o SHA-256 do que ele contém, então o cache se autoverifica:
  *    dá para conferir o download antes de promovê-lo, dois criativos com a
  *    mesma mídia compartilham um arquivo só, e um `criativoId` reaproveitado
  *    com arquivo novo naturalmente cai em outra chave.
- * 2. **`criativoId`** (contrato V1) — depende da garantia contratual de que
- *    `criativoId → url` é imutável. Se o backend quebrar essa promessa, o
- *    aparelho serve mídia errada sem ter como perceber; é exatamente por isso
- *    que `contentHash` existe e tem precedência.
- * 3. **hash da URL** (modo degradado) — sem `criativoId`, a própria URL é a
- *    única identidade disponível.
+ * 2. **`criativoId`** — o que o contrato §7 manda usar quando falta
+ *    `contentHash`. Depende de `criativoId → url` ser imutável: se o backend
+ *    quebrar essa promessa, o aparelho serve mídia errada sem perceber — é por
+ *    isso que `contentHash` tem precedência.
+ * 3. **hash da URL** — defensivo: item sem `criativoId` (fora do contrato)
+ *    ainda tem a própria URL como identidade.
  *
  * Função pura, sem dependência de Android, de propósito — testável sem
  * Context nem framework de teste especial.

@@ -46,7 +46,7 @@ class DiarioBordoTest {
     @Test
     fun `evento informativo nao conta como erro`() {
         diario.registrar(DiarioBordo.Codigo.BOOT)
-        diario.registrar(DiarioBordo.Codigo.PLAYLIST_OK)
+        diario.registrar(DiarioBordo.Codigo.CONFIG_APLICADA)
 
         assertNull(diario.ultimoErro())
         assertEquals(2, diario.ultimos(10).size)
@@ -64,7 +64,7 @@ class DiarioBordoTest {
 
     @Test
     fun `o erro mais recente vence`() {
-        diario.registrar(DiarioBordo.Codigo.MIDIA_FALHOU, "primeiro")
+        diario.registrar(DiarioBordo.Codigo.PLAYLIST_FALHOU, "primeiro")
         Thread.sleep(2)
         diario.registrar(DiarioBordo.Codigo.AUTH_FALHOU, "segundo")
 

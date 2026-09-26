@@ -7,11 +7,8 @@ import android.util.Log
 import br.com.mostrai.player.kiosk.Watchdog
 
 /**
- * Sobe o player quando a TV liga.
- *
- * Deliberadamente simples: o ciclo de vida completo (serviço em foreground,
- * recuperação depois de o sistema matar o processo) ainda está em aberto no
- * desenho do projeto.
+ * Sobe o player quando a TV liga — inclusive depois de uma saída autorizada
+ * por PIN: o reboot devolve a TV à operação normal ([Watchdog.rearmar]).
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -21,7 +18,7 @@ class BootReceiver : BroadcastReceiver() {
         // ROB-009: alarme não sobrevive a reboot, e só o PlayerActivity
         // reagendava o watchdog. Se a abertura abaixo não pegar (firmware
         // atrasando ou recusando), sem isto nada tentaria de novo.
-        Watchdog.agendar(context)
+        Watchdog.rearmar(context)
 
         val abrir = Intent(context, PlayerActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -16,14 +16,8 @@
 keystore.properties
 signing.properties
 
-# Configuração de aparelho real (dispositivoId/chaveAparelho/baseUrl) para
-# gerar um APK já provisionado — README, "Gerar um APK já configurado por
-# tela". A chave é revogável, mas não é para versionar mesmo assim.
-/dispositivos/*.json
-!/dispositivos/exemplo.json.example
-
-# Mesmo formato, outro caminho de provisionamento (README, "Configurar por
-# um arquivo no pendrive") — na TV vive na raiz do pendrive, mas nada
-# impede de alguém testar localmente com uma cópia na raiz do repositório.
-# Sem entrada de qualquer nível, exatamente como CLAUDE.md já documentava.
+# Provisionamento por JSON/pendrive saiu na 2.0.0. As entradas ficam como
+# trava: um arquivo antigo com dispositivoId/chaveAparelho esquecido numa
+# máquina nunca entra no Git.
+/dispositivos/
 mostrai-config.json

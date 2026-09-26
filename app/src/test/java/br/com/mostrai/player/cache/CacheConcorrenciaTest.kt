@@ -30,8 +30,7 @@ class CacheConcorrenciaTest {
 
     private fun item(caminho: String, criativo: String, contentHash: String? = null) = ItemPlaylist(
         itemProgramacaoId = criativo, criativoId = criativo, duracaoSegundos = 10,
-        url = "${servidor.baseUrl}$caminho", anuncianteId = "a1",
-        autoanuncio = false, institucional = false, contabiliza = true, contentHash = contentHash,
+        url = "${servidor.baseUrl}$caminho", contabiliza = true, contentHash = contentHash,
     )
 
     @Before

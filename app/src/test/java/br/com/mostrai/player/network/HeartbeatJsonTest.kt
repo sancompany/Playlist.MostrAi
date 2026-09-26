@@ -1,6 +1,5 @@
 package br.com.mostrai.player.network
 
-import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.estado.EstadoPlayer
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -9,147 +8,100 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** Heartbeat exatamente como o contrato §5 — sem campos aposentados. */
 class HeartbeatJsonTest {
 
-    private fun corpoBase(
-        estado: EstadoPlayer = EstadoPlayer.PLAYING,
-        erroCodigo: String? = null,
-        filaPendentes: Int = 0,
-    ) = HeartbeatJson.Corpo(
-        estado = estado,
-        configVersionAplicada = 183,
-        criativoId = "criativo-1",
-        ultimaPlaylistOkEm = "2026-09-23T10:00:00-03:00",
-        filaPendentes = filaPendentes,
+    private val corpo = HeartbeatJson.Corpo(
+        estado = EstadoPlayer.PLAYING,
+        configVersionAplicada = 7,
+        criativoId = "123",
+        erro = null,
+        filaPendentes = 0,
         filaMaisAntigoEm = null,
-        erroCodigo = erroCodigo,
-        erroEm = "2026-09-23T03:00:00-03:00",
-        erroMensagem = "detalhe",
-        desvioRelogioMs = -4200,
-        updateEstado = "NONE",
     )
 
-    // ------------------------------------------------------------------ corpo
+    private fun json(dados: HeartbeatJson.Corpo) = JSONObject(HeartbeatJson.corpo(dados))
 
     @Test
-    fun `corpo carrega o que o admin precisa para derivar os estados`() {
-        val json = JSONObject(HeartbeatJson.corpo(corpoBase()))
+    fun `corpo tem so os cinco campos do contrato`() {
+        val json = json(corpo)
 
-        assertEquals(2, json.getInt("versaoContrato"))
+        assertEquals(
+            setOf("estado", "configVersionAplicada", "criativoId", "erro", "fila"),
+            json.keys().asSequence().toSet(),
+        )
         assertEquals("PLAYING", json.getString("estado"))
-        assertEquals(183, json.getInt("configVersionAplicada"))
-        assertEquals("criativo-1", json.getString("criativoId"))
-        assertEquals("2026-09-23T10:00:00-03:00", json.getString("ultimaPlaylistOkEm"))
-        assertEquals(-4200L, json.getLong("desvioRelogioMs"))
+        assertEquals(7, json.getInt("configVersionAplicada"))
+        assertEquals("123", json.getString("criativoId"))
     }
 
     @Test
-    fun `fila vai sempre, mesmo vazia`() {
-        val fila = JSONObject(HeartbeatJson.corpo(corpoBase(filaPendentes = 412))).getJSONObject("fila")
-
-        assertEquals(412, fila.getInt("pendentes"))
-        assertTrue(fila.isNull("maisAntigoEm"))
+    fun `sem criativo no ar o campo fica ausente`() {
+        assertFalse(json(corpo.copy(criativoId = null)).has("criativoId"))
     }
 
     @Test
-    fun `sem erro o campo vai nulo, nao omitido`() {
-        // Omitir faria o backend não conseguir distinguir "não houve erro" de
-        // "esta versão do player não reporta erro".
-        val json = JSONObject(HeartbeatJson.corpo(corpoBase()))
-
+    fun `sem erro o campo vai nulo, o que limpa o erro anterior no servidor`() {
+        val json = json(corpo)
         assertTrue(json.has("erro"))
         assertTrue(json.isNull("erro"))
     }
 
     @Test
-    fun `com erro vai codigo, momento e mensagem`() {
-        val erro = JSONObject(HeartbeatJson.corpo(corpoBase(erroCodigo = "PLAYBACK_FALHOU")))
-            .getJSONObject("erro")
+    fun `com erro vai codigo, mensagem e ocorreuEm`() {
+        val erro = json(
+            corpo.copy(erro = HeartbeatJson.Erro("PLAYBACK_FALHOU", "codec", "2026-09-26T14:00:00-03:00")),
+        ).getJSONObject("erro")
 
         assertEquals("PLAYBACK_FALHOU", erro.getString("codigo"))
-        assertEquals("2026-09-23T03:00:00-03:00", erro.getString("ocorreuEm"))
-        assertEquals("detalhe", erro.getString("mensagem"))
+        assertEquals("codec", erro.getString("mensagem"))
+        assertEquals("2026-09-26T14:00:00-03:00", erro.getString("ocorreuEm"))
     }
 
     @Test
-    fun `estado fora do horario aparece como tal`() {
-        val json = JSONObject(HeartbeatJson.corpo(corpoBase(estado = EstadoPlayer.OUT_OF_SCHEDULE)))
+    fun `fila vai sempre, com pendentes e maisAntigoEm`() {
+        val fila = json(corpo.copy(filaPendentes = 3, filaMaisAntigoEm = "2026-09-26T10:00:00-03:00"))
+            .getJSONObject("fila")
 
-        assertEquals("OUT_OF_SCHEDULE", json.getString("estado"))
+        assertEquals(3, fila.getInt("pendentes"))
+        assertEquals("2026-09-26T10:00:00-03:00", fila.getString("maisAntigoEm"))
+        assertTrue(json(corpo).getJSONObject("fila").isNull("maisAntigoEm"))
     }
 
-    // --------------------------------------------------------------- resposta
+    @Test
+    fun `os estados sao exatamente os nove do contrato`() {
+        assertEquals(
+            setOf(
+                "PLAYING", "IDLE", "OUT_OF_SCHEDULE", "NO_PLAYLIST", "DOWNLOAD_ERROR",
+                "PLAYBACK_ERROR", "AUTH_ERROR", "NOT_PROVISIONED", "CONFIG_ERROR",
+            ),
+            EstadoPlayer.values().map { it.name }.toSet(),
+        )
+    }
 
     @Test
-    fun `le a resposta V2 completa`() {
-        val corpo = """
-            {
-              "servidorAgora": "2026-09-23T13:00:00Z",
-              "configVersion": 184,
-              "playlist": {"atualizar": true},
-              "novaChave": "chave-nova",
-              "update": {
-                "available": true, "required": true, "version": "1.1.0", "build": 3,
-                "url": "https://exemplo.com/app.apk", "sha256": "${"a".repeat(64)}", "size": 123
-              }
-            }
-        """.trimIndent()
+    fun `le a resposta do contrato`() {
+        val resposta = HeartbeatJson.parseResposta("""{"configVersion": 7, "playlist": {"atualizar": true}}""")!!
 
-        val resposta = HeartbeatJson.parseResposta(corpo)!!
-
-        assertEquals("2026-09-23T13:00:00Z", resposta.servidorAgora)
-        assertEquals(184, resposta.configVersion)
+        assertEquals(7, resposta.configVersion)
         assertTrue(resposta.atualizarPlaylist)
-        assertEquals("chave-nova", resposta.novaChave)
-        assertEquals(3, resposta.update?.build)
-        assertTrue(resposta.update!!.obrigatorio)
     }
 
     @Test
-    fun `resposta V1 com margens continua sendo entendida`() {
-        val corpo = """{"ok":true,"margens":{"superior":3,"direita":1.5,"inferior":0,"esquerda":2}}"""
-
-        val resposta = HeartbeatJson.parseResposta(corpo)!!
-
-        assertEquals(MargensOverscan(3f, 0f, 2f, 1.5f), resposta.margens)
-        assertNull(resposta.configVersion)
-        assertFalse(resposta.atualizarPlaylist)
-    }
-
-    @Test
-    fun `resposta vazia nao pede nada`() {
-        val resposta = HeartbeatJson.parseResposta("""{"ok":true}""")!!
-
-        assertNull(resposta.configVersion)
-        assertNull(resposta.margens)
-        assertNull(resposta.update)
+    fun `resposta sem playlist nao pede busca`() {
+        val resposta = HeartbeatJson.parseResposta("""{"configVersion": 7}""")!!
         assertFalse(resposta.atualizarPlaylist)
     }
 
     @Test
     fun `resposta malformada nao lanca e nao se passa por resposta vazia`() {
-        // BUG-034: tratada como {"ok": true}, ela dizia "sem atualização".
         assertNull(HeartbeatJson.parseResposta("não é json"))
     }
 
     @Test
     fun `corpo vazio continua valendo como nada a fazer`() {
         val resposta = HeartbeatJson.parseResposta("")!!
-
-        assertNull(resposta.update)
+        assertNull(resposta.configVersion)
         assertFalse(resposta.atualizarPlaylist)
-    }
-
-    @Test
-    fun `parseMargens do formato antigo continua disponivel`() {
-        val margens = HeartbeatJson.parseMargens("""{"margens":{"superior":5}}""")
-
-        assertEquals(5f, margens?.topo)
-        assertEquals(0f, margens?.base)
-    }
-
-    @Test
-    fun `sem margens no corpo antigo devolve nulo`() {
-        assertNull(HeartbeatJson.parseMargens("""{"ok":true}"""))
     }
 }

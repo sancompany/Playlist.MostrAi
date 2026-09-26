@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import java.util.concurrent.CountDownLatch
@@ -28,12 +29,12 @@ class FilaConcorrenciaTest {
         val enviados = AtomicInteger()
         val idsEnviados = java.util.concurrent.CopyOnWriteArrayList<String>()
 
-        override fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
+        override fun enviarLote(eventos: List<EventoExibicao>): ResultadoHttp<Map<String, String>> {
             entrouNoEnvio.countDown()
             liberar.await(10, TimeUnit.SECONDS)
             enviados.incrementAndGet()
             idsEnviados += eventos.map { it.execucaoId }
-            return RespostaPlayed.Sucesso(eventos.associate { it.execucaoId to "contabilizado" })
+            return ResultadoHttp.Ok(eventos.associate { it.execucaoId to "contabilizado" })
         }
     }
 
@@ -43,10 +44,9 @@ class FilaConcorrenciaTest {
 
     private val item = ItemPlaylist(
         itemProgramacaoId = "i1", criativoId = "c1", duracaoSegundos = 10,
-        url = "https://exemplo.com/v.mp4", anuncianteId = "a1",
-        autoanuncio = false, institucional = false, contabiliza = true,
+        url = "https://exemplo.com/v.mp4", contabiliza = true,
     )
-    private val playlist = Playlist(1, "j1", null, null, null, listOf(item))
+    private val playlist = Playlist("j1", null, null, listOf(item))
 
     @Before
     fun preparar() {

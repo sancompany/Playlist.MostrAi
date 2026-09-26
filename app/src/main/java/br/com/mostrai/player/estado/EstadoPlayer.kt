@@ -7,8 +7,8 @@ package br.com.mostrai.player.estado
  * O player reporta **fato**, nunca diagnóstico: ele não diz "estou sem
  * sinal" (por definição, uma tela sem rede não consegue dizer nada). Quem
  * classifica é o backend, cruzando este estado com o horário de
- * funcionamento da tela e com quanto tempo faz desde o último heartbeat —
- * ver `docs/player-v2-contract.md`, seção "Estados derivados".
+ * funcionamento da tela e com quanto tempo faz desde o último heartbeat.
+ * Os 9 valores são exatamente os do contrato MVP (§5).
  */
 enum class EstadoPlayer {
     /** Exibindo mídia comercial normalmente. */
@@ -17,7 +17,7 @@ enum class EstadoPlayer {
     /** Provisionado e sem erro, mas sem item comercial no ar (institucional, virada). */
     IDLE,
 
-    /** Dentro do regime operacional a tela deveria estar apagada agora. */
+    /** O horário do ponto diz que a tela deveria estar apagada agora. */
     OUT_OF_SCHEDULE,
 
     /** Sem playlist utilizável — nem do servidor, nem do cache. */
@@ -38,6 +38,4 @@ enum class EstadoPlayer {
     /** Configuração remota recebida não pôde ser aplicada. */
     CONFIG_ERROR,
 
-    /** Há atualização baixada e verificada esperando confirmação de instalação. */
-    UPDATE_PENDING,
 }

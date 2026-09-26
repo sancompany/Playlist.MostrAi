@@ -1,3 +1,7 @@
+> **Histórico.** O código deste erro (modo degradado V1 / `PainelActivity`)
+> saiu na reestruturação para o MVP (2.0.0, 26/09/2026). A lição continua
+> valendo; o arquivo citado não existe mais.
+
 # Painel translúcido com orientação fixa derrubava o app no Android 8.0
 
 **Marcar como de ecossistema** — o padrão (tornar uma Activity translúcida

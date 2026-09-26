@@ -3,6 +3,7 @@ package br.com.mostrai.player.proof
 import androidx.test.core.app.ApplicationProvider
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import org.junit.Assert.assertEquals
@@ -25,10 +26,8 @@ class FilaProofOfPlayTest {
     private lateinit var api: ApiDeMentira
 
     private val playlist = Playlist(
-        versaoContrato = 1,
         janelaId = "janela-1",
         janelaInicio = "2026-09-21T13:00:00-03:00",
-        janelaFim = "2026-09-21T14:00:00-03:00",
         servidorAgora = "2026-09-21T13:05:00-03:00",
         itens = emptyList(),
     )
@@ -38,16 +37,13 @@ class FilaProofOfPlayTest {
         criativoId = "crv-1",
         duracaoSegundos = 15,
         url = "https://x/a.mp4",
-        anuncianteId = "anun-1",
-        autoanuncio = false,
-        institucional = false,
         contabiliza = true,
     )
 
     /** Dublê de MostraiApi — respostas canônicas, sem tocar rede de verdade. */
     private class ApiDeMentira(config: ConfigAparelho) : MostraiApi(config) {
-        var proximaResposta: MostraiApi.RespostaPlayed = MostraiApi.RespostaPlayed.Transitorio("nao configurado")
-        override fun enviarLote(eventos: List<EventoExibicao>): MostraiApi.RespostaPlayed = proximaResposta
+        var proximaResposta: ResultadoHttp<Map<String, String>> = ResultadoHttp.SemRede("nao configurado")
+        override fun enviarLote(eventos: List<EventoExibicao>): ResultadoHttp<Map<String, String>> = proximaResposta
     }
 
     @Before
@@ -66,7 +62,7 @@ class FilaProofOfPlayTest {
 
     @Test
     fun `item institucional nunca entra na fila`() {
-        val institucional = item.copy(institucional = true, contabiliza = false, url = null)
+        val institucional = item.copy(contabiliza = false, url = null)
         val id = fila.registrarInicio(institucional, playlist)
 
         assertEquals(null, id)
@@ -76,7 +72,7 @@ class FilaProofOfPlayTest {
     @Test
     fun `status definitivo remove da fila`() {
         val id = criarEExpirar("e1")
-        api.proximaResposta = MostraiApi.RespostaPlayed.Sucesso(mapOf(id to "contabilizado"))
+        api.proximaResposta = ResultadoHttp.Ok(mapOf(id to "contabilizado"))
 
         fila.tentarEnviar()
 
@@ -86,7 +82,7 @@ class FilaProofOfPlayTest {
     @Test
     fun `duplicado tambem remove, nao e erro`() {
         val id = criarEExpirar("e2")
-        api.proximaResposta = MostraiApi.RespostaPlayed.Sucesso(mapOf(id to "duplicado"))
+        api.proximaResposta = ResultadoHttp.Ok(mapOf(id to "duplicado"))
 
         fila.tentarEnviar()
 
@@ -96,7 +92,7 @@ class FilaProofOfPlayTest {
     @Test
     fun `payload malformado remove e conta como perda`() {
         criarEExpirar("e3")
-        api.proximaResposta = MostraiApi.RespostaPlayed.ErroPayload(400)
+        api.proximaResposta = ResultadoHttp.RespostaInvalida("HTTP 400")
 
         fila.tentarEnviar()
 
@@ -107,7 +103,7 @@ class FilaProofOfPlayTest {
     @Test
     fun `erro do aparelho mantem a fila intacta`() {
         criarEExpirar("e4")
-        api.proximaResposta = MostraiApi.RespostaPlayed.ErroAparelho(401)
+        api.proximaResposta = ResultadoHttp.CredencialRecusada(401)
 
         fila.tentarEnviar()
 
@@ -118,7 +114,7 @@ class FilaProofOfPlayTest {
     @Test
     fun `falha transitoria mantem a fila intacta, sem contar perda`() {
         criarEExpirar("e5")
-        api.proximaResposta = MostraiApi.RespostaPlayed.Transitorio("timeout")
+        api.proximaResposta = ResultadoHttp.SemRede("timeout")
 
         fila.tentarEnviar()
 
@@ -139,7 +135,7 @@ class FilaProofOfPlayTest {
     @Test
     fun `linha sem terminadoEm nao e enviada mesmo com tentarEnviar chamado`() {
         fila.registrarInicio(item, playlist)
-        api.proximaResposta = MostraiApi.RespostaPlayed.Sucesso(emptyMap())
+        api.proximaResposta = ResultadoHttp.Ok(emptyMap())
 
         fila.tentarEnviar()
 

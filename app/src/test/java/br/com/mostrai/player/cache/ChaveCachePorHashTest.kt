@@ -22,9 +22,6 @@ class ChaveCachePorHashTest {
         criativoId = criativoId,
         duracaoSegundos = 10,
         url = url,
-        anuncianteId = "a1",
-        autoanuncio = false,
-        institucional = false,
         contabiliza = true,
         contentHash = contentHash,
     )

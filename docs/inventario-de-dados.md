@@ -13,11 +13,14 @@ Ninguém "usa" este app no sentido de ter uma conta, um login ou um perfil.
 
 | Dado | O que é | De quem | Onde fica | Por quê |
 |---|---|---|---|---|
-| `dispositivoId` | Identificador da tela no cadastro do Mostraí | Ativo do negócio (a TV), não pessoa | `SharedPreferences` local + enviado ao servidor em toda chamada | Identificar qual tela está falando com o backend |
-| `chaveAparelho` | Chave de autenticação revogável | Ativo do negócio | `SharedPreferences` local + header `X-Aparelho-Id` | Autenticação sem usuário/senha (veto formal) |
-| `execucaoId`, `janelaId`, `itemProgramacaoId`, `criativoId` | Identificadores opacos de exibição de anúncio | Nenhuma pessoa — são identificadores de conteúdo publicitário e de janela de tempo | SQLite local (fila) + enviados ao servidor | Comprovante de que um anúncio passou, para cobrança do anunciante |
-| `iniciadoEm`, `terminadoEm` | Timestamp de início/fim de uma exibição | Não é dado de pessoa — é dado operacional do aparelho | SQLite local + enviado ao servidor | Auditoria da exibição (nunca decide crédito, seção 6.2) |
-| PIN do painel | 4 dígitos, configuração do aparelho | Não identifica pessoa — é segredo operacional compartilhado por quem opera aquela tela | `SharedPreferences` local, nunca enviado à rede | Proteger o painel de manutenção contra acesso casual |
+| `dispositivoId` (`M-0235`) | Código da tela no cadastro do Mostraí | Ativo do negócio (a TV), não pessoa | `SharedPreferences` privado + caminho de toda rota autenticada | Identificar qual tela fala com o backend |
+| `chaveAparelho` | Credencial revogável da tela | Ativo do negócio | `SharedPreferences` privado + header `X-Aparelho-Key`; nunca em tela, log ou diário | Autenticação sem usuário/senha (veto formal) |
+| Código de instalação | 8 caracteres, uso único, 30 min | Ativo do negócio | Só na memória, enquanto digitado; nunca gravado; apagado depois do sucesso | Trocar pela credencial |
+| `execucaoId`, `janelaId`, `itemProgramacaoId`, `criativoId` | Identificadores opacos de exibição | Nenhuma pessoa | SQLite local (fila) + `/played` | Comprovante de exibição para cobrança |
+| `iniciadoEm`, `terminadoEm` | Início/fim de uma exibição | Dado operacional do aparelho | SQLite local + `/played` | Auditoria (nunca decide crédito) |
+| Config (margens, horário do ponto, `pinSaida`) | Configuração operacional | Do Mostraí | `SharedPreferences` privado | Aplicar offline |
+| `pinSaida` | PIN global de saída, 4–8 dígitos | Segredo operacional compartilhado, não identifica pessoa | `SharedPreferences` privado (vem da config); nunca enviado de volta | Autorizar saída do app |
+| Heartbeat (`estado`, `erro`, `fila`, versão do app) | Estado técnico da tela | Do aparelho | Enviado a cada 15 s; erro no diário local (SQLite) | Saúde da tela no admin |
 
 Nenhuma dessas linhas identifica uma pessoa física, isolada ou em
 combinação com outro dado que o app tenha acesso. `dispositivoId` e
@@ -37,7 +40,7 @@ não um indivíduo.
 
 Como não há dado pessoal, os documentos legais que dependem de inventário de
 dado de pessoa (Política de Privacidade orientada a titular, direitos de
-titular no código — seção 8 de `docs/funcional.md`) **não se aplicam a este
+titular no código — seção 7 de `docs/funcional.md`) **não se aplicam a este
 app**. Se o Mostraí como negócio processa dado pessoal em outro lugar (ex.:
 cadastro de anunciante, cadastro de comércio no admin), isso é inventário do
-backend/admin (`sancompany/mostrai` ou equivalente), fora deste repositório.
+backend/admin (`sancompany/MostrAi`), fora deste repositório.

@@ -13,9 +13,6 @@ class ChaveCacheTest {
         criativoId = criativoId,
         duracaoSegundos = 10,
         url = url,
-        anuncianteId = "anunciante",
-        autoanuncio = false,
-        institucional = false,
         contabiliza = true,
     )
 

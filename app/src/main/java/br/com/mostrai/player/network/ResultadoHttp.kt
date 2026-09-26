@@ -1,24 +1,17 @@
 package br.com.mostrai.player.network
 
 /**
- * Resultado de uma chamada à API, com as famílias de falha separadas (R8).
- *
- * A versão anterior colapsava tudo em `null`: uma chave revogada (401) ficava
- * indistinguível de um servidor fora do ar (500) e de um cabo solto
- * (timeout). Como cada uma exige uma ação diferente — reprovisionar, esperar,
- * ignorar — o tipo precisa preservar a diferença até quem decide.
+ * Resultado de uma chamada à API, com as famílias de falha separadas (R8):
+ * cada uma pede uma reação diferente — reinstalar, esperar, tentar de novo.
  */
 sealed class ResultadoHttp<out T> {
     data class Ok<T>(val valor: T) : ResultadoHttp<T>()
 
-    /** 401/403 — a credencial não serve. Nenhuma retentativa resolve. */
-    data class ErroAutenticacao(val codigo: Int) : ResultadoHttp<Nothing>()
+    /** 401 — credencial recusada: a tela volta para a instalação (contrato §4). */
+    data class CredencialRecusada(val codigo: Int = 401) : ResultadoHttp<Nothing>()
 
-    /**
-     * 404 — nesta API significa "rota inexistente", que é exatamente como um
-     * backend V1 responde a um endpoint V2. Sinal de degradar, não de erro.
-     */
-    object NaoEncontrado : ResultadoHttp<Nothing>()
+    /** 403 — tela em reparo ou inativa no cadastro (só `/playlist` e `/played`). */
+    object TelaSuspensa : ResultadoHttp<Nothing>()
 
     /** 429 — servidor pediu para esperar. */
     data class Limitado(val segundos: Int) : ResultadoHttp<Nothing>()
@@ -29,19 +22,17 @@ sealed class ResultadoHttp<out T> {
     /** Timeout, DNS, socket — a TV não falou com ninguém. */
     data class SemRede(val motivo: String) : ResultadoHttp<Nothing>()
 
-    /** Respondeu 2xx, mas o corpo não é o que o contrato diz. */
+    /** Respondeu, mas não o que o contrato diz (corpo ilegível, código inesperado). */
     data class RespostaInvalida(val motivo: String) : ResultadoHttp<Nothing>()
 
-    /** Não dá nem para tentar: falta baseUrl, dispositivoId ou credencial. */
-    data class SemCredencial(val motivo: String) : ResultadoHttp<Nothing>()
-
-    val ok: T? get() = (this as? Ok)?.valor
+    /** Não dá nem para tentar: aparelho sem credencial. */
+    object SemCredencial : ResultadoHttp<Nothing>()
 
     /** Código curto e estável para o diário e para o heartbeat. */
     fun codigoDiagnostico(): String = when (this) {
         is Ok -> "OK"
-        is ErroAutenticacao -> "AUTH_$codigo"
-        is NaoEncontrado -> "NAO_ENCONTRADO"
+        is CredencialRecusada -> "AUTH_$codigo"
+        is TelaSuspensa -> "SUSPENSA"
         is Limitado -> "LIMITADO"
         is ErroServidor -> "SERVIDOR_$codigo"
         is SemRede -> "SEM_REDE"

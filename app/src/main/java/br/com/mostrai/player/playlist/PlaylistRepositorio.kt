@@ -1,16 +1,15 @@
 package br.com.mostrai.player.playlist
 
 import android.content.Context
-import android.util.Log
 import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.network.PlaylistJson
+import br.com.mostrai.player.network.ResultadoHttp
 
 /**
- * Fonte de verdade da playlist atual: busca no servidor, cai para a última
- * cache válida se a rede falhar, e cai para a tela institucional se não
- * houver nem uma coisa nem outra.
+ * Fonte da playlist atual: o servidor; sem ele, a última válida (contrato
+ * §7: "internet caiu ≠ tela parou"); sem nenhuma das duas, nada.
  *
- * Chamar [buscar] sempre de uma thread de fundo — faz rede e E/S de disco.
+ * Chamar [buscar] de uma thread de fundo — faz rede e E/S de disco.
  */
 class PlaylistRepositorio(
     context: Context,
@@ -18,50 +17,52 @@ class PlaylistRepositorio(
 ) {
     private val cache = PlaylistCache(context)
 
+    enum class Origem {
+        SERVIDOR,
+        CACHE,
+
+        /** Nem servidor nem cache. */
+        NENHUMA,
+
+        /** 403: tela em reparo/inativa — não exibe anúncios (contrato §4). */
+        SUSPENSA,
+
+        /** 401: a credencial acabou de ser recusada. */
+        RECUSADA,
+    }
+
     data class Resultado(
         val playlist: Playlist,
         val relogio: RelogioJanela?,
         val origem: Origem,
-        val erroAparelho: Int?,
-        val falhaTransitoria: String?,
+        /** Por que não veio do servidor, para o diário. Null quando veio. */
+        val falha: String?,
     )
 
-    enum class Origem { SERVIDOR, CACHE, INSTITUCIONAL }
-
-    fun buscar(): Resultado {
-        return when (val resposta = api.buscarPlaylist()) {
-            is MostraiApi.RespostaPlaylist.Sucesso -> {
-                val relogio = resposta.playlist.servidorAgora?.let { RelogioJanela.agora(it) }
-                cache.salvar(resposta.corpoBruto, relogio)
-                Resultado(resposta.playlist, relogio, Origem.SERVIDOR, null, null)
-            }
-            is MostraiApi.RespostaPlaylist.ErroAparelho -> {
-                Log.w(TAG, "erro do aparelho (${resposta.codigo}) ao buscar playlist")
-                carregarFallback(erroAparelho = resposta.codigo, falhaTransitoria = null)
-            }
-            is MostraiApi.RespostaPlaylist.Transitorio -> {
-                Log.i(TAG, "falha transitória ao buscar playlist: ${resposta.motivo}")
-                carregarFallback(erroAparelho = null, falhaTransitoria = resposta.motivo)
-            }
+    fun buscar(): Resultado = when (val resposta = api.buscarPlaylist()) {
+        is ResultadoHttp.Ok -> {
+            val (playlist, corpo) = resposta.valor
+            val relogio = playlist.servidorAgora?.let { RelogioJanela.agora(it) }
+            cache.salvar(corpo, relogio)
+            Resultado(playlist, relogio, Origem.SERVIDOR, null)
         }
+        is ResultadoHttp.TelaSuspensa -> {
+            // Sem apagar, uma queda de rede durante o reparo voltaria a tocar
+            // os anúncios da última playlist guardada.
+            cache.limpar()
+            Resultado(Playlist.VAZIA, null, Origem.SUSPENSA, "tela suspensa no cadastro (HTTP 403)")
+        }
+        is ResultadoHttp.CredencialRecusada ->
+            Resultado(Playlist.VAZIA, null, Origem.RECUSADA, "credencial recusada (HTTP 401)")
+        else -> ultimaValida(resposta.codigoDiagnostico())
     }
 
-    private fun carregarFallback(erroAparelho: Int?, falhaTransitoria: String?): Resultado {
+    private fun ultimaValida(motivo: String): Resultado {
         val salva = cache.carregar()
-        if (salva != null) {
-            val playlist = runCatching { PlaylistJson.parse(salva.corpoBruto) }.getOrNull()
-            // Uma âncora só serve se o relógio monotônico não deu a volta desde
-            // que ela foi criada — reboot real invalida a retomada por tempo
-            // (decisão fechada com o GPT, item 7.1).
-            val relogioValido = salva.ancora?.takeIf { it.valida() }
-            if (playlist != null) {
-                return Resultado(playlist, relogioValido, Origem.CACHE, erroAparelho, falhaTransitoria)
-            }
-        }
-        return Resultado(Playlist.somenteInstitucional(), null, Origem.INSTITUCIONAL, erroAparelho, falhaTransitoria)
-    }
-
-    private companion object {
-        const val TAG = "PlaylistRepositorio"
+        val playlist = salva?.let { PlaylistJson.parse(it.corpoBruto) }
+            ?: return Resultado(Playlist.VAZIA, null, Origem.NENHUMA, motivo)
+        // Âncora só serve se o relógio monotônico não deu a volta desde que
+        // ela foi criada — reboot real invalida a retomada por tempo (7.1).
+        return Resultado(playlist, salva.ancora?.takeIf { it.valida() }, Origem.CACHE, motivo)
     }
 }

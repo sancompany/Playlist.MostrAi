@@ -1,96 +1,93 @@
 # RUNBOOK — Mostraí Player
 
-Como operar, reverter e restaurar o app instalado numa TV. Proporcional ao
-projeto (Lei 0): sem serviço hospedado, sem banco remoto — quase tudo aqui é
-local ao aparelho.
+Como operar, reverter e restaurar o app instalado numa TV. Sem serviço
+hospedado deste lado: quase tudo aqui é local ao aparelho. O protocolo com o
+servidor é `sancompany/MostrAi` → `docs/player-mvp-contract.md`.
 
 ## Operar
 
-**Ver o estado do aparelho** (painel de manutenção): 3 acionamentos do botão
-OK/CENTER do controle remoto em até 3 segundos, digitar o PIN (4 dígitos).
-Mostra: tela e chave configuradas, modo de contrato do servidor (novo ou
-degradado), origem da última playlist (servidor/cache/institucional), erro
-do aparelho mais recente, e o estado da fila de proof-of-play (pendentes e
-perdas). `VOLTAR` sai do painel sem afetar a reprodução.
+**Instalar e provisionar**: `README.md`, "Instalar numa TV". ID da tela
+(`M-0235`) + código de instalação (`XXXX-XXXX`, 30 min, uso único) gerado no
+admin.
 
-**Ver logs em bancada** (aparelho conectado por USB ou ADB via rede):
+**Ver o estado de uma tela**: no admin (Aguardando instalação, Operando, Fora
+do horário, Sem sinal, Erro do Player). O Player manda `estado`, `erro`,
+`fila` e a config aplicada a cada 15 s. Não há painel de diagnóstico na TV.
+
+**Mudar margens, horário ou PIN**: no admin. A TV aplica em até ~15 s (próximo
+heartbeat → `GET /config`), sem reiniciar.
+
+**Sair do app na TV**: VOLTAR → PIN de saída. O watchdog não reabre. Para
+voltar, abrir o app (ou reiniciar a TV).
+
+**Ver logs em bancada** (TV com depuração ADB ligada — só diagnóstico, não é
+caminho de provisionamento):
 
 ```sh
 adb logcat --pid=$(adb shell pidof -s br.com.mostrai.player)
 ```
 
-Tags relevantes: `MostraiPlayer` (ciclo de reprodução), `MostraiApi` (rede),
-`FilaProofOfPlay` (fila de comprovante), `PlaylistRepositorio`.
-
-**Forçar uma nova busca de playlist**: reiniciar o app (o `onStart` sempre
-busca com reposicionamento). Não há comando remoto para isso na v1.
+Tags: `MostraiPlayer`, `MostraiApi`, `FilaProofOfPlay`, `PlaylistRepositorio`,
+`Watchdog`. A chave do aparelho nunca aparece nos logs.
 
 ## Reverter
 
-Não há atualização remota (OTA — item em aberto, seção "Em aberto" do
-`README.md`). Reverter é reinstalar uma versão anterior do APK por sideload:
+Não há OTA. Reverter é reinstalar a versão anterior do APK por sideload,
+**assinada com a mesma chave** (senão o Android só instala depois de
+desinstalar, e desinstalar apaga a credencial e a fila de proof-of-play).
+Com a mesma chave, credencial, config e fila sobrevivem à reinstalação.
 
-```sh
-adb install -r app-debug-<versao-anterior>.apk
-```
-
-A configuração do aparelho (`ConfigAparelho`, `SharedPreferences`) e a fila
-de proof-of-play (`ProofOfPlayDb`, SQLite) **sobrevivem** a uma reinstalação
-com `-r` (não usar `adb uninstall`, que apaga os dois). Se precisar mesmo
-apagar o estado local, `adb uninstall br.com.mostrai.player` — isso descarta
-qualquer proof-of-play ainda não enviado, sem contá-lo como perda (não passa
-pelo contador de `FilaProofOfPlay`, porque o processo nem chega a rodar).
+A 2.0.0 lê a fila SQLite da 1.x sem perda (migração não destrutiva). A
+credencial da 1.x também é lida; se a tela não existir mais no backend, o
+primeiro 401 leva à tela de instalação.
 
 ## Restaurar
 
-Não há backup a restaurar: a fila de proof-of-play é o único estado que
-importa manter, e ela é local ao aparelho — não tem cópia remota por
-desenho (decisão: o servidor é quem tem a cópia de verdade, uma vez que o
-evento foi `contabilizado`). Um aparelho que perde o armazenamento (troca de
-TV, reset de fábrica) perde o que estava pendente de envio; o que já foi
-enviado com sucesso já está no servidor.
-
-**Teste de restauração aplicável aqui**: reinstalar o APK numa TV limpa e
-confirmar que o app reprovisiona (ver `README.md`, "Instalar e provisionar
-em bancada") e volta a tocar — não há estado de servidor a restaurar deste
-lado.
+Não há backup: o único estado que importa é a fila de proof-of-play, e o
+servidor é quem guarda a cópia de verdade depois do `contabilizado`. TV que
+perde o armazenamento (reset, troca) perde só o que estava pendente de envio.
+Restaurar uma tela = instalar o APK e provisionar de novo com um código novo.
 
 ## Responder a incidente
 
-**App não sobe depois de ligar a TV**: verificar se `BOOT_COMPLETED` chegou
-(`adb logcat | grep BootReceiver`); alguns aparelhos usam
-`QUICKBOOT_POWERON` em vez de `BOOT_COMPLETED` — o app trata os dois
-(`BootReceiver.kt`). Se nenhum dos dois disparar, é limitação do firmware do
-aparelho, fora do controle deste app.
+**App não sobe depois de ligar a TV**: `adb logcat | grep BootReceiver`. O app
+trata `BOOT_COMPLETED` e `QUICKBOOT_POWERON`. Se nenhum chegar, o watchdog
+não tem como agir (ele é rearmado pelo boot ou pela abertura manual) — é
+limite do firmware.
 
-**Tela mostra "aparelho ainda não provisionado"**: falta `dispositivoId`,
-`chaveAparelho` ou `baseUrl` em `ConfigAparelho`. Reprovisionar via `adb`
-(`README.md`) até o provisionamento de campo (item em aberto) existir.
+**TV voltou para a tela de instalação sozinha**: o servidor respondeu 401 —
+Player revogado, tela arquivada ou código antigo. Gerar código novo no admin e
+provisionar. A fila de proof-of-play foi mantida e será enviada.
 
-**Painel mostra "servidor em contrato antigo"**: o backend ainda não expôs
-o envelope novo (`versaoContrato`) — não é falha do app, é o estado esperado
-enquanto a outra sessão (repo `sancompany/mostrai`) não publica o contrato
-da seção 6.
+**Cartão da marca em vez de anúncios**: fora do horário do ponto, ou tela em
+reparo/inativa (403). Conferir no admin.
 
-**Fila de proof-of-play crescendo sem enviar** (painel mostra "pendente"
-alto e sem queda): checar `X-Aparelho-Id` (chave pode ter sido revogada no
-admin → erro 401/403, fila fica intacta e visível no painel) e conectividade
-de rede do comércio.
+**"Não foi possível carregar a programação"**: sem playlist do servidor e sem
+cache, ou playlist vazia. Conferir internet do ponto; o app tenta de novo a
+cada 60 s.
+
+**Fila de proof-of-play crescendo** (heartbeat mostra `fila.pendentes` alto):
+rede do ponto ou 403. Nada se perde antes de 7 dias.
+
+**Imagem de ponta-cabeça**: build nova com `ROTACAO_GRAUS = 270` em
+`Produto.kt`. Nunca tornar configurável.
 
 ## Chave de assinatura
 
 **Passo manual obrigatório antes da primeira instalação definitiva.**
 
-Toda atualização futura do player precisa ser assinada com **a mesma chave**
-do APK já instalado. O Android recusa a troca de assinatura: um APK assinado
-com outra chave não atualiza, só instala por cima de uma desinstalação — e
-desinstalar apaga a identidade da tela e a fila de proof-of-play inteira.
+Toda versão futura do player precisa ser assinada com **a mesma chave** do
+APK já instalado. O Android recusa a troca de assinatura: um APK assinado com
+outra chave não atualiza, só instala depois de uma desinstalação — e
+desinstalar apaga a credencial da tela e a fila de proof-of-play inteira.
 
-Ou seja: se a primeira leva de TVs sair com assinatura de depuração, ou com
-uma chave que se perca depois, **essas telas nunca poderão ser atualizadas
-remotamente**. Cada uma vira uma visita presencial, para sempre.
+Ou seja: TVs que saírem com o APK de debug, ou com uma chave que se perca
+depois, só trocam de versão com desinstalação + reprovisionamento, uma a uma.
 
-### Gerar
+**Quem gera a chave é o dono, fora desta sessão e fora do repositório.**
+Nenhuma sessão automatizada gera o keystore definitivo.
+
+### Gerar (o dono, na própria máquina)
 
 ```sh
 keytool -genkeypair -v \
@@ -113,9 +110,15 @@ keyAlias=mostrai
 keyPassword=...
 ```
 
-Sem esse arquivo o build de release sai **sem assinatura de produção**, de
-propósito — falhar aqui custa um minuto; descobrir em campo custa uma visita
-por tela.
+Alternativa sem arquivo (CI, máquina compartilhada): as mesmas quatro
+chaves em variáveis de ambiente/segredos do executor, gravadas em
+`keystore.properties` só durante o build e apagadas depois — nunca no
+repositório nem no log.
+
+Sem esse arquivo o build de release sai **sem assinatura**
+(`app-release-unsigned.apk`), de propósito — falhar aqui custa um minuto;
+descobrir em campo custa uma visita por tela. APK não assinado com a chave
+definitiva **não** é produção.
 
 ### Guardar
 

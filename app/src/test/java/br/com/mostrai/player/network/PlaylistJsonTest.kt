@@ -6,81 +6,73 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** Só o envelope do contrato §7 é playlist. Nada de array V1. */
 class PlaylistJsonTest {
 
+    private val exemplo = """
+        {
+          "versaoContrato": 2,
+          "janelaId": "235|2026-09-26T14:00:00.000Z",
+          "janelaInicio": "2026-09-26T14:00:00.000Z",
+          "janelaFim": "2026-09-26T15:00:00.000Z",
+          "servidorAgora": "2026-09-26T14:07:31.512Z",
+          "itens": [
+            {
+              "itemProgramacaoId": "235|2026-09-26T14:00:00.000Z|0|17",
+              "criativoId": "88", "anuncianteId": 17, "autoanuncio": false, "institucional": false,
+              "contabiliza": true, "url": "https://x/criativos/88.mp4", "duracaoSegundos": 15,
+              "contentHash": "${"3F".repeat(32)}"
+            },
+            {
+              "itemProgramacaoId": "235|2026-09-26T14:00:00.000Z|1|inst",
+              "criativoId": null, "institucional": true, "contabiliza": false,
+              "url": null, "duracaoSegundos": 20
+            }
+          ]
+        }
+    """.trimIndent()
+
     @Test
-    fun `array puro cai em modo degradado`() {
-        val corpo = """
-            [
-                {"anuncianteId": "anun-1", "url": "https://x/a.mp4", "duracaoSegundos": 15},
-                {"anuncianteId": null, "autoanuncio": true, "url": "https://x/auto.mp4", "duracaoSegundos": 10},
-                {"anuncianteId": null, "institucional": true, "url": null, "duracaoSegundos": 8}
-            ]
-        """.trimIndent()
+    fun `le o envelope do contrato`() {
+        val playlist = PlaylistJson.parse(exemplo)!!
 
-        val playlist = PlaylistJson.parse(corpo)
-
-        assertTrue(playlist.modoDegradado)
-        assertNull(playlist.janelaId)
-        assertEquals(3, playlist.itens.size)
+        assertEquals("235|2026-09-26T14:00:00.000Z", playlist.janelaId)
+        assertEquals("2026-09-26T14:00:00.000Z", playlist.janelaInicio)
+        assertEquals("2026-09-26T14:07:31.512Z", playlist.servidorAgora)
+        assertEquals(2, playlist.itens.size)
 
         val anuncio = playlist.itens[0]
-        assertEquals("anun-1", anuncio.anuncianteId)
+        assertEquals("235|2026-09-26T14:00:00.000Z|0|17", anuncio.itemProgramacaoId)
+        assertEquals("88", anuncio.criativoId)
+        assertEquals(15, anuncio.duracaoSegundos)
         assertTrue(anuncio.contabiliza)
-        assertNull(anuncio.itemProgramacaoId)
-        assertNull(anuncio.criativoId)
+        assertEquals("3f".repeat(32), anuncio.contentHash)
+    }
 
-        val autoanuncio = playlist.itens[1]
-        assertTrue(autoanuncio.autoanuncio)
-        assertFalse(autoanuncio.contabiliza)
+    @Test
+    fun `institucional sem url vira item de cartao local que nao conta`() {
+        val institucional = PlaylistJson.parse(exemplo)!!.itens[1]
 
-        val institucional = playlist.itens[2]
-        assertTrue(institucional.institucional)
-        assertFalse(institucional.contabiliza)
         assertNull(institucional.url)
+        assertNull(institucional.criativoId)
+        assertFalse(institucional.contabiliza)
+        assertEquals(20, institucional.duracaoSegundos)
     }
 
     @Test
-    fun `envelope com versaoContrato usa contrato novo`() {
-        val corpo = """
-            {
-                "versaoContrato": 1,
-                "janelaId": "janela-abc",
-                "janelaInicio": "2026-09-21T13:00:00-03:00",
-                "janelaFim": "2026-09-21T14:00:00-03:00",
-                "servidorAgora": "2026-09-21T13:05:00-03:00",
-                "itens": [
-                    {
-                        "itemProgramacaoId": "slot-1",
-                        "criativoId": "crv-9",
-                        "duracaoSegundos": 20,
-                        "url": "https://x/b.mp4",
-                        "anuncianteId": "anun-2",
-                        "autoanuncio": false,
-                        "institucional": false,
-                        "contabiliza": true
-                    }
-                ]
-            }
-        """.trimIndent()
-
-        val playlist = PlaylistJson.parse(corpo)
-
-        assertFalse(playlist.modoDegradado)
-        assertEquals("janela-abc", playlist.janelaId)
-        assertEquals("2026-09-21T13:00:00-03:00", playlist.janelaInicio)
-        assertEquals(1, playlist.itens.size)
-
-        val item = playlist.itens[0]
-        assertEquals("slot-1", item.itemProgramacaoId)
-        assertEquals("crv-9", item.criativoId)
-        assertTrue(item.contabiliza)
+    fun `array solto do contrato antigo nao e playlist`() {
+        assertNull(PlaylistJson.parse("""[{"url":"https://x/v.mp4","duracaoSegundos":10}]"""))
     }
 
     @Test
-    fun `array vazio nao quebra e fica em modo degradado`() {
-        val playlist = PlaylistJson.parse("[]")
-        assertTrue(playlist.modoDegradado)
-        assertTrue(playlist.itens.isEmpty())
+    fun `envelope sem itens ou sem janelaId nao e playlist`() {
+        assertNull(PlaylistJson.parse("""{"janelaId":"j"}"""))
+        assertNull(PlaylistJson.parse("""{"itens":[]}"""))
+        assertNull(PlaylistJson.parse("<html>502</html>"))
+    }
+
+    @Test
+    fun `lista vazia e playlist valida sem itens`() {
+        assertEquals(0, PlaylistJson.parse("""{"janelaId":"j","itens":[]}""")!!.itens.size)
     }
 }

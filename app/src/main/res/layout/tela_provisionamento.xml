@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Tela de instalação (contrato §3): só o ID da tela, o código de
+     instalação e CONECTAR. O teclado é do próprio app, dentro do quadro
+     girado — o teclado do sistema apareceria de lado numa TV montada a 90°.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/telaProvisionamento"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0B0B0F"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:visibility="gone">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="32dp"
+        android:text="@string/prov_titulo"
+        android:textColor="#FFFFFF"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+    <TextView
+        style="@style/ProvRotulo"
+        android:text="@string/prov_id" />
+
+    <TextView
+        android:id="@+id/campoId"
+        style="@style/ProvCampo" />
+
+    <TextView
+        style="@style/ProvRotulo"
+        android:text="@string/prov_codigo" />
+
+    <TextView
+        android:id="@+id/campoCodigo"
+        style="@style/ProvCampo" />
+
+    <TextView
+        android:id="@+id/botaoConectar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:background="@drawable/fundo_tecla"
+        android:focusable="true"
+        android:paddingStart="36dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="36dp"
+        android:paddingBottom="12dp"
+        android:text="@string/prov_conectar"
+        android:textColor="@color/cor_tecla"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/mensagemProvisionamento"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:textColor="#FFB4A9"
+        android:textSize="16sp"
+        android:visibility="invisible" />
+
+    <GridLayout
+        android:id="@+id/tecladoProvisionamento"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:columnCount="10" />
+</LinearLayout>

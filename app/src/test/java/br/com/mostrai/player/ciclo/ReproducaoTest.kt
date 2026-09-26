@@ -76,7 +76,6 @@ class ReproducaoTest {
         // conteúdo — o operador via uma TV "travada carregando".
         h.provisionar()
         h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = "[]".toByteArray())
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
 
         val atividade = h.subir().get()
         h.esperar { h.servidor.contar("/playlist") > 0 }
@@ -99,7 +98,6 @@ class ReproducaoTest {
         // admin montasse para esse estado nunca acenderia.
         h.provisionar()
         h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(codigo = 503)
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
 
         val atividade = h.subir().get()
         h.esperar { h.servidor.contar("/playlist") > 0 }

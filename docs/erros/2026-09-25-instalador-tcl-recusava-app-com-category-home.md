@@ -62,3 +62,10 @@ toda TV onde ninguém escolhesse o player como padrão.
 Sem teste automatizado: é o instalador do fabricante, só existe na TV.
 Item 4 de `docs/checklist-fisico-producao.md` atualizado para conferir o
 retorno pelo watchdog em vez do launcher.
+
+## Depois do MVP (2.0.0, 26/09/2026)
+
+`Kiosk`, lock task e `REQUEST_INSTALL_PACKAGES` saíram junto com o OTA. O
+manifesto continua **sem** o filtro `HOME` — `GuardaMvpTest` falha se ele
+voltar. O `Watchdog` segue sendo quem devolve o player à frente, e agora
+respeita a saída autorizada por PIN (`docs/funcional.md`, RN-09).

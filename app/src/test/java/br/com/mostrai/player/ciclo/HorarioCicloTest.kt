@@ -3,7 +3,6 @@ package br.com.mostrai.player.ciclo
 import br.com.mostrai.player.PlayerActivity
 import br.com.mostrai.player.cache.ServidorDeTeste
 import br.com.mostrai.player.config.ConfigAparelho
-import br.com.mostrai.player.config.ConfigRemotaJson
 import br.com.mostrai.player.estado.EstadoPlayer
 import java.util.concurrent.CountDownLatch
 import org.junit.After
@@ -14,7 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.LooperMode
 
-/** Ciclo 9 — fechar no horário com uma exibição ainda resolvendo. */
+/** Horário do ponto chegando pela config com uma exibição ainda resolvendo (BUG-025). */
 @RunWith(RobolectricTestRunner::class)
 @LooperMode(LooperMode.Mode.PAUSED)
 class HorarioCicloTest {
@@ -29,30 +28,31 @@ class HorarioCicloTest {
     @After
     fun encerrar() = h.encerrar()
 
-    private fun estado(atividade: PlayerActivity): EstadoPlayer {
-        val campo = PlayerActivity::class.java.getDeclaredField("estadoAtual")
-        campo.isAccessible = true
-        return campo.get(atividade) as EstadoPlayer
-    }
+    private fun estado(atividade: PlayerActivity) = h.campo<EstadoPlayer>(atividade, "estadoAtual")
 
     @Test
     fun `exibicao que termina de resolver depois do fechamento nao toca nem reabre a tela`() {
         h.provisionar()
-        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, h.playlistComUmVideo())
         val midia = CountDownLatch(1)
         h.servidor.travas["/midia"] = midia
-        h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(corpo = "bytes".toByteArray())
+        h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(200, "bytes")
+        // O admin fecha o ponto (todos os dias sem faixa): chega pela config,
+        // mas só depois que a exibição já está resolvendo o cache.
+        val heartbeat = CountDownLatch(1)
+        h.servidor.travas["/player/M-0001/heartbeat"] = heartbeat
+        h.servidor.rotas["/player/M-0001/heartbeat"] = ServidorDeTeste.Resposta(200, """{"configVersion":1}""")
+        h.servidor.rotas["/player/M-0001/config"] = ServidorDeTeste.Resposta(
+            200,
+            """{"configVersion":1,"operacao":{"timezone":"America/Sao_Paulo","porDiaDaSemana":
+               {"seg":[],"ter":[],"qua":[],"qui":[],"sex":[],"sab":[],"dom":[]}}}""",
+        )
 
         val atividade = h.subir().get()
-        h.esperar { h.servidor.contar("/midia") > 0 } // resolvendo o cache
-
-        // Loja fecha: CUSTOM sem faixa em dia nenhum.
-        val fechado = """{"configVersion": 1, "operacao": {"regime": "CUSTOM",
-            "porDiaDaSemana": {"seg": [], "ter": [], "qua": [], "qui": [], "sex": [], "sab": [], "dom": []}}}"""
-        ConfigAparelho(h.contexto).aplicarConfigRemota(ConfigRemotaJson.parse(fechado)!!, fechado)
-        h.avancar(61_000L) // checarHorario
-        assertEquals(EstadoPlayer.OUT_OF_SCHEDULE, estado(atividade))
+        h.esperar { h.orfaos() == 1 } // exibição registrada, cache preso
+        heartbeat.countDown()
+        h.esperar { estado(atividade) == EstadoPlayer.OUT_OF_SCHEDULE }
+        assertEquals(1, ConfigAparelho(h.contexto).configVersionAplicada)
 
         midia.countDown()
         repeat(25) {

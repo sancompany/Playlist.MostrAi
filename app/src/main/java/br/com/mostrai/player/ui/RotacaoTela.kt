@@ -10,10 +10,10 @@ import kotlin.math.roundToInt
 /**
  * Aplica margem de overscan e rotação de tela num par raiz/rotor.
  *
- * Usado por `PlayerActivity` e `PainelActivity` — as duas compartilham o
- * mesmo padrão de layout: `raiz` preenche a tela física inteira (o
- * framebuffer nativo do painel, sempre landscape), `rotor` carrega o
- * conteúdo de verdade e é quem gira.
+ * Padrão de layout de `PlayerActivity`: `raiz` preenche a tela física
+ * inteira (o framebuffer nativo do painel, sempre landscape), `rotor`
+ * carrega o conteúdo de verdade — vídeo, cartões, instalação, PIN — e é
+ * quem gira. A rotação é a constante do APK ([br.com.mostrai.player.Produto.ROTACAO_GRAUS]).
  *
  * Rotação existe porque o Android não tem como saber que o painel foi
  * montado fisicamente de lado — comum em sinalização digital em espaço

@@ -37,9 +37,6 @@ class CacheMidiaHashTest {
         criativoId = criativoId,
         duracaoSegundos = 10,
         url = "$base/midia.mp4",
-        anuncianteId = "a1",
-        autoanuncio = false,
-        institucional = false,
         contabiliza = true,
         contentHash = contentHash,
     )

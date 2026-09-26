@@ -116,19 +116,6 @@ class CicloDeVidaTest {
 
     // ------------------------------------------------------------ ROB-007
 
-    @Test
-    fun `hello que falhou no boot e tentado de novo sem reiniciar o app`() {
-        // TV que liga sem internet e fica semanas no ar: sem nova tentativa,
-        // o admin nunca recebe modelo, versão e resolução da tela.
-        h.provisionar()
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 503)
-        h.subir()
-        h.esperar { h.servidor.contar("/player/tela-1/hello") == 1 }
-
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(corpo = "{}".toByteArray())
-        h.avancar(5 * 60_000L + 1_000L) // um heartbeat periódico
-        runCatching { h.esperar { h.servidor.contar("/player/tela-1/hello") == 2 } }.onFailure { throw AssertionError("recebidas: ${h.servidor.recebidas}") }
-    }
 
     // ------------------------------------------------------ Ciclo 18/19
 
@@ -145,7 +132,6 @@ class CicloDeVidaTest {
         h.provisionar()
         h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
         h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(corpo = "bytes".toByteArray())
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
 
         val controle = h.subir()
         // O ExoPlayer do Robolectric não decodifica o corpo de teste e acaba
@@ -171,7 +157,6 @@ class CicloDeVidaTest {
         // Invariante 9: com uma busca por vez, a resposta de uma busca antiga
         // não tem como chegar depois da de uma nova e sobrescrevê-la.
         h.provisionar()
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
         h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
         val trava = CountDownLatch(1)
         h.servidor.travas["/playlist"] = trava
@@ -203,7 +188,6 @@ class CicloDeVidaTest {
         // reconectar, até 15 min de anúncios da hora errada — comprovantes
         // que o servidor recusa como janela_expirada.
         h.provisionar()
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
         h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(codigo = 503)
         h.subir()
         h.esperar { h.servidor.contar("/playlist") == 1 }
@@ -224,7 +208,6 @@ class CicloDeVidaTest {
     @Test
     fun `rede disponivel no boot nao gera busca extra de playlist`() {
         h.provisionar()
-        h.servidor.rotas["/player"] = ServidorDeTeste.Resposta(codigo = 404)
         h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
         h.subir()
         h.esperar { h.servidor.contar("/playlist") == 1 }

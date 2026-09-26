@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import org.junit.Assert.assertEquals
@@ -22,13 +23,13 @@ class FilaEscalaEQuarentenaTest {
         var idRuim: String? = null
         var lotesEnviados = mutableListOf<Int>()
 
-        override fun enviarLote(eventos: List<EventoExibicao>): RespostaPlayed {
+        override fun enviarLote(eventos: List<EventoExibicao>): ResultadoHttp<Map<String, String>> {
             lotesEnviados += eventos.size
             val ruim = idRuim
             return if (ruim != null && eventos.any { it.execucaoId == ruim }) {
-                RespostaPlayed.ErroPayload(400)
+                ResultadoHttp.RespostaInvalida("HTTP 400")
             } else {
-                RespostaPlayed.Sucesso(eventos.associate { it.execucaoId to "contabilizado" })
+                ResultadoHttp.Ok(eventos.associate { it.execucaoId to "contabilizado" })
             }
         }
     }
@@ -43,12 +44,9 @@ class FilaEscalaEQuarentenaTest {
         criativoId = "c1",
         duracaoSegundos = 10,
         url = "https://exemplo.com/v.mp4",
-        anuncianteId = "a1",
-        autoanuncio = false,
-        institucional = false,
         contabiliza = true,
     )
-    private val playlist = Playlist(1, "janela-1", null, null, null, listOf(item))
+    private val playlist = Playlist("janela-1", null, null, listOf(item))
 
     @Before
     fun preparar() {
@@ -77,7 +75,6 @@ class FilaEscalaEQuarentenaTest {
 
     @Test
     fun `limiares de alerta ficam abaixo do teto`() {
-        assertTrue(FilaProofOfPlay.LIMIAR_ATENCAO < FilaProofOfPlay.LIMIAR_ALERTA)
         assertTrue(FilaProofOfPlay.LIMIAR_ALERTA < FilaProofOfPlay.TAMANHO_MAXIMO_FILA)
     }
 
