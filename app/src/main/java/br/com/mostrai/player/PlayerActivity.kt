@@ -32,6 +32,7 @@ import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.network.Sincronizacao
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
+import br.com.mostrai.player.playlist.PlaylistCache
 import br.com.mostrai.player.playlist.PlaylistRepositorio
 import br.com.mostrai.player.playlist.PlaylistRepositorio.Origem
 import br.com.mostrai.player.playlist.PosicaoNaPlaylist
@@ -343,8 +344,17 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun conectar(idDigitado: String, codigoDigitado: String) {
+        val telaAnterior = config.dispositivoId
         lifecycleScope.launch {
-            val resultado = withContext(Dispatchers.IO) { provisionador.provisionar(idDigitado, codigoDigitado) }
+            val resultado = withContext(Dispatchers.IO) {
+                provisionador.provisionar(idDigitado, codigoDigitado).also {
+                    // Outra tela: a última playlist guardada é da anterior e
+                    // não pode servir de fallback offline para esta.
+                    if (it is Provisionador.Resultado.Ok && telaAnterior != null && telaAnterior != config.dispositivoId) {
+                        PlaylistCache(this@PlayerActivity).limpar()
+                    }
+                }
+            }
             val mensagem = when (resultado) {
                 is Provisionador.Resultado.Ok -> {
                     telaProvisionamento.esconder()

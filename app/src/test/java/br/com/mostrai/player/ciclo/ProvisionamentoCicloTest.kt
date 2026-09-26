@@ -117,4 +117,26 @@ class ProvisionamentoCicloTest {
         assertTrue(ConfigAparelho(h.contexto).provisionado)
         assertEquals(View.GONE, h.vista<View>(atividade, R.id.telaProvisionamento).visibility)
     }
+
+    @Test
+    fun `reinstalar como outra tela descarta a playlist guardada da anterior`() {
+        h.provisionar(id = "M-0001", chave = "revogada")
+        ConfigAparelho(h.contexto).esquecerCredencialSeFor("revogada")
+        br.com.mostrai.player.playlist.PlaylistCache(h.contexto).salvar(h.playlistComUmVideo(), null)
+        h.servidor.rotas["/player/provisionar"] =
+            ServidorDeTeste.Resposta(200, """{"dispositivoId":"M-0002","chaveAparelho":"$chave"}""")
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(503, "")
+        val atividade = h.subir().get()
+
+        h.vista<TextView>(atividade, R.id.campoId).performClick()
+        h.tecla(atividade, R.id.tecladoProvisionamento, "⌫")
+        h.tecla(atividade, R.id.tecladoProvisionamento, "2")
+        h.vista<TextView>(atividade, R.id.campoCodigo).performClick()
+        "7K4M9Q2W".forEach { h.tecla(atividade, R.id.tecladoProvisionamento, it.toString()) }
+        h.vista<TextView>(atividade, R.id.botaoConectar).performClick()
+
+        h.esperar { h.servidor.contar("/playlist/M-0002") > 0 }
+        h.esperar { h.campo<Any>(atividade, "ultimaOrigemFetch").toString() == "NENHUMA" }
+        assertNull(br.com.mostrai.player.playlist.PlaylistCache(h.contexto).carregar())
+    }
 }
