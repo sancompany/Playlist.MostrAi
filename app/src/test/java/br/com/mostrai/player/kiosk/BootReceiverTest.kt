@@ -27,4 +27,17 @@ class BootReceiverTest {
 
         assertNotNull("nenhum alarme de watchdog agendado no boot", shadowOf(alarmes).nextScheduledAlarm)
     }
+
+    @Test
+    fun `reboot depois de uma saida autorizada volta a operar`() {
+        // A saída por PIN não pode virar uma TV apagada para sempre.
+        val contexto = ApplicationProvider.getApplicationContext<Context>()
+        Watchdog.autorizarSaida(contexto)
+
+        BootReceiver().onReceive(contexto, Intent(Intent.ACTION_BOOT_COMPLETED))
+
+        org.junit.Assert.assertFalse(Watchdog.saidaAutorizada(contexto))
+        val aberta = shadowOf(contexto as android.app.Application).nextStartedActivity
+        org.junit.Assert.assertEquals(br.com.mostrai.player.PlayerActivity::class.java.name, aberta.component?.className)
+    }
 }

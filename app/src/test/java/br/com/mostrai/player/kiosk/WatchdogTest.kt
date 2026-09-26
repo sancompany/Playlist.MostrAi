@@ -63,4 +63,22 @@ class WatchdogTest {
         assertFalse(decisao.abrirPlayer)
         assertEquals(Watchdog.INTERVALO_BASE_MS, decisao.proximoAtrasoMs)
     }
+
+    // ------------------------------------------------------------ saída
+
+    @Test
+    fun `crash, processo morto ou HOME deixam o sinal velho e o player volta`() {
+        val decisao = Watchdog.decidir(vivoEmMs = 1_000, agoraMs = 1_000 + Watchdog.TOLERANCIA_MS + 1, tentativas = 0)
+        assertTrue(decisao.abrirPlayer)
+    }
+
+    @Test
+    fun `saida autorizada por PIN nao reabre nem reagenda`() {
+        val decisao = Watchdog.decidir(vivoEmMs = 0, agoraMs = 10_000_000, tentativas = 0, saidaAutorizada = true)
+
+        assertFalse(decisao.abrirPlayer)
+        assertEquals(null, decisao.proximoAtrasoMs)
+    }
+
+
 }

@@ -26,6 +26,8 @@ class ServidorDeTeste {
         val corpo: ByteArray = ByteArray(0),
         val tipo: String? = null,
         val cabecalhos: Map<String, String> = emptyMap(),
+        /** Segura a resposta até o servidor encerrar — um download que nunca termina. */
+        val pendurar: Boolean = false,
     ) {
         constructor(codigo: Int, corpo: String) : this(codigo, corpo.toByteArray())
     }
@@ -38,6 +40,22 @@ class ServidorDeTeste {
 
     /** Prefixo de caminho → resposta. O prefixo mais longo que casar vence. */
     val rotas = ConcurrentHashMap<String, Resposta>()
+
+    /** Prefixo → respostas consumidas uma por requisição, antes de [rotas]. */
+    val sequencias = ConcurrentHashMap<String, java.util.concurrent.ConcurrentLinkedQueue<Resposta>>()
+
+    fun emSequencia(prefixo: String, vararg respostas: Resposta) {
+        sequencias[prefixo] = java.util.concurrent.ConcurrentLinkedQueue(respostas.toList())
+    }
+
+    /**
+     * Prefixo → (cabeçalho, resposta): vale só para requisições que trazem o
+     * cabeçalho. É como o teste separa a leitura do ExoPlayer (que manda
+     * `Icy-MetaData: 1` em mídia progressiva) do download do cache.
+     */
+    val rotasPorCabecalho = ConcurrentHashMap<String, Pair<String, Resposta>>()
+
+    private val encerrado = CountDownLatch(1)
 
     /** Prefixo de caminho → trava que segura a resposta até `countDown()`. */
     val travas = ConcurrentHashMap<String, CountDownLatch>()
@@ -118,10 +136,22 @@ class ServidorDeTeste {
                     .maxByOrNull { it.key.length }
                     ?.value?.await(30, TimeUnit.SECONDS)
 
-                val resposta = rotas.entries
+                val daSequencia = sequencias.entries
+                    .filter { caminho.startsWith(it.key) }
+                    .maxByOrNull { it.key.length }
+                    ?.value?.poll()
+                val porCabecalho = rotasPorCabecalho.entries
+                    .filter { caminho.startsWith(it.key) && cabecalhos.containsKey(it.value.first) }
+                    .maxByOrNull { it.key.length }
+                    ?.value?.second
+                val resposta = porCabecalho ?: daSequencia ?: rotas.entries
                     .filter { caminho.startsWith(it.key) }
                     .maxByOrNull { it.key.length }
                     ?.value ?: Resposta(codigo, corpo)
+                if (resposta.pendurar) {
+                    encerrado.await(60, TimeUnit.SECONDS)
+                    return
+                }
 
                 val cabecalho = buildString {
                     append("HTTP/1.1 ${resposta.codigo} ${if (resposta.codigo in 200..299) "OK" else "Erro"}\r\n")
@@ -141,6 +171,7 @@ class ServidorDeTeste {
 
     fun encerrar() {
         rodando = false
+        encerrado.countDown()
         travas.values.forEach { while (it.count > 0) it.countDown() }
         runCatching { socket.close() }
     }

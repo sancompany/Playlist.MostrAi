@@ -66,6 +66,17 @@ class Harness {
         """.trimIndent()
     }
 
+    /**
+     * Mídia que o ExoPlayer do Robolectric nunca recebe: o download do cache
+     * falha (503) e a leitura direta da URL pelo ExoPlayer fica pendurada. O
+     * item fica "no ar" (PLAYING, exibição registrada) sem que a falta de
+     * decoder no Robolectric transforme tudo em erro de reprodução.
+     */
+    fun midiaNoAr() {
+        servidor.rotas["/midia"] = ServidorDeTeste.Resposta(503, "")
+        servidor.rotasPorCabecalho["/midia"] = "icy-metadata" to ServidorDeTeste.Resposta(pendurar = true)
+    }
+
     fun subir(): ActivityController<PlayerActivity> {
         val controle = Robolectric.buildActivity(PlayerActivity::class.java).setup()
         idle()
@@ -88,7 +99,7 @@ class Harness {
             Thread.sleep(20)
         }
         idle()
-        check(condicao()) { "condição não foi atingida em ${timeoutMs}ms" }
+        check(condicao()) { "condição não foi atingida em ${timeoutMs}ms; servidor recebeu ${servidor.recebidas}" }
     }
 
     /** Linhas na fila que começaram e nunca terminaram. */
@@ -98,6 +109,36 @@ class Harness {
             it.moveToFirst()
             return it.getInt(0)
         }
+    }
+
+    /** Lê um campo privado da Activity — o estado que o teste precisa provar. */
+    @Suppress("UNCHECKED_CAST")
+    fun <T> campo(atividade: PlayerActivity, nome: String): T {
+        val f = PlayerActivity::class.java.getDeclaredField(nome)
+        f.isAccessible = true
+        return f.get(atividade) as T
+    }
+
+    fun <T : android.view.View> vista(atividade: PlayerActivity, id: Int): T = atividade.findViewById(id)
+
+    /** Clica na tecla da grade (instalação ou PIN) que mostra [texto]. */
+    fun tecla(atividade: PlayerActivity, grade: Int, texto: String) {
+        val teclado = vista<android.widget.GridLayout>(atividade, grade)
+        val alvo = (0 until teclado.childCount).map(teclado::getChildAt)
+            .first { (it as android.widget.TextView).text.toString() == texto }
+        alvo.performClick()
+    }
+
+    /** Grava uma config como se tivesse vindo do servidor. */
+    fun aplicarConfig(corpo: String) {
+        val config = ConfigAparelho(contexto)
+        check(config.aplicarConfig(br.com.mostrai.player.config.ConfigRemotaJson.parse(corpo)!!, corpo))
+    }
+
+    fun voltar(atividade: PlayerActivity) {
+        atividade.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+        atividade.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
+        idle()
     }
 
     fun encerrar() {

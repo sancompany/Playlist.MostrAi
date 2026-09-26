@@ -137,4 +137,39 @@ class HorarioOperacionalTest {
         org.junit.Assert.assertEquals(510, FaixaHoraria.deTexto("08:30"))
     }
 
+
+    // --------------------------------------------- o exemplo do contrato §6
+
+    private val doContrato by lazy {
+        ConfigRemotaJson.parse(
+            """{"configVersion":7,"operacao":{"timezone":"America/Sao_Paulo","porDiaDaSemana":{
+               "seg":[{"inicio":"08:00","fim":"18:00"}],"ter":[{"inicio":"08:00","fim":"18:00"}],
+               "qua":[{"inicio":"08:00","fim":"18:00"}],"qui":[{"inicio":"08:00","fim":"18:00"}],
+               "sex":[{"inicio":"08:00","fim":"22:00"}],"sab":[{"inicio":"18:00","fim":"02:00"}],"dom":[]},
+               "feriados":{"2026-10-12":[],"2026-11-02":[]}}}""",
+        )!!.horario
+    }
+
+    @Test
+    fun `madrugada de domingo pertence a faixa de sabado`() {
+        // 2026-09-26 é sábado; 2026-09-27, domingo.
+        assertTrue(doContrato.estaDentro(instante("2026-09-26", "23:30")))
+        assertTrue(doContrato.estaDentro(instante("2026-09-27", "01:59")))
+        assertFalse(doContrato.estaDentro(instante("2026-09-27", "02:00")))
+        assertFalse("domingo é fechado", doContrato.estaDentro(instante("2026-09-27", "12:00")))
+    }
+
+    @Test
+    fun `feriado substitui o dia, inclusive a madrugada da vespera`() {
+        // 2026-10-12 é segunda: feriado fechado.
+        assertFalse(doContrato.estaDentro(instante("2026-10-12", "10:00")))
+        assertTrue(doContrato.estaDentro(instante("2026-10-13", "10:00")))
+    }
+
+    @Test
+    fun `fuso da config vale mesmo com a TV em outro fuso`() {
+        // 11:00 UTC = 08:00 em São Paulo (quarta, 2026-09-23): abre.
+        assertTrue(doContrato.estaDentro(java.time.Instant.parse("2026-09-23T11:00:00Z")))
+        assertFalse(doContrato.estaDentro(java.time.Instant.parse("2026-09-23T10:59:00Z")))
+    }
 }
