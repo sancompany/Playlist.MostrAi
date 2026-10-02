@@ -103,7 +103,12 @@ class OfflineCicloTest {
         h.servidor.rotas["/player/M-0001/played"] = ServidorDeTeste.Resposta(403, "")
         val atividade = h.subir().get()
 
-        h.esperar { h.servidor.contar("/playlist/") == 1 && estado(atividade) == EstadoPlayer.IDLE }
+        // "Carregando" também é IDLE, e o servidor conta a requisição antes
+        // de o app processar o 403: espera o cartão de fato.
+        h.esperar {
+            h.servidor.contar("/playlist/") == 1 && estado(atividade) == EstadoPlayer.IDLE &&
+                h.campo<TelaInstitucional>(atividade, "institucional").estado == EstadoInstitucional.CARTAO
+        }
         h.esperar { h.servidor.contar("/player/M-0001/played") >= 1 }
 
         assertEquals(EstadoInstitucional.CARTAO, h.campo<TelaInstitucional>(atividade, "institucional").estado)

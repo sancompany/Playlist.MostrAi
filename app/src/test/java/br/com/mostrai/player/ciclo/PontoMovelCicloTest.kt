@@ -85,6 +85,28 @@ class PontoMovelCicloTest {
     }
 
     @Test
+    fun `retentativa de um minuto nao reinicia o institucional de reserva`() {
+        val agora = System.currentTimeMillis()
+        h.servidor.rotas["/playlist/"] =
+            ServidorDeTeste.Resposta(200, playlist(Math.floorDiv(agora, hora) * hora - 12 * hora, agora))
+        h.contexto.getSharedPreferences("mostrai_institucional", Context.MODE_PRIVATE).edit()
+            .putString("itens", """[{"criativoId":null,"url":"${h.servidor.baseUrl}/midia/institucional.mp4","duracaoSegundos":600,"contentHash":null}]""")
+            .commit()
+
+        val atividade = h.subir().get()
+        h.esperar { h.campo<Boolean>(atividade, "emFallback") }
+        h.deixarRodar(500)
+        val geracao = h.campo<Int>(atividade, "geracaoReproducao")
+        repeat(4) {
+            h.avancar(60_500L)
+            h.deixarRodar(300)
+        }
+
+        assertTrue("a retentativa nem rodou", h.servidor.contar("/playlist/") >= 3)
+        assertEquals("o vídeo de reserva recomeçou a cada minuto", geracao, h.campo<Int>(atividade, "geracaoReproducao"))
+    }
+
+    @Test
     fun `programacao vencida sem institucional guardado mostra o cartao, nunca o comercial`() {
         val agora = System.currentTimeMillis()
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(

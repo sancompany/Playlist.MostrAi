@@ -170,9 +170,12 @@ class PlayerActivity : AppCompatActivity() {
     private var emFallback = false
     private var indiceFallback = 0
 
-    /** Sessão operacional em curso ([RegistroOperacional]); escrita na thread de E/S. */
+    /** Sessão operacional em curso ([RegistroOperacional]); escrita só na thread principal. */
     @Volatile
     private var sessaoAtual: String? = null
+
+    /** Conta os ciclos que abriram sessão (só na thread principal): a sessão só fica com o ciclo que a pediu. */
+    private var cicloOperacional = 0
 
     /** Último envio de sessões (uptime): a sessão aberta vai a cada 15 min, as encerradas na hora. */
     @Volatile
@@ -201,8 +204,13 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** Sem servidor e sem última playlist válida, tenta de novo bem antes do poll de 15 min. */
-    private val retentarPlaylist = Runnable { atualizarPlaylist(forcarReposicionamento = true) }
+    /**
+     * Sem servidor e sem última playlist válida (ou com ela vencida), tenta
+     * de novo bem antes do poll de 15 min. Sem forçar reposicionamento: a
+     * mesma janela de volta não pode reiniciar o institucional de reserva a
+     * cada minuto (ciclo 3); janela nova e lista vazia reiniciam sozinhas.
+     */
+    private val retentarPlaylist = Runnable { atualizarPlaylist(forcarReposicionamento = false) }
 
     private val heartbeatPeriodico = object : Runnable {
         override fun run() {
@@ -506,13 +514,14 @@ class PlayerActivity : AppCompatActivity() {
     private fun abrirSessaoOperacional() {
         val dispositivo = config.dispositivoId
         val servidor = servidorAgoraMs()
+        val meuCiclo = ++cicloOperacional
         lifecycleScope.launch(Dispatchers.IO) {
             val id = registro.abrir(dispositivo, servidor)
             val ficou = withContext(Dispatchers.Main) {
-                // O ciclo pode ter parado enquanto a sessão abria (401 na
-                // primeira busca): sessão órfã seria estendida pelo sinal de
-                // vida na tela de instalação.
-                if (cicloAtivo && sessaoAtual == null) {
+                // O ciclo pode ter parado (ou parado e recomeçado) enquanto a
+                // sessão abria: sessão de um ciclo que já não é o atual seria
+                // estendida pelo sinal de vida sem ter ciclo por trás.
+                if (cicloAtivo && meuCiclo == cicloOperacional) {
                     sessaoAtual = id
                     true
                 } else {

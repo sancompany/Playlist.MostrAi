@@ -191,21 +191,37 @@ class RegistroOperacional(context: Context) :
         }
     }
 
+    /**
+     * Estende a sessão até agora. O relógio do servidor anda com o
+     * monotônico dentro do mesmo boot, então: com o instante do servidor em
+     * mãos, um início que ficou sem ele (sessão aberta antes da primeira
+     * âncora) é recalculado para trás; sem ele (âncora perdida no meio do
+     * ciclo), o fim de servidor anterior é projetado para a frente — nunca
+     * fica parado enquanto a duração cresce.
+     */
     private fun estender(sessaoId: String, servidorMs: Long?, fechar: String?) {
-        val valores = ContentValues().apply {
-            put("fim_uptime_ms", SystemClock.elapsedRealtime())
-            put("fim_parede_ms", System.currentTimeMillis())
-            if (servidorMs != null) put("fim_servidor_ms", servidorMs)
-            if (fechar != null) {
-                put("aberta", 0)
-                put("motivo_fim", fechar)
-            }
-        }
+        val agoraUptime = SystemClock.elapsedRealtime()
         // Só a sessão aberta e do mesmo boot anda: depois de um reboot o
         // uptime recomeça do zero e "estender" criaria duração negativa.
-        writableDatabase.update(
-            TABELA, valores, "sessao_id = ? AND aberta = 1 AND boot_count = ?",
-            arrayOf(sessaoId, contagemDeBoot().toString()),
+        // (No UPDATE do SQLite, toda expressão do SET lê os valores ANTIGOS
+        // da linha.)
+        writableDatabase.execSQL(
+            """
+            UPDATE $TABELA SET
+              inicio_servidor_ms = CASE
+                WHEN inicio_servidor_ms IS NULL AND ?1 IS NOT NULL THEN ?1 - (?2 - inicio_uptime_ms)
+                ELSE inicio_servidor_ms END,
+              fim_servidor_ms = CASE
+                WHEN ?1 IS NOT NULL THEN ?1
+                WHEN fim_servidor_ms IS NOT NULL THEN fim_servidor_ms + (?2 - fim_uptime_ms)
+                ELSE NULL END,
+              fim_uptime_ms = ?2,
+              fim_parede_ms = ?3,
+              aberta = CASE WHEN ?4 IS NULL THEN aberta ELSE 0 END,
+              motivo_fim = COALESCE(?4, motivo_fim)
+            WHERE sessao_id = ?5 AND aberta = 1 AND boot_count = ?6
+            """.trimIndent(),
+            arrayOf<Any?>(servidorMs, agoraUptime, System.currentTimeMillis(), fechar, sessaoId, contagemDeBoot()),
         )
     }
 

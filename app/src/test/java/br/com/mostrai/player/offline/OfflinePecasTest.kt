@@ -221,6 +221,24 @@ class OfflinePecasTest {
     }
 
     @Test
+    fun `relogio do servidor anda com o monotonico, inicio recalculado e fim projetado`() {
+        val registro = RegistroOperacional(contexto)
+        // Abriu antes da primeira âncora: sem instante do servidor.
+        val id = registro.abrir("M-0235", servidorMs = null)!!
+        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(10))
+        // Veio a âncora: o servidor diz que agora é 1_000_000.
+        registro.checkpoint(id, servidorMs = 1_000_000L)
+        // A âncora se perdeu (403, sem playlist) e a sessão seguiu 5 min.
+        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(5))
+        registro.checkpoint(id, servidorMs = null)
+
+        val s = registro.pendentes().single()
+        assertEquals("início projetado para trás", 1_000_000L - 10 * 60_000L, s.inicioServidorMs)
+        assertEquals("fim não fica parado", 1_000_000L + 5 * 60_000L, s.fimServidorMs)
+        assertEquals(s.duracaoMs, s.fimServidorMs!! - s.inicioServidorMs!!)
+    }
+
+    @Test
     fun `queda de energia encerra a sessao no ultimo checkpoint, sem inventar tempo`() {
         val registro = RegistroOperacional(contexto)
         val id = registro.abrir("M-0235", null)!!

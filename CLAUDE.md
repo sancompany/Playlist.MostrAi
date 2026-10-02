@@ -282,7 +282,7 @@ Fechadas:
   `/player/$id/operacao`). Watchdog: retorno exato em 5 s depois do HOME,
   backstop de 90 s. Bloco técnico de suporte só atrás do PIN (exceção em
   `CONSTRAINTS.md`). Decisões superadas marcadas em `docs/funcional.md`
-  (RN-06, RN-07, RN-10) e `CONSTRAINTS.md`. 280 → 326 testes. Backend:
+  (RN-06, RN-07, RN-10) e `CONSTRAINTS.md`. 280 → 328 testes. Backend:
   [sancompany/MostrAi#113](https://github.com/sancompany/MostrAi/pull/113)
   (conectividade ≠ operação + rota de sessões). Proposta do pacote offline de
   vários dias: `docs/offline-prolongado-proposta-backend.md`. Erros:
