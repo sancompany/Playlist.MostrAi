@@ -21,3 +21,4 @@ signing.properties
 # máquina nunca entra no Git.
 /dispositivos/
 mostrai-config.json
+.kotlin/
