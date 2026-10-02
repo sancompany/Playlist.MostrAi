@@ -25,6 +25,15 @@ Código do MVP completo contra `sancompany/MostrAi` → `docs/player-mvp-contrac
   150.000, o descarte pode escolher como "órfã" a linha que acabou de
   terminar, sem contar a perda; (c) um download grande pode consumir a
   reserva de disco depois da checagem de espaço, que é só antes de baixar.
+- **Plausíveis dos ciclos 3 e 4 (o 4 foi limpo), baixos:** (d) `abrir` de
+  dois ciclos fora de ordem no lock do SQLite pode fechar a sessão do ciclo
+  atual — correção natural: um executor serial único para abrir, checkpoint
+  e fechar; (e) item sem `itemProgramacaoId` (fora do contrato) reinicia o
+  institucional de reserva a cada minuto; (f) em ~1 de 30 telas a busca da
+  virada pode ver a janela anterior ainda válida por milissegundos e não
+  agendar a retentativa — fica até o poll de 15 min; (g) redirecionamento
+  de CDN com timeout de conexão no `responseCode` vira "falha de rede", não
+  "sem rede" (tenta o streaming).
 
 ## Só o dono faz
 
