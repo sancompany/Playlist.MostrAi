@@ -177,6 +177,8 @@ class PlayerActivity : AppCompatActivity() {
     /** Último envio de sessões (uptime): a sessão aberta vai a cada 15 min, as encerradas na hora. */
     @Volatile
     private var ultimoEnvioOperacaoMs = 0L
+    @Volatile
+    private var ultimaFalhaOperacaoMs = Long.MIN_VALUE / 2
 
     /**
      * Diário numa fila de uma thread só: fora da thread principal (o vídeo
@@ -229,7 +231,7 @@ class PlayerActivity : AppCompatActivity() {
             Watchdog.registrarSinalDeVida(this@PlayerActivity)
             relogio.registrarPiso(relogioJanela)
             sessaoAtual?.let { id ->
-                val servidor = agoraConfiavelMs()
+                val servidor = servidorAgoraMs()
                 lifecycleScope.launch(Dispatchers.IO) { registro.checkpoint(id, servidor) }
             }
             handler.postDelayed(this, INTERVALO_SINAL_DE_VIDA_MS)
@@ -503,9 +505,21 @@ class PlayerActivity : AppCompatActivity() {
     /** O ciclo começou: uma sessão nova (e a anterior, se ficou aberta, é encerrada). */
     private fun abrirSessaoOperacional() {
         val dispositivo = config.dispositivoId
-        val servidor = agoraConfiavelMs()
+        val servidor = servidorAgoraMs()
         lifecycleScope.launch(Dispatchers.IO) {
-            sessaoAtual = registro.abrir(dispositivo, servidor)
+            val id = registro.abrir(dispositivo, servidor)
+            val ficou = withContext(Dispatchers.Main) {
+                // O ciclo pode ter parado enquanto a sessão abria (401 na
+                // primeira busca): sessão órfã seria estendida pelo sinal de
+                // vida na tela de instalação.
+                if (cicloAtivo && sessaoAtual == null) {
+                    sessaoAtual = id
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!ficou && id != null) registro.fechar(id, RegistroOperacional.MOTIVO_INTERROMPIDA, servidor)
             enviarOperacao(forcar = true)
         }
     }
@@ -518,7 +532,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun fecharSessaoOperacional(motivo: String) {
         val id = sessaoAtual ?: return
         sessaoAtual = null
-        val servidor = agoraConfiavelMs()
+        val servidor = servidorAgoraMs()
         Thread({ registro.fechar(id, motivo, servidor) }, "fechar-sessao").start()
     }
 
@@ -535,8 +549,15 @@ class PlayerActivity : AppCompatActivity() {
             if (pendentes.isEmpty()) return
             val soAberta = pendentes.all { it.aberta }
             if (!forcar && soAberta && agora - ultimoEnvioOperacaoMs < INTERVALO_ENVIO_OPERACAO_MS) return
+            // Servidor sem a rota (404) ou fora: espera o intervalo, em vez
+            // de a frota inteira bater nele a cada minuto.
+            if (!forcar && agora - ultimaFalhaOperacaoMs < INTERVALO_ENVIO_OPERACAO_MS) return
             val resposta = api.enviarOperacao(pendentes)
-            if (resposta !is ResultadoHttp.Ok) return
+            if (resposta !is ResultadoHttp.Ok) {
+                ultimaFalhaOperacaoMs = agora
+                return
+            }
+            ultimaFalhaOperacaoMs = Long.MIN_VALUE / 2
             ultimoEnvioOperacaoMs = agora
             registro.confirmar(pendentes, resposta.valor)
             if (soAberta || resposta.valor.isEmpty()) return
@@ -594,7 +615,11 @@ class PlayerActivity : AppCompatActivity() {
                 if (decisao.reiniciarAgora || playlist.itens.isEmpty() || (emFallback && programacaoAutorizada())) {
                     reiniciarItemAgora()
                 }
-                if (resultado.origem == Origem.NENHUMA) {
+                // Sem nada, ou com a programação vencida (a busca da virada
+                // falhou ou ainda trouxe a hora anterior): tenta de novo em
+                // 1 min, não só no ciclo de 15 min — cada minuto em reserva
+                // é tempo comercial perdido.
+                if (resultado.origem == Origem.NENHUMA || (playlist.itens.isNotEmpty() && !programacaoAutorizada())) {
                     handler.postDelayed(retentarPlaylist, ESPERA_RETENTAR_PLAYLIST_MS)
                 }
             } finally {
@@ -625,6 +650,14 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun agoraConfiavelMs(): Long? = relogio.agoraMs(relogioJanela)
+
+    /**
+     * Só o relógio do servidor (âncora + monotônico), nunca o de parede:
+     * é o que vai nos campos `*ServidorEm` das sessões operacionais. Null
+     * sem âncora neste processo — o servidor fica com o relógio da TV como
+     * informativo, sabendo que é dela.
+     */
+    private fun servidorAgoraMs(): Long? = relogioJanela?.takeIf { it.valida() }?.agoraDoServidorMs()
 
     /** Offline não autoriza veiculação: comercial só dentro da janela que o servidor deu. */
     private fun programacaoAutorizada(): Boolean = playlist.comercialAutorizadoEm(agoraConfiavelMs())
@@ -850,6 +883,14 @@ class PlayerActivity : AppCompatActivity() {
             // remota seria servir o arquivo que acabou de ser rejeitado (R3).
             // Sem rede, a URL remota é igualmente inalcançável: pula na hora,
             // em vez de dezenas de segundos de tela preta por item.
+            // O download pode ter levado minutos: a janela que autorizou o
+            // comercial pode ter acabado no meio. Confere de novo antes do
+            // comprovante e do play().
+            if (!fallback && !playlistDoItem.comercialAutorizadoEm(agoraConfiavelMs())) {
+                tocarItemAtual()
+                return@launch
+            }
+
             if (arquivoLocal == null && !resolucao.podeTocarDaUrlRemota) {
                 if (resolucao.falha is CacheMidia.Falha.HashDivergente) {
                     estadoAtual = EstadoPlayer.DOWNLOAD_ERROR

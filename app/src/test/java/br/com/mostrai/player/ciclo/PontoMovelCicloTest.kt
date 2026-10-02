@@ -157,6 +157,22 @@ class PontoMovelCicloTest {
     }
 
     @Test
+    fun `sessao aberta antes da ancora nao leva o relogio da TV como se fosse do servidor`() {
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(503, "")
+        h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(404, "")
+        // O relógio da TV passa no piso (seria aceito para decidir o horário),
+        // mas não é o do servidor.
+        h.contexto.getSharedPreferences(RelogioConfiavel.ARQUIVO, Context.MODE_PRIVATE).edit()
+            .putLong("piso_servidor_ms", System.currentTimeMillis() - 60_000L).commit()
+
+        h.subir()
+        h.esperar { RegistroOperacional(h.contexto).pendentes().any { it.aberta } }
+
+        val sessao = RegistroOperacional(h.contexto).pendentes().single { it.aberta }
+        assertEquals(null, sessao.inicioServidorMs)
+    }
+
+    @Test
     fun `sessoes operacionais vao ao servidor e saem da fila so com confirmacao`() {
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, h.playlistComUmVideo(duracao = 600))
         // Uma sessão de antes (a TV operou offline e reiniciou).
@@ -179,14 +195,76 @@ class PontoMovelCicloTest {
     }
 
     @Test
-    fun `sem a rota no servidor, as sessoes ficam guardadas na TV`() {
+    fun `sem a rota no servidor, as sessoes ficam guardadas na TV e a frota nao insiste a cada minuto`() {
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, h.playlistComUmVideo(duracao = 600))
         h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(404, "")
+        // Uma sessão de antes do reinício: encerrada e ainda não confirmada,
+        // o caso que mandava a cada tique da fila.
+        RegistroOperacional(h.contexto).abrir("M-0001", null)
 
         h.subir()
         h.esperar { h.servidor.contar("/player/M-0001/operacao") > 0 }
-        h.avancar(1_000L)
+        repeat(5) {
+            h.avancar(60_000L)
+            h.deixarRodar(1_000)
+        }
 
         assertFalse(RegistroOperacional(h.contexto).pendentes().isEmpty())
+        assertTrue(
+            "404 a cada minuto: ${h.servidor.contar("/player/M-0001/operacao")} envios em 5 min",
+            h.servidor.contar("/player/M-0001/operacao") <= 2,
+        )
+    }
+
+    @Test
+    fun `programacao vencida tenta a playlist de novo em um minuto, nao em quinze`() {
+        val agora = System.currentTimeMillis()
+        val horaAtual = Math.floorDiv(agora, hora) * hora
+        // A busca da virada ainda trouxe a hora anterior (servidor atrasado);
+        // a seguinte já traz a hora certa.
+        h.servidor.emSequencia("/playlist/", ServidorDeTeste.Resposta(200, playlist(horaAtual - hora, agora)))
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, playlist(horaAtual, agora))
+
+        val atividade = h.subir().get()
+        h.esperar { estado(atividade) == EstadoPlayer.NO_PLAYLIST }
+        h.avancar(61_000L)
+        h.esperar { estado(atividade) == EstadoPlayer.PLAYING }
+
+        assertEquals(2, h.servidor.contar("/playlist/"))
+    }
+
+    /** Download do comercial preso até [avancoMs] depois; devolve as linhas na fila. */
+    private fun downloadLento(avancoMs: Long): Int {
+        val agora = System.currentTimeMillis()
+        val inicio = Math.floorDiv(agora, hora) * hora
+        // O servidor diz que faltam 5 s para o fim da janela; depois disso
+        // fica fora (a âncora não se renova).
+        // Só o comercial: o item no ar é ele, qualquer que seja a posição.
+        val soComercial = JSONObject(playlist(inicio, inicio + hora - 5_000L)).apply {
+            put("itens", org.json.JSONArray().put(getJSONArray("itens").getJSONObject(0)))
+        }.toString()
+        h.servidor.emSequencia("/playlist/", ServidorDeTeste.Resposta(200, soComercial))
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(503, "")
+        val download = java.util.concurrent.CountDownLatch(1)
+        h.servidor.travas["/midia/comercial.mp4"] = download
+
+        h.subir()
+        h.esperar { h.servidor.contar("/midia/comercial.mp4") > 0 }
+        h.avancar(avancoMs)
+        download.countDown()
+        h.deixarRodar(2_000)
+        h.avancar(500L)
+        h.deixarRodar(500)
+        return linhasNaFila()
+    }
+
+    @Test
+    fun `janela que vence durante o download nao vira comprovante nem vai ao ar`() {
+        assertEquals("comprovante de janela vencida", 0, downloadLento(avancoMs = 10_000L))
+    }
+
+    @Test
+    fun `download lento dentro da janela ainda vai ao ar (controle do teste acima)`() {
+        assertTrue(downloadLento(avancoMs = 1_000L) > 0)
     }
 }

@@ -235,7 +235,15 @@ class CacheMidia(context: Context) {
         try {
             conexao.connectTimeout = TIMEOUT_CONEXAO_MS
             conexao.readTimeout = TIMEOUT_LEITURA_MS
-            conexao.connect()
+            // Só a falha de CONEXÃO é "sem rede". Um timeout de leitura no
+            // meio da transferência é servidor lento com rede de pé: o
+            // streaming direto ainda pode funcionar, e silenciar todos os
+            // downloads por 60 s pularia anúncios à toa.
+            try {
+                conexao.connect()
+            } catch (e: IOException) {
+                throw SemConexao(e)
+            }
             if (conexao.responseCode !in 200..299) {
                 throw IOException("HTTP ${conexao.responseCode} ao baixar mídia")
             }
@@ -323,9 +331,12 @@ class CacheMidia(context: Context) {
     }
 
     private fun ehFaltaDeRede(e: IOException): Boolean = generateSequence<Throwable>(e) { it.cause }.any {
-        it is java.net.UnknownHostException || it is java.net.ConnectException ||
-            it is java.net.NoRouteToHostException || it is java.net.SocketTimeoutException
+        it is SemConexao || it is java.net.UnknownHostException || it is java.net.ConnectException ||
+            it is java.net.NoRouteToHostException
     }
+
+    /** A conexão nem abriu (DNS, rota, recusa, timeout de conexão). */
+    private class SemConexao(causa: IOException) : IOException(causa.message, causa)
 
     private companion object {
         const val TAG = "CacheMidia"

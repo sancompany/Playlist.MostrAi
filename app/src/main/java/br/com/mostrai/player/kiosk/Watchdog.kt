@@ -208,6 +208,9 @@ object Watchdog {
         return PendingIntent.getBroadcast(context.applicationContext, 1, intent, flags)
     }
 
+    private fun telaLigada(context: Context): Boolean =
+        (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
+
     private fun abrirPlayer(context: Context) {
         val abrir = Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(abrir) }
@@ -230,6 +233,14 @@ object Watchdog {
                 provisionado = ConfigAparelho(context).provisionado,
             )
 
+            // TV em standby (CPU acordada, tela apagada): reabrir aqui só faria
+            // o Player subir e cair a cada alarme a noite inteira. Segue
+            // vigiando no ritmo base; quando a tela acender, o próximo alarme
+            // reabre.
+            if (decisao.abrirPlayer && !telaLigada(context)) {
+                agendar(context, INTERVALO_BASE_MS)
+                return
+            }
             if (decisao.abrirPlayer) {
                 prefs.edit().putInt(CHAVE_TENTATIVAS, tentativas + 1).apply()
                 abrirPlayer(context)
@@ -245,7 +256,7 @@ object Watchdog {
                 saidaAutorizada = prefs.getBoolean(CHAVE_SAIDA_AUTORIZADA, false),
                 provisionado = ConfigAparelho(context).provisionado,
                 naFrente = prefs.getBoolean(CHAVE_NA_FRENTE, false),
-                telaLigada = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true,
+                telaLigada = telaLigada(context),
                 tentativa = tentativa,
             )
             if (!decisao.abrirPlayer) return

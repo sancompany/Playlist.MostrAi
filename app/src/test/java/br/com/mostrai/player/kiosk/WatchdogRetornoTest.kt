@@ -118,6 +118,18 @@ class WatchdogRetornoTest {
     }
 
     @Test
+    fun `backstop nao reabre o Player com a TV em standby, mas segue vigiando`() {
+        instalar()
+        shadowOf(contexto.getSystemService(Context.POWER_SERVICE) as PowerManager).setIsInteractive(false)
+        app.clearNextStartedActivities()
+
+        Watchdog.Receptor().onReceive(contexto, Intent())
+
+        assertNull(app.nextStartedActivity)
+        assertNotNull(alarmes.nextScheduledAlarm)
+    }
+
+    @Test
     fun `saida pelo PIN nao agenda retorno nenhum`() {
         instalar()
         val controle = Robolectric.buildActivity(PlayerActivity::class.java).setup()

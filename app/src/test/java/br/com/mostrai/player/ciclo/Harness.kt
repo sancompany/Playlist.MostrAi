@@ -120,6 +120,16 @@ class Harness {
         check(condicao()) { "condição não foi atingida em ${timeoutMs}ms; servidor recebeu ${servidor.recebidas}" }
     }
 
+    /** Deixa as corrotinas de IO e o looper andarem por [ms] reais, sem condição. */
+    fun deixarRodar(ms: Long) {
+        val limite = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < limite) {
+            idle()
+            Thread.sleep(20)
+        }
+        idle()
+    }
+
     /** Linhas na fila que começaram e nunca terminaram. */
     fun orfaos(): Int {
         val db = ProofOfPlayDb(contexto).readableDatabase

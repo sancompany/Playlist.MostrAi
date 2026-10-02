@@ -18,6 +18,13 @@ Código do MVP completo contra `sancompany/MostrAi` → `docs/player-mvp-contrac
   para offline só até o fim da hora corrente; depois, institucional.
 - **Teste físico novo:** itens 37–40 do checklist (noite inteira offline,
   reboot sem rede, reconexão).
+- **Riscos plausíveis da revisão (ciclo 2), não reproduzidos, sem correção
+  ainda:** (a) relógio da TV que salta para a frente (NTP) no meio de uma
+  exibição pode fazer a limpeza de órfãos apagar a linha em andamento — a
+  idade do órfão é medida pelo relógio de parede; (b) com a fila no teto de
+  150.000, o descarte pode escolher como "órfã" a linha que acabou de
+  terminar, sem contar a perda; (c) um download grande pode consumir a
+  reserva de disco depois da checagem de espaço, que é só antes de baixar.
 
 ## Só o dono faz
 
