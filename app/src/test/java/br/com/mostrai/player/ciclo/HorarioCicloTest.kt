@@ -49,7 +49,7 @@ class HorarioCicloTest {
         )
 
         val atividade = h.subir().get()
-        h.esperar { h.orfaos() == 1 } // exibição registrada, cache preso
+        h.esperar { h.servidor.contar("/midia") > 0 } // exibição resolvendo o cache, preso
         heartbeat.countDown()
         h.esperar { estado(atividade) == EstadoPlayer.OUT_OF_SCHEDULE }
         assertEquals(1, ConfigAparelho(h.contexto).configVersionAplicada)

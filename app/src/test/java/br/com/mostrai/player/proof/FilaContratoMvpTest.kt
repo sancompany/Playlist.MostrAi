@@ -74,14 +74,17 @@ class FilaContratoMvpTest {
     }
 
     @Test
-    fun `depois de 7 dias e 1 hora o evento expira sem ser enviado e conta como perda`() {
+    fun `comprovante com mais de 7 dias ainda vai ao servidor - quem decide e o ACK`() {
+        // Ponto Móvel: dias sem internet. O servidor responde janela_expirada
+        // pelo relógio DELE; o Player não descarta por idade (e não confia no
+        // próprio relógio para isso).
         comprovante("velho", 7 * dia + hora + 60_000L)
         comprovante("novo", 0L)
 
         fila.tentarEnviar()
 
-        assertEquals(listOf(listOf("novo")), api.lotes)
-        assertEquals(1, fila.perdas())
+        assertEquals(listOf(listOf("velho", "novo")), api.lotes)
+        assertEquals(0, fila.perdas())
     }
 
     @Test

@@ -35,6 +35,13 @@ class WatchdogInstalacaoTest {
     fun preparar() {
         // Nenhum sinal de vida: o Player está fora da frente há tempo demais.
         contexto.getSharedPreferences("mostrai_watchdog", Context.MODE_PRIVATE).edit().clear().commit()
+        // Nunca a produção: uma chave falsa tomaria 401 e apagaria a credencial no meio do teste.
+        br.com.mostrai.player.HostDaApi.base = "http://127.0.0.1:1"
+    }
+
+    @org.junit.After
+    fun restaurar() {
+        br.com.mostrai.player.HostDaApi.base = br.com.mostrai.player.Produto.BASE_URL
     }
 
     private fun dispararAlarme() = Watchdog.Receptor().onReceive(contexto, Intent())

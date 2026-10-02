@@ -26,7 +26,8 @@
             app:use_controller="false"
             app:surface_type="texture_view"
             app:resize_mode="fit"
-            app:show_buffering="never" />
+            app:show_buffering="never"
+            app:keep_content_on_player_reset="true" />
 
         <br.com.mostrai.player.ui.TelaInstitucional
             android:id="@+id/institucional"

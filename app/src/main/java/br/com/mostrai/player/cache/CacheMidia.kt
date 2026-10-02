@@ -17,9 +17,11 @@ import java.util.concurrent.ConcurrentHashMap
  * cache, cada tela baixaria a mesma dezena de vídeos todo dia, e isso custa
  * banda demais numa internet de comércio).
  *
- * Fica em `cacheDir` (não `filesDir`) de propósito: é conteúdo
- * re-obtenível, então deixar o sistema livre para limpar sob pressão de
- * armazenamento é o comportamento certo, não um risco.
+ * Fica em `filesDir`, não em `cacheDir` (Ponto Móvel, 02/10/2026): o
+ * Android apaga `cacheDir` sozinho quando falta espaço, e uma tela que passa
+ * dias sem internet não tem como baixar de novo o que sumiu. Quem decide o
+ * que sai é [limitarTamanho], que nunca remove mídia protegida
+ * ([proteger]: a programação em vigor e o institucional).
  *
  * Quando a playlist traz `contentHash` (contrato V2), o arquivo baixado é
  * verificado antes de virar cache — ver [baixarPara]. Sem hash, o
@@ -32,6 +34,16 @@ class CacheMidia(context: Context) {
         data class Rede(val motivo: String) : Falha()
         data class HashDivergente(val esperado: String, val obtido: String) : Falha()
         object SemUrl : Falha()
+
+        /**
+         * O aparelho não alcança a internet (DNS, conexão recusada, tempo de
+         * conexão esgotado). A URL remota é igualmente inalcançável: tentar
+         * tocá-la só deixa a tela preta por dezenas de segundos.
+         */
+        data class SemRede(val motivo: String) : Falha()
+
+        /** Disco sem espaço mesmo depois de liberar o que não é protegido. */
+        object SemEspaco : Falha()
     }
 
     /**
@@ -50,11 +62,12 @@ class CacheMidia(context: Context) {
          * seria servir exatamente o arquivo que acabou de ser rejeitado.
          * Qualquer outra falha (rede, sem cache) pode cair para a URL.
          */
-        val podeTocarDaUrlRemota: Boolean get() = falha !is Falha.HashDivergente
+        val podeTocarDaUrlRemota: Boolean get() = falha !is Falha.HashDivergente && falha !is Falha.SemRede
     }
 
-    private val diretorio: File = File(context.applicationContext.cacheDir, "midia").apply {
+    private val diretorio: File = File(context.applicationContext.filesDir, "midia").apply {
         mkdirs()
+        migrarDoCacheAntigo(File(context.applicationContext.cacheDir, "midia"), this)
         // Um .tmp órfão só existe se um download anterior foi interrompido no
         // meio (processo morto pelo Android) — nunca vira arquivo válido
         // porque resolver() só procura pelo nome sem sufixo. Sem isto, sobra
@@ -86,6 +99,41 @@ class CacheMidia(context: Context) {
     private val rejeitadas = ConcurrentHashMap<String, Pair<Falha.HashDivergente, Long>>()
 
     /**
+     * Até quando (relógio monotônico) não vale a pena tentar a rede: a
+     * última tentativa nem conectou. Sem isto, com a internet fora, cada
+     * item não baixado custava uma tentativa de conexão inteira a cada volta
+     * da playlist — e a tela esperando.
+     */
+    @Volatile
+    private var semRedeAte = 0L
+
+    /** Chaves que a limpeza nunca remove: programação em vigor e institucional. */
+    @Volatile
+    private var protegidas: Set<String> = emptySet()
+
+    /** Espaço do disco onde o cache mora — trocável só em teste. */
+    internal var espacoLivre: () -> Long = { diretorio.usableSpace }
+    internal var espacoTotal: () -> Long = { diretorio.totalSpace }
+
+    /** A rede voltou: a próxima resolução tenta baixar sem esperar o silêncio. */
+    fun redeVoltou() {
+        semRedeAte = 0L
+    }
+
+    /** Substitui o conjunto protegido pelos itens com mídia que ainda podem tocar. */
+    fun proteger(itens: Collection<ItemPlaylist>) {
+        protegidas = itens.mapNotNullTo(mutableSetOf()) { if (it.url.isNullOrBlank()) null else ChaveCache.paraItem(it) }
+    }
+
+    /** Barato e sem trava: o arquivo final só existe depois de verificado. */
+    fun emCache(item: ItemPlaylist): Boolean {
+        if (item.url.isNullOrBlank()) return false
+        val chave = ChaveCache.paraItem(item) ?: return false
+        val arquivo = File(diretorio, chave)
+        return arquivo.exists() && arquivo.length() > 0
+    }
+
+    /**
      * Devolve o arquivo local pronto para tocar — do cache se já existir,
      * baixando primeiro se não. Sem arquivo, [Resolucao.falha] diz por quê,
      * e [Resolucao.podeTocarDaUrlRemota] diz se o player pode cair para a URL.
@@ -110,6 +158,7 @@ class CacheMidia(context: Context) {
             }
             rejeitadas.remove(chave)
         }
+        if (SystemClock.elapsedRealtime() < semRedeAte) return Resolucao(null, Falha.SemRede("sem rede recente"))
 
         synchronized(travas.computeIfAbsent(chave) { Any() }) {
             // Outra thread pode ter baixado este mesmo arquivo enquanto esta
@@ -117,6 +166,7 @@ class CacheMidia(context: Context) {
             if (arquivo.exists() && arquivo.length() > 0) return Resolucao(arquivo, null)
 
             val hashEsperado = item.contentHash?.takeIf { ChaveCache.ehHexSha256(it) }?.lowercase()
+            if (!garantirEspaco()) return Resolucao(null, Falha.SemEspaco)
             return try {
                 baixarPara(url, arquivo, hashEsperado)
                 limitarTamanho()
@@ -128,9 +178,15 @@ class CacheMidia(context: Context) {
                 rejeitadas[chave] = falha to SystemClock.elapsedRealtime()
                 Resolucao(null, falha)
             } catch (e: IOException) {
-                Log.w(TAG, "falha ao baixar mídia ($chave), tocando direto da URL", e)
                 arquivo.delete() // nunca deixa arquivo parcial no cache
-                Resolucao(null, Falha.Rede(e.message ?: "falha de rede"))
+                if (ehFaltaDeRede(e)) {
+                    Log.w(TAG, "sem rede para baixar mídia ($chave)")
+                    semRedeAte = SystemClock.elapsedRealtime() + SILENCIO_SEM_REDE_MS
+                    Resolucao(null, Falha.SemRede(e.javaClass.simpleName))
+                } else {
+                    Log.w(TAG, "falha ao baixar mídia ($chave), tocando direto da URL", e)
+                    Resolucao(null, Falha.Rede(e.message ?: "falha de rede"))
+                }
             }
         }
     }
@@ -231,17 +287,44 @@ class CacheMidia(context: Context) {
 
     fun arquivos(): Int = diretorio.listFiles()?.count { it.isFile } ?: 0
 
-    /** Teto simples de tamanho, descarta o mais antigo — sem LRU sofisticado na v1 (CONSTRAINTS.md). */
+    /** Quantos itens com mídia desta lista já estão prontos para tocar sem rede. */
+    fun disponiveis(itens: Collection<ItemPlaylist>): Pair<Int, Int> {
+        val comMidia = itens.filter { !it.url.isNullOrBlank() }.distinctBy { ChaveCache.paraItem(it) }
+        return comMidia.count(::emCache) to comMidia.size
+    }
+
+    /** Folga que o disco precisa manter: o sistema e a fila de comprovantes vêm antes do vídeo. */
+    fun reservaBytes(): Long = maxOf(RESERVA_MINIMA_BYTES, espacoTotal() / 10)
+
+    /** Espaço livre suficiente para mais um download, liberando o que não é protegido. */
+    private fun garantirEspaco(): Boolean {
+        if (espacoLivre() >= reservaBytes()) return true
+        limitarTamanho()
+        return espacoLivre() >= reservaBytes()
+    }
+
+    /**
+     * Sem teto fixo pequeno (Ponto Móvel): o limite é o que o disco aguenta
+     * mantendo a reserva livre. Sai primeiro o que não é protegido, do mais
+     * antigo uso para o mais recente; mídia protegida nunca sai — se só
+     * sobrou ela, a limpeza para e o download seguinte falha com
+     * [Falha.SemEspaco], em vez de apagar o que a programação ainda vai tocar.
+     */
     private fun limitarTamanho() {
         val arquivos = diretorio.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") } ?: return
-        var tamanhoTotal = arquivos.sumOf { it.length() }
-        if (tamanhoTotal <= TAMANHO_MAXIMO_BYTES) return
-
-        for (arquivo in arquivos.sortedBy { it.lastModified() }) {
-            if (tamanhoTotal <= TAMANHO_MAXIMO_BYTES) break
-            tamanhoTotal -= arquivo.length()
+        var falta = reservaBytes() - espacoLivre()
+        if (falta <= 0) return
+        val protegidasAgora = protegidas
+        for (arquivo in arquivos.filter { it.name !in protegidasAgora }.sortedBy { it.lastModified() }) {
+            if (falta <= 0) break
+            falta -= arquivo.length()
             arquivo.delete()
         }
+    }
+
+    private fun ehFaltaDeRede(e: IOException): Boolean = generateSequence<Throwable>(e) { it.cause }.any {
+        it is java.net.UnknownHostException || it is java.net.ConnectException ||
+            it is java.net.NoRouteToHostException || it is java.net.SocketTimeoutException
     }
 
     private companion object {
@@ -252,10 +335,30 @@ class CacheMidia(context: Context) {
         /** Duas tentativas por hora de uma mídia rejeitada, não uma por exibição. */
         const val SILENCIO_APOS_HASH_DIVERGENTE_MS = 30 * 60_000L
 
-        // limite: teto fixo de 1GB, descarte por idade do arquivo (não por uso
-        // real) — revisar se a operação mostrar necessidade de mais ou de LRU
-        // de verdade (docs/proximas-versoes.md). Playlist de uma hora costuma
-        // ter uma dezena de vídeos curtos, então a folga é generosa de propósito.
-        const val TAMANHO_MAXIMO_BYTES = 1_024L * 1024 * 1024
+        /** Depois de uma tentativa que nem conectou, a rede só é tentada de novo depois disto. */
+        const val SILENCIO_SEM_REDE_MS = 60_000L
+
+        // limite: reserva de 512 MB ou 10% do disco, o que for maior — o
+        // resto é do cache. Revisar com a TCL real (espaço livre medido no
+        // checklist físico) se a programação de vários dias não couber.
+        const val RESERVA_MINIMA_BYTES = 512L * 1024 * 1024
+
+        /**
+         * Versões até 2.0.0 guardavam a mídia em `cacheDir`. Move em vez de
+         * baixar de novo — a TV pode estar sem internet na primeira abertura
+         * da versão nova. Mesmo volume (/data), então é só um rename.
+         */
+        private fun migrarDoCacheAntigo(antigo: File, novo: File) {
+            val arquivos = antigo.listFiles() ?: return
+            for (arquivo in arquivos) {
+                if (!arquivo.isFile || arquivo.name.endsWith(".tmp")) {
+                    arquivo.delete()
+                    continue
+                }
+                val destino = File(novo, arquivo.name)
+                if (destino.exists() || !arquivo.renameTo(destino)) arquivo.delete()
+            }
+            antigo.delete()
+        }
     }
 }

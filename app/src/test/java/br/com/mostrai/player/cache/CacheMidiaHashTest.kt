@@ -44,7 +44,7 @@ class CacheMidiaHashTest {
     @Before
     fun preparar() {
         contexto = ApplicationProvider.getApplicationContext()
-        File(contexto.cacheDir, "midia").deleteRecursively()
+        File(contexto.filesDir, "midia").deleteRecursively()
         cache = CacheMidia(contexto)
 
         servidor = ServidorDeTeste()
@@ -86,12 +86,33 @@ class CacheMidiaHashTest {
     }
 
     @Test
-    fun `falha de rede continua permitindo tocar da url remota`() {
-        val itemQuebrado = item(null).copy(url = "http://127.0.0.1:1/nao-existe.mp4")
+    fun `servidor de midia com erro HTTP ainda permite tocar da url remota`() {
+        // O servidor responde (há rede): o streaming direto pode funcionar.
+        servidor.rotas["/midia.mp4"] = ServidorDeTeste.Resposta(503, "")
 
-        val resolucao = cache.resolucao(itemQuebrado)
+        val resolucao = cache.resolucao(item(null))
         assertNull(resolucao.arquivo)
         assertTrue(resolucao.podeTocarDaUrlRemota)
+    }
+
+    @Test
+    fun `sem rede nao tenta a url remota nem insiste a cada item`() {
+        // Ponto Móvel: horas sem internet. A URL remota é tão inalcançável
+        // quanto o download — tentá-la deixava a tela preta dezenas de
+        // segundos por item, a cada volta da playlist.
+        val semRede = item(null).copy(url = "http://127.0.0.1:1/nao-existe.mp4")
+
+        val primeira = cache.resolucao(semRede)
+        assertTrue(primeira.falha is CacheMidia.Falha.SemRede)
+        assertFalse(primeira.podeTocarDaUrlRemota)
+
+        // Dentro do silêncio, outro item nem abre conexão.
+        val outro = cache.resolucao(item(null, criativoId = "c2"))
+        assertEquals(CacheMidia.Falha.SemRede("sem rede recente"), outro.falha)
+
+        // A rede voltou: tenta de novo na hora.
+        cache.redeVoltou()
+        assertNotNull(cache.resolver(item(null, criativoId = "c2")))
     }
 
     @Test
@@ -143,7 +164,7 @@ class CacheMidiaHashTest {
     fun `nenhum tmp sobra depois de um hash divergente`() {
         cache.resolver(item("c".repeat(64)))
 
-        val tmp = File(contexto.cacheDir, "midia").listFiles()?.filter { it.name.endsWith(".tmp") }
+        val tmp = File(contexto.filesDir, "midia").listFiles()?.filter { it.name.endsWith(".tmp") }
         assertEquals(0, tmp?.size)
     }
 

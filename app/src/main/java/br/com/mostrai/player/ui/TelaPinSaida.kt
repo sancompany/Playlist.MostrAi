@@ -27,6 +27,7 @@ class TelaPinSaida(
     private val display: TextView = raiz.findViewById(R.id.displayPin)
     private val erro: TextView = raiz.findViewById(R.id.erroPin)
     private val teclado: GridLayout = raiz.findViewById(R.id.tecladoPin)
+    private val infoSuporte: TextView = raiz.findViewById(R.id.infoSuporte)
     private val handler = Handler(Looper.getMainLooper())
     private val fecharPorInatividade = Runnable { esconder() }
 
@@ -53,7 +54,13 @@ class TelaPinSaida(
         return true
     }
 
+    /** Bloco técnico (pronto para offline, filas pendentes) — preenchido pela Activity. */
+    fun mostrarInfo(texto: String) {
+        if (visivel) infoSuporte.text = texto
+    }
+
     fun esconder() {
+        infoSuporte.text = ""
         handler.removeCallbacks(fecharPorInatividade)
         digitado.setLength(0)
         pinEsperado = null
@@ -63,6 +70,8 @@ class TelaPinSaida(
     /** Números do próprio controle remoto, além da grade na tela. */
     fun aoTeclar(evento: KeyEvent): Boolean {
         if (!visivel || evento.action != KeyEvent.ACTION_DOWN) return false
+        // Tecla segurada repete: um "7" preso viraria três PINs errados.
+        if (evento.repeatCount > 0) return true
         if (evento.keyCode == KeyEvent.KEYCODE_DEL) {
             apagar()
             return true
