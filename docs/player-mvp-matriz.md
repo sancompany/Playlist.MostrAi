@@ -35,6 +35,20 @@ tratamento de cada status) e pelos testes de ciclo em `ciclo/`.
 **CONTRACT_BLOCKERS**: nenhum. O `/hello` e o download de APK (OTA) da
 matriz inicial não existem mais no Player (`GuardaMvpTest` falha se voltarem).
 
+## Atualização 02/10/2026 — Ponto Móvel e "conectividade não é operação"
+
+Contrato relido no backend, branch `claude/conectividade-nao-e-operacao`
+([sancompany/MostrAi#113](https://github.com/sancompany/MostrAi/pull/113)),
+`docs/player-mvp-contract.md` §7, §8.1 e §9.
+
+| Endpoint | O que mudou no Player | Backend | Match |
+|---|---|---|---|
+| `GET /playlist/:dispositivoId` | `janelaFim` deixou de ser informativo: o comercial só toca dentro da janela (sem ele, `janelaInicio` + 1 h), medido por relógio confiável; `institucional` passou a ser lido para guardar o institucional de reserva | §7 marca "na virada da hora sem rede, continua a última" como SUPERADA | **MATCH** |
+| `POST /player/:dispositivoId/played` | pendente fica até o ACK (não expira mais em 7 dias + 1 h); quarentena por bisseção só com prova de irmão aceito; até 20 lotes por rodada | inalterado — aceita até 7 dias depois da janela e responde status final depois | **MATCH** |
+| `POST /player/:dispositivoId/operacao` | **nova**: `{sessoes: [{sessaoId, bootCount, inicioUptimeMs, fimUptimeMs, duracaoMs, inicioEm, fimEm, inicioServidorEm, fimServidorEm, encerrada, motivo}]}`, até 50; tira da fila local só `registrada`/`invalida`; 404 (backend antigo) → guarda e segue | §8.1: até 100 por lote; `resultados[{sessaoId, status: registrada\|invalida}]`; 400 lote ruim; 401/403 como §4; sem exigir tela Ativa | **MATCH** (coberto por `PontoMovelCicloTest` aqui e `tests/conectividade-operacao.test.js` lá) |
+
+Heartbeat e config não mudaram. `GuardaMvpTest` passou de 5 para 6 rotas.
+
 ## Métricas antes → depois
 
 Antes: `cf3980e` (baseline reconciliada, com o fix do `HOME`). Depois: 2.0.0.

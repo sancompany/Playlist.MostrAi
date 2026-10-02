@@ -1,5 +1,8 @@
 # Checklist físico — Mostraí Player 2.0.0 (MVP) na SEMP TCL 32S6500S
 
+> Atualizado em 02/10/2026 (Ponto Móvel): itens 19, 20, 23, 25, 27 e 32
+> mudaram de expectativa; itens 37–40 são novos.
+
 APK: **debug** da 2.0.0 (versionCode 3). Serve para validar o funcionamento; não
 é o APK de produção, que precisa da chave definitiva (`RUNBOOK.md`).
 
@@ -27,24 +30,28 @@ ponto aberto agora. Marque PASS/FAIL e anote o que viu em cada FAIL.
 | 16 | Cronometrar os itens 12–15 | Cada alteração aparece em ≤ 20 s, sem reiniciar app nem vídeo | |
 | 17 | Depois de um anúncio `contabiliza: true` terminar | Proof-of-play `contabilizado` no admin em até ~60 s | |
 | 18 | Tirar o cabo de rede / desligar o Wi-Fi | Vídeo não para | |
-| 19 | Deixar 30 min offline | Continua tocando pelo cache, inclusive depois da virada de hora | |
-| 20 | Durante o offline | Admin mostra "Sem sinal"; nada perdido na TV | |
+| 19 | Deixar 30 min offline, atravessando a virada de hora | Até o fim da hora: continua a programação pelo cache. Depois da virada: **só** o institucional da Mostraí (nenhum anúncio repetido), sem tela preta e sem "sem internet" para o público | |
+| 20 | Durante o offline | Admin mostra "Sem comunicação" com operação "Desconhecida" (nunca "desligada"); anunciante segue vendo "No ar"; VOLTAR → bloco de suporte abaixo do PIN mostra a programação válida até e "PRONTO/NÃO PRONTO PARA OFFLINE" | |
 | 21 | Religar a rede | Heartbeat volta em ≤ 15 s; admin mostra "Operando" | |
 | 22 | Logo após a volta | Playlist e config sincronizam (mudar uma margem durante o offline e ver aplicar) | |
-| 23 | Após a volta | Os comprovantes do período offline aparecem no admin; `fila.pendentes` volta a 0 | |
+| 23 | Após a volta | Os comprovantes do período offline aparecem no admin; `fila.pendentes` volta a 0; a ficha da tela mostra a "última operação conhecida" e as horas operadas sem comunicação | |
 | 24 | Reiniciar a TV pelo menu (ou tirar da tomada) | — | |
-| 25 | Após ligar | App abre sozinho e volta a tocar sem pedir ID/código | |
+| 25 | Após ligar | App abre sozinho e volta a tocar sem pedir ID/código, **no item da hora** (não do começo da playlist). Repetir com a rede desligada antes de religar a TV: mesmo resultado, sem baixar nada | |
 | 26 | Apertar HOME no controle | Vai para o launcher da TV | |
-| 27 | Não mexer em nada | Watchdog traz o player de volta em 5–7 min | |
+| 27 | Não mexer em nada | Watchdog traz o player de volta em **~5–10 s** (o Android segura a volta por até 5 s depois do HOME). Se não voltar no primeiro, nova tentativa em 10, 20, 40 e 60 s | |
 | 28 | VOLTAR → digitar PIN **errado** 3× | "PIN incorreto"; depois bloqueio "Aguarde N s"; o vídeo segue por trás | |
 | 29 | VOLTAR → PIN **correto** | App fecha | |
 | 30 | Esperar 10 min | Watchdog **não** reabre o app | |
 | 31 | Abrir o app manualmente pelo ícone | Volta a tocar sem pedir ID/código | |
-| 32 | HOME e esperar 7 min | Watchdog rearmado: o player volta sozinho | |
+| 32 | HOME e esperar 1 min | Watchdog rearmado: o player volta sozinho em segundos | |
 | 33 | No admin, revogar o Player | — | |
 | 34 | Em ≤ 15 s | TV volta para a tela de instalação | |
 | 35 | Gerar um código novo no admin | Admin mostra o código novo | |
 | 36 | Provisionar de novo (mesmo ID + código novo) | Volta a tocar; comprovantes que estavam na fila são enviados | |
+| 37 | **Ponto Móvel:** com a rede ligada, deixar a playlist da hora baixar inteira; VOLTAR | Bloco de suporte: "Mídias em cache: N/N" e "PRONTO PARA OFFLINE ATÉ <fim da janela>" | |
+| 38 | Desligar a rede e deixar a TV ligada por pelo menos 3 h (ideal: uma noite) | Primeira hora: programação; depois, institucional em laço; nenhum anúncio repetido; nada de tela preta | |
+| 39 | Ainda offline, tirar a TV da tomada e religar | Volta ao institucional (ou à programação, se ainda dentro da janela) sem pedir nada; nenhum anúncio vencido | |
+| 40 | Religar a rede | Em ≤ 1 min: playlist nova tocando, comprovantes da primeira hora no admin, sessões operacionais (inclusive a "interrompida" da tomada) na ficha da tela | |
 
 ## Se a rotação estiver invertida (item 4)
 

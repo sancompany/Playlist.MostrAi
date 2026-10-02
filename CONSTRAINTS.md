@@ -36,7 +36,12 @@ recuperar, não entra. Em especial, **não** reintroduzir:
   incompatível com o instalador da TCL (`docs/erros/2026-09-25-…`). Quem
   traz o player de volta é o `Watchdog`.
 - **Painel técnico na TV** (gesto de 3 toques, tela de diagnóstico). O único
-  diálogo local é o PIN de saída.
+  diálogo local é o PIN de saída. **Exceção registrada (02/10/2026, pedido
+  do dono — Ponto Móvel):** a tela de PIN mostra, abaixo do teclado, um
+  bloco técnico de suporte só leitura (`InfoSuporte`: conexão, programação
+  válida até, mídias em cache, espaço, fila, "pronto para offline até").
+  Só aparece para quem apertou VOLTAR diante da TV; não tem ação, não abre
+  por gesto e nunca vai ao público.
 - **Provisionamento por JSON, pendrive, `BuildConfig` por tela ou extras de
   ADB.** A única forma é ID da tela + código de instalação digitados na TV.
 - **`baseUrl` variável, multi-host, rotação configurável ou
@@ -48,7 +53,11 @@ recuperar, não entra. Em especial, **não** reintroduzir:
   analytics). O heartbeat de 15 s com `estado`/`erro`/`fila` é todo o
   sinal que o servidor recebe.
 - **Relatório na TV** e **login de usuário** (este último vetado sempre).
-- **Cache com eviction sofisticada.** Teto de 1 GB, descarte do mais antigo.
+- **Cache com eviction sofisticada.** ~~Teto de 1 GB, descarte do mais
+  antigo.~~ **SUPERADA (02/10/2026):** o cache vive em `filesDir`, nunca
+  apaga mídia referenciada pela playlist guardada nem pelo institucional, e
+  o resto sai por LRU só para manter a reserva de disco (RN-07a). Continua
+  sem categorias por anunciante, pré-alocação ou política por janela.
 
 ## Exceção de classificação (estação 1)
 
@@ -74,17 +83,23 @@ sideload, sem interface web. Consequências assumidas:
 
 ## Limites assumidos (Lei 7)
 
-- **Fila de proof-of-play**: até 50.000 eventos pendentes por aparelho
-  (`FilaProofOfPlay.TAMANHO_MAXIMO_FILA`). Acima disso, descarta o mais
-  antigo e conta a perda. Aviso no diário a partir de 10.000.
+- **Fila de proof-of-play**: até 150.000 eventos pendentes por aparelho
+  (`FilaProofOfPlay.TAMANHO_MAXIMO_FILA`, ≈ 40 dias de uma tela cheia
+  offline; era 50.000). Acima disso, descarta o mais antigo, conta a perda
+  e grava `FILA_CHEIA` no diário. Aviso no diário a partir de 10.000.
 - **Lote de `/played`**: 50 eventos por requisição (o contrato aceita até
   500; lote pequeno mantém o corpo longe dos 100 KB).
 - **Espera de reenvio**: 5 s → 15 s → 60 s → 5 min → 15 min → teto de 30 min,
   nunca desistência. 429 respeita `Retry-After` (1 s a 1 h).
-- **Horizonte local**: 7 dias + 1 h. O servidor aceita até 7 dias depois do
-  fim da janela; a hora a mais cobre a própria janela. Medido pelo relógio
-  de parede — contabilidade local de descarte, não decisão de negócio.
-- **Cache de mídia**: 1 GB.
+- **Horizonte local**: ~~7 dias + 1 h para descartar pendente~~ —
+  **SUPERADA (02/10/2026):** pendente fica até o ACK. O horizonte de 7 dias
+  + 1 h vale só para o que não tem valor de cobrança (órfão, quarentena).
+- **Cache de mídia**: sem teto fixo; reserva livre de max(512 MB, 10 % do
+  disco), sem nunca apagar mídia referenciada (`CacheMidia`).
+- **Sessões operacionais**: confirmadas e fechadas saem depois de 7 dias;
+  pendentes ficam até o ACK; lote de 50 por envio.
+- **Watchdog**: retorno exato em 5/10/20/40/60 s depois de sair sem PIN;
+  alarme de segurança de 60 s (até 16 min), 90 s sem sinal de vida reabre.
 - **PIN de saída**: 3 erros → bloqueio de 5 s, dobrando até 5 min.
 
 ## Dependências (proporcionalidade, Lei 0)

@@ -6,10 +6,23 @@ Código do MVP completo contra `sancompany/MostrAi` → `docs/player-mvp-contrac
 (matriz: `docs/player-mvp-matriz.md`, 5/5 MATCH). O que falta é físico ou
 é decisão do dono. Nenhuma pendência de código.
 
+## Ponto Móvel / offline prolongado (02/10/2026)
+
+- **Backend:** `POST /player/:id/operacao` e a separação conectividade ×
+  operação estão em [sancompany/MostrAi#113](https://github.com/sancompany/MostrAi/pull/113)
+  (rascunho). Enquanto não for mesclado e publicado, o Player recebe 404
+  nessa rota e **guarda** as sessões — nada quebra.
+- **Pacote offline de vários dias, contexto base/hospedagem/evento e
+  assinatura de manifesto** precisam de desenho no backend —
+  `docs/offline-prolongado-proposta-backend.md`. Até lá, a TV fica pronta
+  para offline só até o fim da hora corrente; depois, institucional.
+- **Teste físico novo:** itens 37–40 do checklist (noite inteira offline,
+  reboot sem rede, reconexão).
+
 ## Só o dono faz
 
 - **Teste físico na TCL 32S6500S** — `docs/checklist-fisico-producao.md`
-  (36 itens, PASS/FAIL), com o APK **debug** da 2.0.0. É o que fecha "a
+  (40 itens, PASS/FAIL — 37–40 são do Ponto Móvel), com o APK **debug**. É o que fecha "a
   versão inicial no ar" da estação 5 (`CONSTRAINTS.md`). O primeiro ponto
   crítico é o item 2: a 2.0.0 mudou o manifesto (saíram
   `REQUEST_INSTALL_PACKAGES`, `READ_EXTERNAL_STORAGE`, o painel e um

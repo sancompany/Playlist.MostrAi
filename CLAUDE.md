@@ -269,6 +269,25 @@ Fechadas:
   desarma; abrir o app rearma. `Watchdog.decidir(provisionado)`,
   `WatchdogInstalacaoTest` (os quatro estados). 275 → 280 testes.
 
+- **Revisão + watchdog rápido + offline prolongado para Ponto Móvel
+  (02/10/2026)** — pedidos do dono: skill `revisar` no app inteiro, watchdog
+  "só sai pelo PIN e volta o mais rápido possível" (sem `HOME`), e "Master
+  Player — cache e operação offline prolongada". Regra-mestra: **offline não
+  autoriza inventar veiculação** — o comercial só toca dentro de `janelaFim`,
+  medido por relógio confiável (`RelogioConfiavel`); depois, só o
+  institucional guardado (`InstitucionalLocal`), sem comprovante.
+  Proof-of-play fica até o ACK (não expira mais por idade); quarentena só
+  com prova; fila de 150.000. Cache em `filesDir` com chaves protegidas e
+  reserva. Sessões operacionais (`operacao/RegistroOperacional`, sexta rota
+  `/player/$id/operacao`). Watchdog: retorno exato em 5 s depois do HOME,
+  backstop de 90 s. Bloco técnico de suporte só atrás do PIN (exceção em
+  `CONSTRAINTS.md`). Decisões superadas marcadas em `docs/funcional.md`
+  (RN-06, RN-07, RN-10) e `CONSTRAINTS.md`. 280 → 321 testes. Backend:
+  [sancompany/MostrAi#113](https://github.com/sancompany/MostrAi/pull/113)
+  (conectividade ≠ operação + rota de sessões). Proposta do pacote offline de
+  vários dias: `docs/offline-prolongado-proposta-backend.md`. Erros:
+  `docs/erros/2026-10-02-*.md`.
+
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
 
@@ -277,10 +296,11 @@ que o dono confirmar o app rodando em aparelho real.
 - Entrada da aplicação (única Activity): `app/src/main/java/br/com/mostrai/player/PlayerActivity.kt`
 - Valores fixos do produto: `app/src/main/java/br/com/mostrai/player/Produto.kt` (`BASE_URL`, `ROTACAO_GRAUS`, intervalos); `HostDaApi` em `app/src/release/` (constante) e `app/src/debug/` (trocável só por teste)
 - Provisionamento: `app/src/main/java/br/com/mostrai/player/provisionamento/` (`Codigos` normaliza ID e código, `Provisionador` troca pela credencial) + `ui/TelaProvisionamento.kt`
-- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi` = as 5 rotas, `ResultadoHttp` separa as famílias de falha, `Sincronizacao` aplica os efeitos do heartbeat, `HeartbeatJson`/`PlaylistJson`/`PlayedJson` são os corpos)
+- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi` = as 6 rotas, `ResultadoHttp` separa as famílias de falha, `Sincronizacao` aplica os efeitos do heartbeat, `HeartbeatJson`/`PlaylistJson`/`PlayedJson` são os corpos)
 - Playlist e reposicionamento: `app/src/main/java/br/com/mostrai/player/playlist/`
 - Cache de mídia: `app/src/main/java/br/com/mostrai/player/cache/`
 - Proof-of-play (fila durável): `app/src/main/java/br/com/mostrai/player/proof/`
+- Sessões operacionais: `app/src/main/java/br/com/mostrai/player/operacao/` · relógio confiável e institucional de reserva: `playlist/RelogioConfiavel.kt`, `playlist/InstitucionalLocal.kt` · bloco de suporte: `ui/InfoSuporte.kt`
 - Configuração: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda credencial e config aplicada; `ConfigRemota` lê `GET /config`; `HorarioOperacional` é o horário do ponto, puro e testável)
 - Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer` = os 9 estados do contrato)
 - Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `BootReceiver.kt`
@@ -295,5 +315,5 @@ conformidade: ou corrige, ou vira exceção registrada no `CONSTRAINTS.md`.
 
 ## Pendências que bloqueiam a esteira
 
-- Verificação "no ar" da estação 5 em hardware real — checklist de 36 itens, só o dono faz (ver `docs/pendencias.md`)
+- Verificação "no ar" da estação 5 em hardware real — checklist de 40 itens, só o dono faz (ver `docs/pendencias.md`)
 - CI (`.github/workflows/ci.yml`) pode precisar ser aplicado manualmente pelo dono se a ferramenta recusar o push do workflow (ver `docs/pendencias.md`)
