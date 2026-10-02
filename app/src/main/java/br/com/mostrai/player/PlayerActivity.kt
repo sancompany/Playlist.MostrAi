@@ -29,18 +29,23 @@ import br.com.mostrai.player.estado.EstadoPlayer
 import br.com.mostrai.player.kiosk.Watchdog
 import br.com.mostrai.player.network.HeartbeatJson
 import br.com.mostrai.player.network.MostraiApi
+import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.network.Sincronizacao
+import br.com.mostrai.player.operacao.RegistroOperacional
+import br.com.mostrai.player.playlist.InstitucionalLocal
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
 import br.com.mostrai.player.playlist.PlaylistCache
 import br.com.mostrai.player.playlist.PlaylistRepositorio
 import br.com.mostrai.player.playlist.PlaylistRepositorio.Origem
 import br.com.mostrai.player.playlist.PosicaoNaPlaylist
+import br.com.mostrai.player.playlist.RelogioConfiavel
 import br.com.mostrai.player.playlist.RelogioJanela
 import br.com.mostrai.player.playlist.ReposicionamentoPlaylist
 import br.com.mostrai.player.proof.FilaProofOfPlay
 import br.com.mostrai.player.provisionamento.Provisionador
 import br.com.mostrai.player.ui.EstadoInstitucional
+import br.com.mostrai.player.ui.InfoSuporte
 import br.com.mostrai.player.ui.RotacaoTela
 import br.com.mostrai.player.ui.TelaInstitucional
 import br.com.mostrai.player.ui.TelaPinSaida
@@ -50,6 +55,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -76,6 +82,9 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var diario: DiarioBordo
     private lateinit var sincronizacao: Sincronizacao
     private lateinit var provisionador: Provisionador
+    private lateinit var relogio: RelogioConfiavel
+    private lateinit var registro: RegistroOperacional
+    private lateinit var institucionalLocal: InstitucionalLocal
 
     private lateinit var playerView: PlayerView
     private lateinit var institucional: TelaInstitucional
@@ -154,11 +163,37 @@ class PlayerActivity : AppCompatActivity() {
     private var ultimaOrigemFetch: Origem = Origem.NENHUMA
 
     /**
-     * "Carregando" já mostrado nesta instalação: depois do vídeo de abertura,
-     * e de novo depois de uma reinstalação (senão a tela fica preta até a
-     * primeira playlist).
+     * A programação comercial venceu sem uma nova do servidor: só o
+     * institucional toca (offline não autoriza veiculação). Sai sozinho
+     * quando uma playlist válida chega.
      */
-    private var primeiraCargaFeita = false
+    private var emFallback = false
+    private var indiceFallback = 0
+
+    /** Sessão operacional em curso ([RegistroOperacional]); escrita só na thread principal. */
+    @Volatile
+    private var sessaoAtual: String? = null
+
+    /** Conta os ciclos que abriram sessão (só na thread principal): a sessão só fica com o ciclo que a pediu. */
+    private var cicloOperacional = 0
+
+    /** Último envio de sessões (uptime): a sessão aberta vai a cada 15 min, as encerradas na hora. */
+    @Volatile
+    private var ultimoEnvioOperacaoMs = 0L
+    @Volatile
+    private var ultimaFalhaOperacaoMs = Long.MIN_VALUE / 2
+
+    /**
+     * Diário numa fila de uma thread só: fora da thread principal (o vídeo
+     * em TextureView depende dela) e na ordem em que os fatos aconteceram.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val filaDoDiario = Dispatchers.IO.limitedParallelism(1)
+
+    /** Cobre a troca cartão → vídeo até o primeiro quadro; teto caso ele não avise. */
+    private val esconderCartaoSobreVideo = Runnable {
+        if (playerView.visibility == View.VISIBLE) institucional.visibility = View.GONE
+    }
 
     private val avancarPorTempo = Runnable { avancar() }
 
@@ -169,8 +204,13 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** Sem servidor e sem última playlist válida, tenta de novo bem antes do poll de 15 min. */
-    private val retentarPlaylist = Runnable { atualizarPlaylist(forcarReposicionamento = true) }
+    /**
+     * Sem servidor e sem última playlist válida (ou com ela vencida), tenta
+     * de novo bem antes do poll de 15 min. Sem forçar reposicionamento: a
+     * mesma janela de volta não pode reiniciar o institucional de reserva a
+     * cada minuto (ciclo 3); janela nova e lista vazia reiniciam sozinhas.
+     */
+    private val retentarPlaylist = Runnable { atualizarPlaylist(forcarReposicionamento = false) }
 
     private val heartbeatPeriodico = object : Runnable {
         override fun run() {
@@ -181,7 +221,10 @@ class PlayerActivity : AppCompatActivity() {
 
     private val flushFilaPeriodico = object : Runnable {
         override fun run() {
-            lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
+            lifecycleScope.launch(Dispatchers.IO) {
+                fila.tentarEnviar()
+                enviarOperacao(forcar = false)
+            }
             handler.postDelayed(this, Produto.INTERVALO_ENVIO_POP_MS)
         }
     }
@@ -194,6 +237,11 @@ class PlayerActivity : AppCompatActivity() {
     private val renovarSinalDeVida = object : Runnable {
         override fun run() {
             Watchdog.registrarSinalDeVida(this@PlayerActivity)
+            relogio.registrarPiso(relogioJanela)
+            sessaoAtual?.let { id ->
+                val servidor = servidorAgoraMs()
+                lifecycleScope.launch(Dispatchers.IO) { registro.checkpoint(id, servidor) }
+            }
             handler.postDelayed(this, INTERVALO_SINAL_DE_VIDA_MS)
         }
     }
@@ -220,7 +268,11 @@ class PlayerActivity : AppCompatActivity() {
         override fun onAvailable(network: Network) {
             handler.post {
                 if (!cicloAtivo) return@post
-                lifecycleScope.launch(Dispatchers.IO) { fila.tentarEnviar() }
+                cacheMidia.redeVoltou()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    fila.redeVoltou()
+                    enviarOperacao(forcar = true)
+                }
                 dispararHeartbeat()
                 // onAvailable também dispara no registro do callback, no
                 // boot, com a primeira busca já saindo.
@@ -244,13 +296,16 @@ class PlayerActivity : AppCompatActivity() {
         // a tela volta para a thread principal.
         api.aoRecusarCredencial = { chave ->
             if (config.esquecerCredencialSeFor(chave)) {
-                diario.registrar(DiarioBordo.Codigo.AUTH_FALHOU, "credencial recusada (HTTP 401)")
+                registrarNoDiario(DiarioBordo.Codigo.AUTH_FALHOU, "credencial recusada (HTTP 401)")
                 handler.post { aoPerderCredencial() }
             }
         }
         repositorio = PlaylistRepositorio(this, api)
-        fila = FilaProofOfPlay(this, api)
+        fila = FilaProofOfPlay(this, api, diario)
         cacheMidia = CacheMidia(this)
+        relogio = RelogioConfiavel(this)
+        institucionalLocal = InstitucionalLocal(this)
+        registro = RegistroOperacional(this)
         sincronizacao = Sincronizacao(config, api, diario)
         provisionador = Provisionador(config, api, diario)
 
@@ -264,7 +319,7 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         aplicarRotacaoEMargem()
 
-        diario.registrar(DiarioBordo.Codigo.BOOT, "versão ${BuildConfig.VERSION_NAME}")
+        registrarNoDiario(DiarioBordo.Codigo.BOOT, "versão ${BuildConfig.VERSION_NAME}")
     }
 
     override fun onStart() {
@@ -273,6 +328,7 @@ class PlayerActivity : AppCompatActivity() {
         // Abrir o app (à mão, pelo boot ou pelo próprio watchdog) desfaz uma
         // saída autorizada anterior: a operação normal volta.
         Watchdog.rearmar(this)
+        Watchdog.naFrente(this)
         Watchdog.registrarSinalDeVida(this)
         handler.postDelayed(renovarSinalDeVida, INTERVALO_SINAL_DE_VIDA_MS)
         if (introJaTocou) entrarEmOperacao() else tocarIntroducao()
@@ -288,6 +344,9 @@ class PlayerActivity : AppCompatActivity() {
         super.onStop()
         iniciada = false
         handler.removeCallbacksAndMessages(null)
+        // Saiu da frente sem PIN (HOME, outro app por cima): volta em segundos.
+        // A saída por PIN já gravou a autorização, e o watchdog a respeita.
+        if (!isChangingConfigurations) Watchdog.saiuDaFrente(this)
         pararCiclo()
         telaPin.esconder()
         // Só libera — nunca chama encerrarIntroducao(), que iniciaria um
@@ -338,10 +397,9 @@ class PlayerActivity : AppCompatActivity() {
     // ---------------------------------------------------------- provisionamento
 
     private fun mostrarProvisionamento() {
-        pararCiclo()
+        pararCiclo(MOTIVO_SEM_CREDENCIAL)
         telaPin.esconder()
         estadoAtual = EstadoPlayer.NOT_PROVISIONED
-        primeiraCargaFeita = false
         playerView.visibility = View.GONE
         institucional.visibility = View.GONE
         telaProvisionamento.mostrar(config.dispositivoId)
@@ -397,12 +455,13 @@ class PlayerActivity : AppCompatActivity() {
         // Instalada agora: o primeiro heartbeat não pode dizer o contrário.
         if (estadoAtual == EstadoPlayer.NOT_PROVISIONED) estadoAtual = EstadoPlayer.IDLE
 
-        if (!primeiraCargaFeita) {
-            primeiraCargaFeita = true
-            institucional.estado = EstadoInstitucional.CARREGANDO
-            institucional.visibility = View.VISIBLE
-            playerView.visibility = View.GONE
-        }
+        // Todo (re)começo do ciclo — primeira abertura, volta do HOME, do
+        // standby ou de uma reinstalação — cobre a tela até o primeiro item:
+        // o player é novo e, sem isto, fica preto até a playlist responder.
+        mostrarCartaoLocal(EstadoInstitucional.CARREGANDO)
+        emFallback = false
+        cacheMidia.proteger(playlist.itens + institucionalLocal.itens())
+        abrirSessaoOperacional()
 
         criarPlayer()
         aplicarHorarioOperacional()
@@ -428,13 +487,14 @@ class PlayerActivity : AppCompatActivity() {
      * a exibição em andamento sem comprovante (R5). Não mexe no sinal de
      * vida do watchdog.
      */
-    private fun pararCiclo() {
+    private fun pararCiclo(motivo: String = MOTIVO_PAROU) {
+        if (cicloAtivo) fecharSessaoOperacional(motivo)
         cicloAtivo = false
         // Invalida qualquer mostrarVideo ainda resolvendo cache.
         geracaoReproducao++
         listOf(
             avancarPorTempo, buscarPeriodicamente, retentarPlaylist, heartbeatPeriodico,
-            flushFilaPeriodico, checarHorario, viradaDeHora,
+            flushFilaPeriodico, checarHorario, viradaDeHora, esconderCartaoSobreVideo,
         ).forEach(handler::removeCallbacks)
         if (callbackRegistrado) {
             runCatching { conectividade().unregisterNetworkCallback(callbackConectividade) }
@@ -447,6 +507,71 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun conectividade() =
         getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    // ---------------------------------------------------------- tempo operacional
+
+    /** O ciclo começou: uma sessão nova (e a anterior, se ficou aberta, é encerrada). */
+    private fun abrirSessaoOperacional() {
+        val dispositivo = config.dispositivoId
+        val servidor = servidorAgoraMs()
+        val meuCiclo = ++cicloOperacional
+        lifecycleScope.launch(Dispatchers.IO) {
+            val id = registro.abrir(dispositivo, servidor)
+            val ficou = withContext(Dispatchers.Main) {
+                // O ciclo pode ter parado (ou parado e recomeçado) enquanto a
+                // sessão abria: sessão de um ciclo que já não é o atual seria
+                // estendida pelo sinal de vida sem ter ciclo por trás.
+                if (cicloAtivo && meuCiclo == cicloOperacional) {
+                    sessaoAtual = id
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!ficou && id != null) registro.fechar(id, RegistroOperacional.MOTIVO_INTERROMPIDA, servidor)
+            enviarOperacao(forcar = true)
+        }
+    }
+
+    /**
+     * O ciclo parou: a sessão fecha com o motivo. Não depende do
+     * lifecycleScope (que morre com a Activity): é um fato curto e precisa
+     * chegar ao disco mesmo na saída por PIN.
+     */
+    private fun fecharSessaoOperacional(motivo: String) {
+        val id = sessaoAtual ?: return
+        sessaoAtual = null
+        val servidor = servidorAgoraMs()
+        Thread({ registro.fechar(id, motivo, servidor) }, "fechar-sessao").start()
+    }
+
+    /**
+     * Manda as sessões ainda não confirmadas. A aberta vai a cada 15 min
+     * (ela só anda); as encerradas e a volta da rede mandam na hora. Lotes
+     * em sequência, nunca em paralelo. Bloqueante — chamar fora da thread
+     * principal.
+     */
+    private fun enviarOperacao(forcar: Boolean) {
+        val agora = android.os.SystemClock.elapsedRealtime()
+        repeat(MAX_LOTES_OPERACAO) {
+            val pendentes = registro.pendentes()
+            if (pendentes.isEmpty()) return
+            val soAberta = pendentes.all { it.aberta }
+            if (!forcar && soAberta && agora - ultimoEnvioOperacaoMs < INTERVALO_ENVIO_OPERACAO_MS) return
+            // Servidor sem a rota (404) ou fora: espera o intervalo, em vez
+            // de a frota inteira bater nele a cada minuto.
+            if (!forcar && agora - ultimaFalhaOperacaoMs < INTERVALO_ENVIO_OPERACAO_MS) return
+            val resposta = api.enviarOperacao(pendentes)
+            if (resposta !is ResultadoHttp.Ok) {
+                ultimaFalhaOperacaoMs = agora
+                return
+            }
+            ultimaFalhaOperacaoMs = Long.MIN_VALUE / 2
+            ultimoEnvioOperacaoMs = agora
+            registro.confirmar(pendentes, resposta.valor)
+            if (soAberta || resposta.valor.isEmpty()) return
+        }
+    }
 
     // --------------------------------------------------------------- playlist
 
@@ -475,7 +600,13 @@ class PlayerActivity : AppCompatActivity() {
                 playlist = resultado.playlist
                 relogioJanela = resultado.relogio
                 janelaIdAtual = resultado.playlist.janelaId
+                relogio.registrarPiso(relogioJanela)
+                if (resultado.origem == Origem.SERVIDOR) {
+                    institucionalLocal.atualizar(playlist)
+                    relogio.registrarSincronizacao(agoraConfiavelMs())
+                }
                 registrarOrigem(resultado)
+                cacheMidia.proteger(playlist.itens + institucionalLocal.itens())
                 preAquecerCache(playlist)
 
                 val decisao = ReposicionamentoPlaylist.decidir(
@@ -489,8 +620,15 @@ class PlayerActivity : AppCompatActivity() {
                 indice = decisao.indice
                 // Lista vazia: cartão local já (BUG-022) — e um anúncio no ar
                 // numa tela que acabou de ser suspensa para aqui (403).
-                if (decisao.reiniciarAgora || playlist.itens.isEmpty()) reiniciarItemAgora()
-                if (resultado.origem == Origem.NENHUMA) {
+                // Em fallback, uma playlist que voltou a valer assume na hora.
+                if (decisao.reiniciarAgora || playlist.itens.isEmpty() || (emFallback && programacaoAutorizada())) {
+                    reiniciarItemAgora()
+                }
+                // Sem nada, ou com a programação vencida (a busca da virada
+                // falhou ou ainda trouxe a hora anterior): tenta de novo em
+                // 1 min, não só no ciclo de 15 min — cada minuto em reserva
+                // é tempo comercial perdido.
+                if (resultado.origem == Origem.NENHUMA || (playlist.itens.isNotEmpty() && !programacaoAutorizada())) {
                     handler.postDelayed(retentarPlaylist, ESPERA_RETENTAR_PLAYLIST_MS)
                 }
             } finally {
@@ -505,15 +643,33 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** Reentrada por posição temporal (item 7.1) — nunca por índice salvo. */
+    /**
+     * Reentrada por posição temporal (item 7.1) — nunca por índice salvo.
+     * Depois de um reboot sem internet, a âncora some, mas o relógio
+     * confiável ([RelogioConfiavel]) ainda sabe a hora se o relógio da TV não
+     * estiver atrás do último instante visto do servidor: a playlist retoma
+     * de onde deveria, em vez de recomeçar do primeiro item.
+     */
     private fun calcularIndiceInicial(): Int {
-        val relogio = relogioJanela?.takeIf { it.valida() } ?: return 0
+        val agora = agoraConfiavelMs() ?: return 0
         val inicioIso = playlist.janelaInicio ?: return 0
         val inicioMs = runCatching { OffsetDateTime.parse(inicioIso).toInstant().toEpochMilli() }
             .getOrNull() ?: return 0
-        val decorridoMs = relogio.agoraDoServidorMs() - inicioMs
-        return PosicaoNaPlaylist.calcular(playlist.itens, decorridoMs)
+        return PosicaoNaPlaylist.calcular(playlist.itens, agora - inicioMs)
     }
+
+    private fun agoraConfiavelMs(): Long? = relogio.agoraMs(relogioJanela)
+
+    /**
+     * Só o relógio do servidor (âncora + monotônico), nunca o de parede:
+     * é o que vai nos campos `*ServidorEm` das sessões operacionais. Null
+     * sem âncora neste processo — o servidor fica com o relógio da TV como
+     * informativo, sabendo que é dela.
+     */
+    private fun servidorAgoraMs(): Long? = relogioJanela?.takeIf { it.valida() }?.agoraDoServidorMs()
+
+    /** Offline não autoriza veiculação: comercial só dentro da janela que o servidor deu. */
+    private fun programacaoAutorizada(): Boolean = playlist.comercialAutorizadoEm(agoraConfiavelMs())
 
     private fun reiniciarItemAgora() {
         handler.removeCallbacks(avancarPorTempo)
@@ -536,39 +692,43 @@ class PlayerActivity : AppCompatActivity() {
         val anterior = ultimaOrigemFetch
         ultimaOrigemFetch = resultado.origem
         when (resultado.origem) {
-            Origem.SERVIDOR -> diario.limparErros()
+            Origem.SERVIDOR -> lifecycleScope.launch(filaDoDiario) { diario.limparErros() }
             Origem.SUSPENSA -> if (anterior != Origem.SUSPENSA) {
-                diario.registrar(DiarioBordo.Codigo.TELA_SUSPENSA, resultado.falha)
+                registrarNoDiario(DiarioBordo.Codigo.TELA_SUSPENSA, resultado.falha)
             }
-            Origem.NENHUMA -> diario.registrar(DiarioBordo.Codigo.PLAYLIST_FALHOU, resultado.falha)
+            Origem.NENHUMA -> registrarNoDiario(DiarioBordo.Codigo.PLAYLIST_FALHOU, resultado.falha)
             // Rede caída não é erro do aparelho; playlist fora do contrato é.
             Origem.CACHE -> if (resultado.falha == "RESPOSTA_INVALIDA") {
-                diario.registrar(DiarioBordo.Codigo.PLAYLIST_FALHOU, "playlist fora do contrato")
+                registrarNoDiario(DiarioBordo.Codigo.PLAYLIST_FALHOU, "playlist fora do contrato")
             }
             Origem.RECUSADA -> Unit
         }
     }
 
-    /**
-     * Acorda na virada da hora com um atraso derivado do ID da tela, para as
-     * telas da rede não baterem juntas no servidor. O relógio de parede só
-     * decide QUANDO acordar — nenhuma decisão de crédito depende dele.
-     */
-    private fun agendarViradaDeHora() {
-        val agora = java.util.Calendar.getInstance()
-        val proximaHora = (agora.clone() as java.util.Calendar).apply {
-            add(java.util.Calendar.HOUR_OF_DAY, 1)
-            set(java.util.Calendar.MINUTE, 0)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
-        }
-        val atrasoMs = (proximaHora.timeInMillis - agora.timeInMillis) + config.atrasoViradaSegundos() * 1000L
-        handler.postDelayed(viradaDeHora, atrasoMs.coerceAtLeast(1_000L))
+    private fun registrarNoDiario(codigo: DiarioBordo.Codigo, mensagem: String? = null) {
+        lifecycleScope.launch(filaDoDiario) { diario.registrar(codigo, mensagem) }
     }
 
-    /** Baixa de antemão o que ainda não está em cache, sem atrasar a reprodução. */
+    /**
+     * Acorda na virada da hora com um atraso derivado do ID da tela, para as
+     * telas da rede não baterem juntas no servidor. A hora cheia é a do
+     * SERVIDOR quando há âncora: com o relógio da TV adiantado 20 min, a
+     * versão anterior buscava às 13:40 reais, recebia ainda a janela das 13h
+     * e só pegava a das 14h no poll de 15 min, toda hora.
+     */
+    private fun agendarViradaDeHora() {
+        val agoraMs = agoraConfiavelMs() ?: System.currentTimeMillis()
+        handler.postDelayed(viradaDeHora, atrasoAteViradaMs(agoraMs, config.atrasoViradaSegundos()))
+    }
+
+    /**
+     * Baixa de antemão o que ainda não está em cache, sem atrasar a
+     * reprodução. Programação vencida não vale a banda: só o institucional,
+     * que é o que pode tocar.
+     */
     private fun preAquecerCache(playlist: Playlist) {
-        lifecycleScope.launch(Dispatchers.IO) { cacheMidia.preAquecer(playlist.itens) }
+        val itens = if (programacaoAutorizada()) playlist.itens else playlist.institucionais() + institucionalLocal.itens()
+        lifecycleScope.launch(Dispatchers.IO) { cacheMidia.preAquecer(itens) }
     }
 
     // ---------------------------------------------------------------- horário
@@ -580,7 +740,12 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun aplicarHorarioOperacional() {
         if (!cicloAtivo) return
-        val dentro = config.horarioOperacional().estaDentro(Instant.now())
+        // Hora do servidor quando há âncora; o relógio da TV só se não
+        // estiver atrás do que o servidor já mostrou. Sem saber a hora, o
+        // padrão é permissivo: tela apagada em horário comercial é receita
+        // perdida; acesa fora de hora é só desperdício.
+        val agora = agoraConfiavelMs()?.let(Instant::ofEpochMilli)
+        val dentro = agora == null || config.horarioOperacional().estaDentro(agora)
         if (dentro) {
             if (estadoAtual == EstadoPlayer.OUT_OF_SCHEDULE) {
                 estadoAtual = EstadoPlayer.IDLE
@@ -592,7 +757,7 @@ class PlayerActivity : AppCompatActivity() {
         if (estadoAtual == EstadoPlayer.OUT_OF_SCHEDULE) return
 
         estadoAtual = EstadoPlayer.OUT_OF_SCHEDULE
-        diario.registrar(DiarioBordo.Codigo.FORA_DO_HORARIO)
+        registrarNoDiario(DiarioBordo.Codigo.FORA_DO_HORARIO)
         // BUG-025: um mostrarVideo ainda resolvendo o cache voltaria depois
         // disto e tocaria o anúncio com a loja fechada.
         geracaoReproducao++
@@ -616,13 +781,20 @@ class PlayerActivity : AppCompatActivity() {
                     if (state == Player.STATE_ENDED) concluirExibicao()
                 }
 
+                // O cartão sai exatamente quando o vídeo novo tem quadro: sem
+                // piscar preto e sem mostrar o último quadro do vídeo anterior.
+                override fun onRenderedFirstFrame() {
+                    handler.removeCallbacks(esconderCartaoSobreVideo)
+                    esconderCartaoSobreVideo.run()
+                }
+
                 override fun onPlayerError(error: PlaybackException) {
                     Log.w(TAG, "falha ao reproduzir item $indice", error)
                     val id = execucaoAtualId
                     execucaoAtualId = null
                     criativoAtualId = null
                     estadoAtual = EstadoPlayer.PLAYBACK_ERROR
-                    diario.registrar(DiarioBordo.Codigo.PLAYBACK_FALHOU, error.errorCodeName)
+                    registrarNoDiario(DiarioBordo.Codigo.PLAYBACK_FALHOU, error.errorCodeName)
                     // Falha de reprodução NÃO é exibição: a linha nunca teve
                     // terminadoEm, não é uma alegação de exibição completa.
                     if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
@@ -645,6 +817,15 @@ class PlayerActivity : AppCompatActivity() {
         if (foraDoHorario()) return
 
         val minhaGeracao = ++geracaoReproducao
+        if (playlist.itens.isNotEmpty() && !programacaoAutorizada()) {
+            tocarInstitucional(minhaGeracao)
+            return
+        }
+        if (emFallback) {
+            emFallback = false
+            indiceFallback = 0
+        }
+
         val item = playlist.itens.getOrNull(indice) ?: run {
             indice = 0
             playlist.itens.firstOrNull()
@@ -665,34 +846,76 @@ class PlayerActivity : AppCompatActivity() {
             criativoAtualId = null
             mostrarCartaoDoItem(item)
         } else {
-            mostrarVideo(item, minhaGeracao)
+            mostrarVideo(item, minhaGeracao, fallback = false)
         }
     }
 
-    private fun mostrarVideo(item: ItemPlaylist, minhaGeracao: Int) {
+    /**
+     * A janela autorizada acabou e não veio outra (sem internet, servidor
+     * fora): o comercial vencido NÃO repete — offline não autoriza
+     * veiculação, e um comprovante tardio seria creditado à hora errada. A
+     * tela segue com o institucional da Mostraí guardado na TV, sem
+     * comprovante; sem nenhum, o cartão da marca. Uma playlist válida do
+     * servidor tira a tela daqui ([atualizarPlaylist]).
+     */
+    private fun tocarInstitucional(minhaGeracao: Int) {
+        if (!emFallback) {
+            emFallback = true
+            indiceFallback = 0
+            registrarNoDiario(DiarioBordo.Codigo.PROGRAMACAO_EXPIRADA, playlist.janelaId)
+        }
+        execucaoAtualId = null
+        criativoAtualId = null
+        estadoAtual = EstadoPlayer.NO_PLAYLIST
+        val lista = institucionalLocal.itens()
+        if (lista.isEmpty()) {
+            mostrarCartaoLocal(EstadoInstitucional.CARTAO)
+            handler.postDelayed(avancarPorTempo, ESPERA_EM_FALLBACK_SEM_MIDIA_MS)
+            return
+        }
+        mostrarVideo(lista[Math.floorMod(indiceFallback, lista.size)], minhaGeracao, fallback = true)
+    }
+
+    private fun mostrarVideo(item: ItemPlaylist, minhaGeracao: Int, fallback: Boolean) {
         val playlistDoItem = playlist
+        // Mídia que ainda vai baixar: o cartão cobre a espera, em vez do
+        // último quadro do anúncio anterior congelado na tela.
+        if (!cacheMidia.emCache(item) && institucional.visibility != View.VISIBLE) {
+            mostrarCartaoLocal(EstadoInstitucional.CARTAO)
+        }
         lifecycleScope.launch {
-            // A linha da fila nasce ANTES do play() — só toca depois que o
-            // execucaoId está persistido.
-            val (id, resolucao) = withContext(Dispatchers.IO) {
-                fila.registrarInicio(item, playlistDoItem) to cacheMidia.resolucao(item)
-            }
+            val resolucao = withContext(Dispatchers.IO) { cacheMidia.resolucao(item) }
+            if (minhaGeracao != geracaoReproducao) return@launch
             val arquivoLocal = resolucao.arquivo
 
+            // Hash divergente é mídia comprovadamente errada: tocar a URL
+            // remota seria servir o arquivo que acabou de ser rejeitado (R3).
+            // Sem rede, a URL remota é igualmente inalcançável: pula na hora,
+            // em vez de dezenas de segundos de tela preta por item.
+            // O download pode ter levado minutos: a janela que autorizou o
+            // comercial pode ter acabado no meio. Confere de novo antes do
+            // comprovante e do play().
+            if (!fallback && !playlistDoItem.comercialAutorizadoEm(agoraConfiavelMs())) {
+                tocarItemAtual()
+                return@launch
+            }
+
+            if (arquivoLocal == null && !resolucao.podeTocarDaUrlRemota) {
+                if (resolucao.falha is CacheMidia.Falha.HashDivergente) {
+                    estadoAtual = EstadoPlayer.DOWNLOAD_ERROR
+                    registrarNoDiario(DiarioBordo.Codigo.MIDIA_HASH_DIVERGENTE, item.criativoId)
+                }
+                avancarAposFalha()
+                return@launch
+            }
+
+            // A linha da fila nasce ANTES do play(), mas DEPOIS do download:
+            // sair no meio de um download longo não deixa linha órfã.
+            val id = if (fallback) null else withContext(Dispatchers.IO) { fila.registrarInicio(item, playlistDoItem) }
             if (minhaGeracao != geracaoReproducao) {
                 // Um item mais novo já assumiu a tela: esta linha nunca teve
                 // terminadoEm, descartá-la não é perda.
                 if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
-                return@launch
-            }
-
-            // Hash divergente é mídia comprovadamente errada: tocar a URL
-            // remota seria servir o arquivo que acabou de ser rejeitado (R3).
-            if (arquivoLocal == null && !resolucao.podeTocarDaUrlRemota) {
-                if (id != null) lifecycleScope.launch(Dispatchers.IO) { fila.registrarFalha(id) }
-                estadoAtual = EstadoPlayer.DOWNLOAD_ERROR
-                diario.registrar(DiarioBordo.Codigo.MIDIA_HASH_DIVERGENTE, item.criativoId)
-                avancarAposFalha()
                 return@launch
             }
 
@@ -702,11 +925,13 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             execucaoAtualId = id
-            criativoAtualId = if (item.contabiliza) item.criativoId else null
-            estadoAtual = EstadoPlayer.PLAYING
+            criativoAtualId = if (item.contabiliza && !fallback) item.criativoId else null
+            estadoAtual = if (fallback) EstadoPlayer.NO_PLAYLIST else EstadoPlayer.PLAYING
 
-            institucional.visibility = View.GONE
+            // O cartão (se estiver na tela) só sai no primeiro quadro do vídeo.
             playerView.visibility = View.VISIBLE
+            handler.removeCallbacks(esconderCartaoSobreVideo)
+            handler.postDelayed(esconderCartaoSobreVideo, TETO_CARTAO_SOBRE_VIDEO_MS)
 
             val uri = if (arquivoLocal != null) Uri.fromFile(arquivoLocal) else Uri.parse(item.url!!)
             exo.setMediaItem(MediaItem.fromUri(uri))
@@ -726,6 +951,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun mostrarCartaoLocal(estado: EstadoInstitucional) {
+        handler.removeCallbacks(esconderCartaoSobreVideo)
         playerView.visibility = View.GONE
         player?.stop()
         institucional.estado = estado
@@ -753,7 +979,8 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun avancarAposFalha() {
         falhasSeguidas++
-        if (falhasSeguidas < playlist.itens.size) {
+        val tamanho = if (emFallback) institucionalLocal.itens().size else playlist.itens.size
+        if (falhasSeguidas < tamanho) {
             avancar()
             return
         }
@@ -765,6 +992,11 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun avancar() {
         if (foraDoHorario()) return
+        if (emFallback) {
+            indiceFallback++
+            tocarItemAtual() // reavalia: uma programação válida pode ter chegado
+            return
+        }
         if (playlist.itens.isEmpty()) {
             tocarItemAtual() // mostra o cartão local (BUG-022)
             return
@@ -868,17 +1100,48 @@ class PlayerActivity : AppCompatActivity() {
      */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
+        // VOLTAR segurado repete: abriria e fecharia o pedido de PIN a cada repetição.
+        if ((event?.repeatCount ?: 0) > 0) return true
         when {
             telaPin.visivel -> telaPin.esconder()
-            cicloAtivo -> telaPin.pedir()
+            cicloAtivo -> if (telaPin.pedir()) preencherInfoSuporte()
         }
         return true
+    }
+
+    /** Monta o bloco técnico fora da thread principal (consultas de disco). */
+    private fun preencherInfoSuporte() {
+        val playlistAgora = playlist
+        val agora = agoraConfiavelMs()
+        val online = runCatching { conectividade().activeNetworkInfo?.isConnected == true }.getOrDefault(false)
+        lifecycleScope.launch {
+            val dados = withContext(Dispatchers.IO) {
+                val (emCache, total) = cacheMidia.disponiveis(playlistAgora.itens)
+                val (sessoes, tempo) = registro.resumoPendente()
+                InfoSuporte.Dados(
+                    dispositivoId = config.dispositivoId,
+                    versao = "${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}",
+                    online = online,
+                    ultimaSincronizacaoMs = relogio.ultimaSincronizacaoMs(),
+                    programacaoValidaAteMs = playlistAgora.validaAteMs(),
+                    programacaoAutorizadaAgora = playlistAgora.comercialAutorizadoEm(agora),
+                    midiaEmCache = emCache,
+                    midiaTotal = total,
+                    institucionalGuardado = institucionalLocal.itens().size,
+                    espacoSuficiente = cacheMidia.espacoLivre() >= cacheMidia.reservaBytes(),
+                    comprovantesPendentes = fila.resumo().aguardandoEnvio,
+                    sessoesPendentes = sessoes,
+                    tempoOperacionalPendenteMs = tempo,
+                )
+            }
+            telaPin.mostrarInfo(InfoSuporte.texto(dados))
+        }
     }
 
     /** PIN certo: o watchdog não reabre, e o Player fecha normalmente (contrato §6). */
     private fun sairComAutorizacao() {
         Watchdog.autorizarSaida(this)
-        pararCiclo()
+        pararCiclo(MOTIVO_SAIDA_PIN)
         finish()
     }
 
@@ -894,12 +1157,36 @@ class PlayerActivity : AppCompatActivity() {
         const val INTERVALO_HORARIO_MS = 60_000L
 
         /** Bem abaixo de [Watchdog.TOLERANCIA_MS], com folga para atraso do looper. */
-        const val INTERVALO_SINAL_DE_VIDA_MS = 60_000L
+        const val INTERVALO_SINAL_DE_VIDA_MS = 30_000L
+
+        const val MOTIVO_PAROU = "parou"
+        const val MOTIVO_SAIDA_PIN = "saida_pin"
+        const val MOTIVO_SEM_CREDENCIAL = "sem_credencial"
+
+        /** A sessão aberta vai ao servidor a cada 15 min; as encerradas, na hora. */
+        const val INTERVALO_ENVIO_OPERACAO_MS = 15 * 60_000L
+        const val MAX_LOTES_OPERACAO = 10
 
         /** Pausa depois de uma volta inteira da playlist sem nenhuma exibição. */
         const val ESPERA_APOS_VOLTA_SEM_EXIBICAO_MS = 10_000L
 
         /** Sem servidor e sem última playlist válida: quanto esperar para tentar de novo. */
         const val ESPERA_RETENTAR_PLAYLIST_MS = 60_000L
+
+        /** Programação vencida e nenhum institucional guardado: reavalia a cada minuto. */
+        const val ESPERA_EM_FALLBACK_SEM_MIDIA_MS = 60_000L
+
+        /** O cartão sai no primeiro quadro; se o aviso não vier, sai depois disto. */
+        const val TETO_CARTAO_SOBRE_VIDEO_MS = 3_000L
+
+        /**
+         * Até a próxima hora cheia (UTC — o Brasil tem fuso de hora inteira)
+         * mais o atraso da tela. Pura, para teste.
+         */
+        fun atrasoAteViradaMs(agoraMs: Long, atrasoTelaSegundos: Int): Long {
+            val hora = 60 * 60 * 1000L
+            val proxima = (Math.floorDiv(agoraMs, hora) + 1) * hora
+            return (proxima - agoraMs + atrasoTelaSegundos * 1000L).coerceAtLeast(1_000L)
+        }
     }
 }

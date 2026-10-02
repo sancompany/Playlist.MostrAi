@@ -35,11 +35,15 @@ class Harness {
     }
 
     fun limparEstado() {
-        listOf(ConfigAparelho.ARQUIVO, "mostrai_watchdog", "mostrai_cache_playlist", ProofOfPlayDb.PREFS_PERDAS)
-            .forEach { contexto.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit() }
+        listOf(
+            ConfigAparelho.ARQUIVO, "mostrai_watchdog", "mostrai_cache_playlist", ProofOfPlayDb.PREFS_PERDAS,
+            "mostrai_relogio", "mostrai_institucional",
+        ).forEach { contexto.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit() }
         contexto.deleteDatabase(ProofOfPlayDb.NOME_ARQUIVO)
         contexto.deleteDatabase(DiarioBordo.NOME_ARQUIVO)
+        contexto.deleteDatabase(br.com.mostrai.player.operacao.RegistroOperacional.NOME_ARQUIVO)
         File(contexto.cacheDir, "midia").deleteRecursively()
+        File(contexto.filesDir, "midia").deleteRecursively()
         pularIntroducao()
     }
 
@@ -56,10 +60,24 @@ class Harness {
         PlayerActivity.introJaTocou = true
     }
 
-    fun playlistComUmVideo(duracao: Int = 10, contentHash: String? = null, janela: String = "j1"): String {
+    /**
+     * Playlist como o servidor manda: janela da hora corrente, com início,
+     * fim e o relógio do servidor. Sem isso o Player não pode autorizar
+     * comercial (offline não autoriza veiculação).
+     */
+    fun playlistComUmVideo(
+        duracao: Int = 10,
+        contentHash: String? = null,
+        janela: String = "j1",
+        agoraMs: Long = System.currentTimeMillis(),
+    ): String {
         val hash = contentHash?.let { ""","contentHash":"$it"""" } ?: ""
+        val hora = 3_600_000L
+        val inicio = java.time.Instant.ofEpochMilli(Math.floorDiv(agoraMs, hora) * hora)
+        val fim = inicio.plusMillis(hora)
+        val agora = java.time.Instant.ofEpochMilli(agoraMs)
         return """
-            {"versaoContrato":2,"janelaId":"$janela","janelaInicio":null,"servidorAgora":null,
+            {"versaoContrato":2,"janelaId":"$janela","janelaInicio":"$inicio","janelaFim":"$fim","servidorAgora":"$agora",
              "itens":[{"itemProgramacaoId":"i1","criativoId":"c1","duracaoSegundos":$duracao,
                        "url":"${servidor.baseUrl}/midia/v.mp4","anuncianteId":17,
                        "autoanuncio":false,"institucional":false,"contabiliza":true$hash}]}
@@ -100,6 +118,16 @@ class Harness {
         }
         idle()
         check(condicao()) { "condição não foi atingida em ${timeoutMs}ms; servidor recebeu ${servidor.recebidas}" }
+    }
+
+    /** Deixa as corrotinas de IO e o looper andarem por [ms] reais, sem condição. */
+    fun deixarRodar(ms: Long) {
+        val limite = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < limite) {
+            idle()
+            Thread.sleep(20)
+        }
+        idle()
     }
 
     /** Linhas na fila que começaram e nunca terminaram. */

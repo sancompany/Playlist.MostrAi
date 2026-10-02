@@ -36,7 +36,7 @@ class CacheConcorrenciaTest {
     @Before
     fun preparar() {
         contexto = ApplicationProvider.getApplicationContext()
-        File(contexto.cacheDir, "midia").deleteRecursively()
+        File(contexto.filesDir, "midia").deleteRecursively()
         cache = CacheMidia(contexto)
         servidor = ServidorDeTeste()
     }

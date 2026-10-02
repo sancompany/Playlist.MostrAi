@@ -40,4 +40,17 @@ class BootReceiverTest {
         val aberta = shadowOf(contexto as android.app.Application).nextStartedActivity
         org.junit.Assert.assertEquals(br.com.mostrai.player.PlayerActivity::class.java.name, aberta.component?.className)
     }
+
+    @Test
+    fun `QUICKBOOT_POWERON forjado horas depois do boot nao desfaz a saida por PIN`() {
+        // BOOT_COMPLETED só o sistema envia; QUICKBOOT_POWERON qualquer app pode.
+        val contexto = ApplicationProvider.getApplicationContext<Context>()
+        Watchdog.autorizarSaida(contexto)
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofHours(3))
+
+        BootReceiver().onReceive(contexto, Intent("android.intent.action.QUICKBOOT_POWERON"))
+
+        org.junit.Assert.assertTrue(Watchdog.saidaAutorizada(contexto))
+        org.junit.Assert.assertNull(shadowOf(contexto as android.app.Application).nextStartedActivity)
+    }
 }

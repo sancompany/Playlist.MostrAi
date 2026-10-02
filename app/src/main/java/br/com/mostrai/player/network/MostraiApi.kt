@@ -6,6 +6,7 @@ import br.com.mostrai.player.HostDaApi
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.ConfigRemota
 import br.com.mostrai.player.config.ConfigRemotaJson
+import br.com.mostrai.player.operacao.RegistroOperacional
 import br.com.mostrai.player.playlist.Playlist
 import br.com.mostrai.player.proof.EventoExibicao
 import java.io.IOException
@@ -107,6 +108,19 @@ open class MostraiApi(
         chamarAutenticado("heartbeat") { id, cabecalhos ->
             http.post("${base()}/player/$id/heartbeat", cabecalhos, HeartbeatJson.corpo(corpo))
         }.transformar { corpo -> HeartbeatJson.parseResposta(corpo)?.let { ResultadoHttp.Ok(it) } }
+
+    // ----------------------------------------------------------------- operação
+
+    /**
+     * `POST /player/:dispositivoId/operacao` — sessões operacionais locais
+     * (proposta de contrato de 02/10/2026, Ponto Móvel). Devolve os
+     * `sessaoId` confirmados. 404 = backend ainda sem a rota: as sessões
+     * ficam guardadas na TV e vão quando ela existir.
+     */
+    open fun enviarOperacao(sessoes: List<RegistroOperacional.Sessao>): ResultadoHttp<Set<String>> =
+        chamarAutenticado("operacao") { id, cabecalhos ->
+            http.post("${base()}/player/$id/operacao", cabecalhos, OperacaoJson.corpo(sessoes))
+        }.transformar { corpo -> OperacaoJson.parseConfirmadas(corpo)?.let { ResultadoHttp.Ok(it) } }
 
     // ------------------------------------------------------------------- config
 

@@ -68,8 +68,9 @@ class CicloDeVidaTest {
         h.servidor.rotas["/midia"] = ServidorDeTeste.Resposta(corpo = "bytes".toByteArray())
 
         val controle = h.subir()
-        // registrarInicio já gravou a linha; o download está preso.
-        h.esperar { h.orfaos() == 1 }
+        // O download está preso. A linha da fila só nasce depois dele (antes
+        // do play): parar aqui não pode deixar linha nenhuma para trás.
+        h.esperar { h.servidor.contar("/midia") > 0 }
 
         controle.pause().stop()
         midia.countDown()
@@ -221,5 +222,23 @@ class CicloDeVidaTest {
         }
 
         assertEquals(1, h.servidor.contar("/playlist"))
+    }
+
+    @Test
+    fun `voltar do HOME mostra o carregando em vez de tela preta`() {
+        h.provisionar()
+        h.servidor.rotas["/playlist"] = ServidorDeTeste.Resposta(corpo = h.playlistComUmVideo().toByteArray())
+        h.midiaNoAr()
+        val controle = h.subir()
+        val atividade = controle.get()
+        h.esperar { h.campo<String?>(atividade, "execucaoAtualId") != null }
+        // Playlist lenta na volta: sem o cartão, o player novo fica preto.
+        h.servidor.travas["/playlist"] = java.util.concurrent.CountDownLatch(1)
+
+        controle.pause().stop().restart().start().resume()
+
+        val institucional = h.vista<br.com.mostrai.player.ui.TelaInstitucional>(atividade, br.com.mostrai.player.R.id.institucional)
+        assertEquals(android.view.View.VISIBLE, institucional.visibility)
+        assertEquals(br.com.mostrai.player.ui.EstadoInstitucional.CARREGANDO, institucional.estado)
     }
 }

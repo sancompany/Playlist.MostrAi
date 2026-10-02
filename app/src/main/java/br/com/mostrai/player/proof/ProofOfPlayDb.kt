@@ -107,7 +107,7 @@ class ProofOfPlayDb(context: Context) :
      * Tira o evento da fila de envio sem apagá-lo: o servidor rejeitou o
      * payload e nenhuma retentativa vai mudar isso, mas jogar fora em
      * silêncio esconderia a falha justamente de quem precisa investigá-la
-     * (R4). A linha some sozinha pelo horizonte de [removerExpirados].
+     * (R4). A linha some sozinha pelo horizonte de [removerSemValorAntesDe].
      */
     fun marcarQuarentena(execucaoId: String, motivo: String) {
         val valores = ContentValues().apply { put("quarentena_motivo", motivo) }
@@ -206,13 +206,6 @@ class ProofOfPlayDb(context: Context) :
         return null
     }
 
-    /**
-     * Quantos comprovantes de verdade — terminados e fora da quarentena —
-     * existem antes de [limiteMs]. Órfão nunca foi comprovante, e quarentena
-     * já foi contada como perda ao entrar nela (BUG-017).
-     */
-    fun contarComprovantesAntesDe(limiteMs: Long): Int =
-        contar("criado_em_ms < $limiteMs AND $AGUARDANDO_ENVIO")
 
     fun aguardaEnvio(execucaoId: String): Boolean {
         readableDatabase.rawQuery(
@@ -220,9 +213,23 @@ class ProofOfPlayDb(context: Context) :
         ).use { return it.moveToFirst() }
     }
 
-    /** Horizonte local ([FilaProofOfPlay.HORIZONTE_EXPIRACAO_MS]) — contabilidade, não decisão de crédito. */
-    fun removerExpirados(limiteMs: Long): Int =
-        writableDatabase.delete(TABELA, "criado_em_ms < ?", arrayOf(limiteMs.toString()))
+    /**
+     * Só órfão e quarentena — o que nunca será comprovante. Comprovante
+     * terminado não tem prazo aqui: sai só com o ACK do servidor.
+     */
+    fun removerSemValorAntesDe(limiteMs: Long): Int = writableDatabase.delete(
+        TABELA,
+        "criado_em_ms < ? AND (terminado_em IS NULL OR quarentena_motivo IS NOT NULL)",
+        arrayOf(limiteMs.toString()),
+    )
+
+    /** A rede voltou: todo comprovante fica elegível já, sem esperar o backoff. */
+    fun liberarParaEnvio(): Int = writableDatabase.update(
+        TABELA,
+        ContentValues().apply { put("proximo_envio_em", 0L) },
+        "$AGUARDANDO_ENVIO AND proximo_envio_em > 0",
+        null,
+    )
 
     private fun EventoExibicao.paraValores(): ContentValues = ContentValues().apply {
         put("execucao_id", execucaoId)

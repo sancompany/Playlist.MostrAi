@@ -78,6 +78,8 @@ class TelaProvisionamento(
     /** Teclas físicas do controle (números) e de um teclado USB, se houver. */
     fun aoTeclar(evento: KeyEvent): Boolean {
         if (!visivel || evento.action != KeyEvent.ACTION_DOWN) return false
+        // Tecla segurada repete: um "5" preso encheria o ID de cincos.
+        if (evento.repeatCount > 0) return true
         if (evento.keyCode == KeyEvent.KEYCODE_DEL) {
             apagar()
             return true

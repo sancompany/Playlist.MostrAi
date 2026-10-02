@@ -70,8 +70,13 @@ data class HorarioOperacional(
     fun estaDentro(instante: Instant): Boolean {
         if (porDiaDaSemana.isEmpty() && feriados.isEmpty()) return true
 
+        // Offset PADRÃO da zona, nunca o "com horário de verão": a TCL sai de
+        // fábrica com Android 8.0 e tzdata de 2017, que ainda aplica o
+        // horário de verão abolido no Brasil em 2019 — a tela apagaria 1 h
+        // antes do fechamento de novembro a fevereiro. O produto é só Brasil,
+        // sem horário de verão; se ele voltar, é build nova (como a rotação).
         val zona = zonaOuPadrao()
-        val local = instante.atZone(zona)
+        val local = instante.atOffset(zona.rules.getStandardOffset(instante))
         val data = local.toLocalDate()
         val minutoDoDia = local.hour * 60 + local.minute
 

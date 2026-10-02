@@ -92,14 +92,20 @@ class ProofOfPlayDbTest {
     }
 
     @Test
-    fun `removerExpirados so remove o que e mais velho que o limite`() {
-        db.inserir(evento("antigo").copy(criadoEmMs = 1_000))
-        db.inserir(evento("recente").copy(criadoEmMs = System.currentTimeMillis()))
+    fun `por idade so sai o que nunca vira comprovante, nunca o comprovante`() {
+        // Ponto Móvel: dias sem internet. Comprovante terminado só sai pelo
+        // ACK do servidor; órfão e quarentena saem pela idade.
+        db.inserir(evento("comprovante-antigo", terminadoEm = "2026-09-26T10:00:15-03:00").copy(criadoEmMs = 1_000))
+        db.inserir(evento("orfao-antigo").copy(criadoEmMs = 1_000))
+        db.inserir(evento("quarentena-antiga", terminadoEm = "2026-09-26T10:00:15-03:00").copy(criadoEmMs = 1_000))
+        db.marcarQuarentena("quarentena-antiga", "teste")
+        db.inserir(evento("orfao-recente"))
 
-        val removidos = db.removerExpirados(limiteMs = 500_000)
+        val removidos = db.removerSemValorAntesDe(limiteMs = 500_000)
 
-        assertEquals(1, removidos)
-        assertEquals(1, db.contarPendentes())
+        assertEquals(2, removidos)
+        assertEquals(2, db.contarPendentes())
+        assertTrue(db.aguardaEnvio("comprovante-antigo"))
     }
 
     @Test

@@ -44,4 +44,14 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:columnCount="3" />
+
+    <!-- Bloco técnico (Ponto Móvel): só aqui, nunca na tela pública. -->
+    <TextView
+        android:id="@+id/infoSuporte"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:lineSpacingExtra="2dp"
+        android:textColor="#9AA0A6"
+        android:textSize="13sp" />
 </LinearLayout>

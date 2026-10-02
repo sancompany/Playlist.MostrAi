@@ -87,11 +87,16 @@ class GuardaMvpTest {
     }
 
     @Test
-    fun `a API do Player usa exatamente as 5 rotas do contrato`() {
+    fun `a API do Player usa exatamente as rotas do contrato`() {
         val api = codigo.getValue("MostraiApi.kt")
         val rotas = Regex("\"\\$\\{base\\(\\)}(/[^\"]*)\"").findAll(api).map { it.groupValues[1] }.toSet()
         assertEquals(
-            setOf("/player/provisionar", "/playlist/\$id", "/player/\$id/played", "/player/\$id/heartbeat", "/player/\$id/config"),
+            setOf(
+                "/player/provisionar", "/playlist/\$id", "/player/\$id/played", "/player/\$id/heartbeat",
+                "/player/\$id/config",
+                // Ponto Móvel (02/10/2026): sessões operacionais registradas offline.
+                "/player/\$id/operacao",
+            ),
             rotas,
         )
     }

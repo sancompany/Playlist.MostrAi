@@ -90,14 +90,17 @@ class FilaProofOfPlayTest {
     }
 
     @Test
-    fun `payload malformado remove e conta como perda`() {
+    fun `400 num lote de um evento so nao descarta - sem prova, volta para o backoff`() {
+        // Pelo contrato, evento ruim volta item_invalido; 400 é lote
+        // malformado, que o Player não produz. Sem um irmão aceito, não há
+        // como saber que o problema é o evento.
         criarEExpirar("e3")
         api.proximaResposta = ResultadoHttp.RespostaInvalida("HTTP 400")
 
         fila.tentarEnviar()
 
-        assertEquals(0, fila.pendentes())
-        assertEquals(1, fila.perdas())
+        assertEquals(1, fila.pendentes())
+        assertEquals(0, fila.perdas())
     }
 
     @Test

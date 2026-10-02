@@ -165,6 +165,11 @@ class DiarioBordo(context: Context) {
         MIDIA_HASH_DIVERGENTE(Severidade.ERRO),
         PLAYBACK_FALHOU(Severidade.ERRO),
         FILA_LIMIAR(Severidade.ERRO),
+        FILA_CHEIA(Severidade.ERRO),
+        FILA_RECUSADA(Severidade.ERRO),
+        // Estado esperado offline (e por segundos na virada da hora), não
+        // defeito do Player: INFO, para não virar "erro" no heartbeat.
+        PROGRAMACAO_EXPIRADA(Severidade.INFO),
         CONFIG_APLICADA(Severidade.INFO),
         CONFIG_FALHOU(Severidade.ERRO),
         FORA_DO_HORARIO(Severidade.INFO),
