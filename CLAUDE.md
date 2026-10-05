@@ -289,8 +289,9 @@ Fechadas:
   limpo): 5 + 1 defeitos confirmados corrigidos, cada um com teste que mata a
   mutação; plausíveis restantes em `docs/pendencias.md`. 280 → 328 testes. Backend:
   [sancompany/MostrAi#113](https://github.com/sancompany/MostrAi/pull/113)
-  (conectividade ≠ operação + rota de sessões). Proposta do pacote offline de
-  vários dias: `docs/offline-prolongado-proposta-backend.md`. Erros:
+  (conectividade ≠ operação + rota de sessões; fechado sem mesclar em
+  05/10). Proposta do pacote offline de vários dias — CANCELADA em 05/10:
+  `docs/historico/offline-prolongado-proposta-backend.md`. Erros:
   `docs/erros/2026-10-02-*.md`.
 
 - **V1 de produção + modernização Android — 3.0.0 (05/10/2026)** — pedido
@@ -315,9 +316,26 @@ Fechadas:
   APK, lint como portão. Testes por API (26/29/31/34/36). Revisão focal em
   três frentes: 5 HIGH e 6 MEDIUM corrigidos (detalhe em
   `docs/pendencias.md`), baixos aceitos registrados. Checklist físico
-  de 45 itens (TV A, TV B offline, N → N+1, 1080×1920, soak). Produção
+  de 45 itens (TV A, TV B quedas temporárias, N → N+1, 1080×1920, soak). Produção
   começa do zero no 3.0.0. versionCode 4. Estado: **PLAYER PRONTO PARA
   TESTE FÍSICO DE RELEASE** — falta a chave definitiva e o teste nas TCLs.
+
+- **Rodada final de produção (05/10/2026)** — pedido do dono. Decisão
+  definitiva: **offline prolongado cancelado** — a Mostraí é *online-first*
+  (internet do estabelecimento ou dados móveis); offline é só tolerância a
+  queda temporária. Proposta antiga em
+  `docs/historico/offline-prolongado-proposta-backend.md` (CANCELADO).
+  Backend: [sancompany/MostrAi#115](https://github.com/sancompany/MostrAi/pull/115)
+  mesclado e publicado (produção `deafc7d`, heartbeat 15 s / "sem
+  comunicação" 2 min, `TELA_SEM_SINAL_MIN` ausente). Contrato reconferido
+  contra o `main` (só o #115 mudou desde o #114; o Player não depende de
+  "base"). Teste N → N+1 preparado sem editar arquivos
+  (`scripts/release-teste-n-mais-1.sh`, `-Pmostrai.versionCodeTeste`; o
+  candidato oficial recusa APK de teste). Soak em etapas (2–4 h → 24 h →
+  48–72 h). **Chave definitiva NÃO gerada**: a sessão roda em contêiner
+  efêmero, sem garantia de recuperar o `.jks` — fica com o dono
+  (`docs/release-producao.md`, "Primeira assinatura"). Estado: código e
+  backend prontos; falta assinar e testar nas TCLs.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.

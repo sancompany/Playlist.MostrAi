@@ -379,7 +379,7 @@ class CacheMidia(context: Context) {
 
         // limite: reserva de 512 MB ou 10% do disco, o que for maior — o
         // resto é do cache. Revisar com a TCL real (espaço livre medido no
-        // checklist físico) se a programação de vários dias não couber.
+        // checklist físico) se a programação da janela não couber.
         const val RESERVA_MINIMA_BYTES = 512L * 1024 * 1024
 
         /**

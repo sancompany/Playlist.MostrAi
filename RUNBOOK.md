@@ -54,13 +54,27 @@ código de instalação e os cabeçalhos nunca aparecem nos logs
 (`SegredoForaTest`). O release não é `debuggable`: `pidof`/`logcat` por pid
 só no debug; no release, `adb logcat -s` pelas tags.
 
+## Conectividade
+
+**A Mostraí é online-first.** Offline é tolerância a interrupções
+temporárias, não modo normal de operação: ponto fixo usa a internet do
+estabelecimento; ponto móvel, hospedagem e eventos sem internet local usam
+dados móveis (hotspot, roteador 4G/5G). Numa queda, a tela segue com a
+programação já autorizada até o fim da janela e depois com o institucional;
+comprovantes e tempo operacional ficam guardados até a confirmação.
+Operação comercial por dias sem conexão não existe na V1 (decisão de
+05/10/2026). Ponto sem internet estável: instalar um roteador 4G/5G ou
+hotspot antes da TV.
+
 ## Atualizar (N → N+1)
 
 Não há OTA. Atualizar é instalar o APK novo por cima, pelo pendrive, **sem
 desinstalar**, assinado com **a mesma chave** e `versionCode` maior.
 Credencial, config, cache, fila de comprovantes e segmentos operacionais
 sobrevivem. O teste N → N+1 está em `docs/release-producao.md` e no
-checklist (itens 34–38); fazer em bancada antes de cada versão nova.
+checklist (itens 34–38); fazer em bancada antes de cada versão nova. O
+N+1 de teste sai de `scripts/release-teste-n-mais-1.sh` (versionCode só na
+linha de comando, mesma chave, "NAO-DISTRIBUIR" no nome).
 
 ## Reverter
 
@@ -136,8 +150,11 @@ desinstalar apaga a credencial da tela e a fila de proof-of-play inteira.
 Ou seja: TVs que saírem com o APK de debug, ou com uma chave que se perca
 depois, só trocam de versão com desinstalação + reprovisionamento, uma a uma.
 
-**Quem gera a chave é o dono, fora desta sessão e fora do repositório.**
-Nenhuma sessão automatizada gera o keystore definitivo.
+**A chave nasce uma vez, num ambiente persistente sob controle do dono,
+fora do repositório.** Sessão efêmera (contêiner descartável) nunca gera a
+chave definitiva — não haveria como recuperá-la. Passo a passo completo,
+com o registro da impressão digital: `docs/release-producao.md`, "Primeira
+assinatura".
 
 ### Gerar (o dono, na própria máquina)
 

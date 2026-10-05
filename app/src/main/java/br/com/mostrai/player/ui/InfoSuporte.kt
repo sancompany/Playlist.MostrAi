@@ -12,8 +12,8 @@ import java.time.format.DateTimeFormatter
  * "Pronto para offline" exige: aparelho instalado, programação autorizada
  * agora, toda a mídia dela já no disco e espaço livre acima da reserva. A
  * validade é o fim da janela que o servidor autorizou — no contrato atual,
- * uma hora; um pacote de vários dias depende do backend
- * (docs/offline-prolongado-proposta-backend.md).
+ * uma hora. Operação offline de vários dias não existe na V1 (a Mostraí é
+ * online-first; docs/pendencias.md, "Decisões").
  *
  * Só leitura e sem segredo: nunca a chave do aparelho, token, cabeçalho,
  * URL interna nem dado pessoal — o teste `InfoSuporteTest` confere.

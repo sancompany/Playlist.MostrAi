@@ -28,6 +28,9 @@ fi
 
 verificacao="$(scripts/verificar-apk.sh "$origem" --release)"
 versao="$(sed -n 's/.*versionName=\([^ ]*\).*/\1/p' <<<"$verificacao" | head -1)"
+case "$versao" in
+  *teste*) echo "FALHOU: versionName '$versao' é de teste N → N+1; o candidato oficial não aceita (rodar sem -Pmostrai.versionCodeTeste)" >&2; exit 1 ;;
+esac
 vcode="$(sed -n 's/.*versionCode=\([^ ]*\).*/\1/p' <<<"$verificacao" | head -1)"
 
 destino=app/build/release-candidato

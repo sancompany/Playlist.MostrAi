@@ -11,12 +11,21 @@ o backend. Projeto da San & Co. — segue a esteira do plugin `san-co` (skill
 ## O que o Player faz (3.0.0 — V1 de produção)
 
 ```
-PROVISIONAR → RECEBER PLAYLIST → REPRODUZIR → CACHEAR → FUNCIONAR OFFLINE
+PROVISIONAR → RECEBER PLAYLIST → REPRODUZIR → CACHEAR → AGUENTAR QUEDA DE REDE
             → CONFIRMAR PROOF-OF-PLAY → ENVIAR HEARTBEAT → RECEBER CONFIG MÍNIMA
             → SAIR COM PIN → SE RECUPERAR (boot + watchdog)
 ```
 
 E nada além disso. Tela por tela em `docs/funcional.md`.
+
+**A Mostraí é online-first.** Offline é tolerância a interrupções
+temporárias, não modo normal de operação: ponto fixo usa a internet do
+estabelecimento; ponto móvel, hospedagem e eventos sem internet local usam
+dados móveis (hotspot, roteador 4G/5G). Numa queda, a tela segue com a
+programação já autorizada até o fim da janela e depois com o institucional;
+comprovantes e tempo operacional ficam guardados até a confirmação.
+Operação comercial por dias sem conexão não existe na V1 (decisão de
+05/10/2026).
 
 ## Contrato com o backend
 

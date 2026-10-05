@@ -46,8 +46,13 @@ android {
         // 3 / 2.0.0: Player MVP (contrato docs/player-mvp-contract.md).
         // 4 / 3.0.0: V1 de produção — target 36, segmentos operacionais,
         // offline endurecido, release assinado (docs/release-producao.md).
-        versionCode = 4
-        versionName = "3.0.0"
+        // Teste N → N+1 com a mesma chave (docs/release-producao.md): só pela
+        // linha de comando (`scripts/release-teste-n-mais-1.sh`), nunca
+        // commitado. O versionName marcado faz o candidato oficial recusar
+        // esse APK.
+        val versionCodeTeste = (findProperty("mostrai.versionCodeTeste") as String?)?.toInt()
+        versionCode = versionCodeTeste ?: 4
+        versionName = if (versionCodeTeste != null) "3.0.0-teste-n$versionCodeTeste" else "3.0.0"
     }
 
     buildFeatures {

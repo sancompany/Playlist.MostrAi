@@ -12,19 +12,28 @@ FÍSICO DE RELEASE** — o que falta é físico ou é do dono.
 
 ## Backend
 
-- **Heartbeat de 15 s como fonte única** — o backend ainda dizia 5 min (e
-  tolerava 6,5 min de silêncio como operação). Alinhado em
+- **Heartbeat de 15 s como fonte única — fechado.**
   [sancompany/MostrAi#115](https://github.com/sancompany/MostrAi/pull/115)
-  (rascunho): tolerância "sem sinal" = 8 batidas = 2 min, e o texto público
-  "a cada 15 segundos". Até ser mesclado e publicado, o admin mostra "sem
-  sinal" com atraso e o tempo operacional pelo heartbeat tolera buracos de
-  até 6,5 min — o Player não muda nada.
-- **Pacote offline de vários dias** (contexto base/hospedagem/evento,
-  manifesto assinado): precisa de rota nova no backend —
-  `docs/offline-prolongado-proposta-backend.md`. Decisão do dono
-  (05/10/2026): o cliente só é implementado quando o backend tiver o
-  endpoint. Até lá, a TV fica pronta para offline até o fim da janela da
-  hora corrente; depois, institucional.
+  mesclado e publicado (produção em `deafc7d`, 05/10/2026): tolerância "sem
+  comunicação" = 8 batidas = 2 min, texto público "a cada 15 segundos".
+  `TELA_SEM_SINAL_MIN` **não** está definida em produção (conferido pela API
+  do Northflank, só a presença da chave) — vale o padrão de 2 min.
+
+## Decisões
+
+- **DECISÃO — Operação prolongada sem conectividade não faz parte da V1.**
+  Pontos usam internet local ou dados móveis (hotspot, roteador 4G/5G). A
+  Mostraí é *online-first*: offline é tolerância a interrupções temporárias,
+  não modo normal de operação. Pacote offline de vários dias, manifesto
+  comercial de vários dias e rota nova de backend para isso: **cancelados**
+  (05/10/2026, definitivo para a V1). Proposta antiga em
+  `docs/historico/offline-prolongado-proposta-backend.md`. Continua valendo a
+  resiliência: cache da programação autorizada, reprodução até o fim da
+  janela, institucional depois, comprovantes e segmentos guardados até a
+  confirmação, reboot sem rede, recuperação ao reconectar.
+- **Produção começa do zero no 3.0.0**: toda TV recebe o Player depois de
+  remover o antigo e apagar os dados; nada de instalações de teste é
+  migrado. Daí em diante, toda atualização usa a mesma chave.
 
 ## Riscos conhecidos, aceitos
 
@@ -73,18 +82,19 @@ fora de ordem (agora um executor serial único).
 
 - **Gerar e guardar a chave de assinatura definitiva**, fora deste
   repositório — **bloqueador do release**. Passo a passo: `RUNBOOK.md`,
-  "Chave de assinatura". Nenhuma sessão automatizada gera essa chave.
+  "Chave de assinatura", e `docs/release-producao.md`, "Primeira
+  assinatura". A rodada final de 05/10/2026 rodou num contêiner efêmero e
+  por isso **não** gerou a chave (não haveria como recuperá-la).
 - **Gerar o candidato assinado** (`scripts/release-candidato.sh`) e guardar
   o `REGISTRO.txt` (`docs/release-producao.md`).
 - **Teste físico nas duas TCLs** — `docs/checklist-fisico-producao.md`
-  (45 itens: TV A operação normal, TV B tortura offline, N → N+1 com a
-  mesma chave, vídeo em pé 1080×1920, soak de 72 h). É o que fecha "a
+  (45 itens: TV A operação normal, TV B quedas temporárias, N → N+1 com a
+  mesma chave, vídeo em pé 1080×1920, soak em etapas 2–4 h → 24 h → 48–72 h). É o que fecha "a
   versão inicial no ar" da estação 5.
 - **Se a imagem aparecer de ponta-cabeça**: registrar só
   `ROTATION_PHYSICAL_CORRECTION_REQUIRED = 270`.
 - **Definir o PIN de saída no admin** antes de gerar o primeiro código de
   instalação.
-- **Mesclar o PR do backend do heartbeat** (#115) quando aprovado.
 - **Branch padrão do repositório**: hoje é `claude/festive-goldberg-4gdhqi`,
   não `main`. Só o dono troca (GitHub › Settings › Branches).
 - **Riscos de produto ainda abertos da auditoria de 23/09**

@@ -12,7 +12,9 @@ checklist.
 **Duas TVs:**
 
 - **TV A — operação normal:** rede estável, uso como em loja.
-- **TV B — tortura offline:** cortes de rede, tomada, relógio, disco.
+- **TV B — resiliência:** quedas **temporárias** de rede, tomada, relógio,
+  disco. A Mostraí é *online-first*: operação offline prolongada não é
+  cenário suportado (ponto sem internet local usa dados móveis).
 
 **Antes, no admin:** PIN de saída definido; uma tela de teste por TV com
 ao menos um criativo `contabiliza: true` na hora corrente e o institucional
@@ -49,7 +51,7 @@ protetor de tela desligados.
 | 20 | Admin: tela em reparo (403) | Cartão da marca; nada de anúncio; ao reativar, volta | |
 | 21 | Fora do horário do ponto | Cartão/estado "fora do horário"; volta sozinho no horário | |
 
-## TV B — tortura offline (ponto móvel)
+## TV B — resiliência a quedas temporárias
 
 | # | Passo | Esperado | PASS/FAIL |
 |---|---|---|---|
@@ -59,7 +61,7 @@ protetor de tela desligados.
 | 25 | Offline atravessando a virada de hora | Até o fim da janela: programação. Depois: **só** institucional (estado `IDLE` no bloco técnico), nenhum anúncio repetido, sem tela preta | |
 | 26 | Admin durante o offline | "Sem comunicação" (não "desligada") depois de 2 min | |
 | 27 | Offline: tirar da tomada e religar | Volta ao institucional (ou à programação ainda válida) sem pedir nada; bloco técnico: "sem hora do servidor neste boot" | |
-| 28 | Offline ≥ 3 h (ideal: uma noite, ≥ 9 h, para a suspensão de 4/6/8 h) | Nada de tela preta, nada de anúncio vencido; TV **não** entrou em suspensão | |
+| 28 | Offline ~1 h (queda temporária, não operação offline) | Nada de tela preta, nada de anúncio vencido | |
 | 29 | Religar a rede | Em ≤ 1 min: playlist nova; comprovantes do período offline no admin; bloco técnico com 0 pendentes | |
 | 30 | Ficha da tela (ponto móvel) | Tempo operacional do período offline aparece (segmentos), **sem** o tempo do boot que nunca teve rede (item 27, se não reconectou antes de outro reboot) | |
 | 31 | Offline, mudar a hora da TV 2 dias para frente (Configurações › Data e hora, manual) | Nenhum anúncio toca fora da janela; ao voltar a rede, comprovantes chegam com a hora certa | |
@@ -85,12 +87,16 @@ Procedimento completo em `docs/release-producao.md`.
 | 39 | Criativo H.264 1080×1920 30 fps na playlist | Toca em pé, sem tarja, sem travar; anotar se falhou e a mensagem do bloco técnico | |
 | 40 | Se 39 falhar: o mesmo com 608×1080 (altura ≤ 1088) | Toca — vira regra de produto para criativos | |
 
-## Soak (resistência)
+## Soak (resistência) — em etapas, não bloqueia o primeiro piloto
+
+Primeiro 2–4 h; estável, 24 h; depois 48–72 h como validação adicional.
+Crash, ANR ou tela preta em qualquer etapa: parar e investigar. O APK está
+pronto para o primeiro ponto piloto depois da etapa de 2–4 h passar.
 
 | # | Passo | Esperado | PASS/FAIL |
 |---|---|---|---|
-| 41 | TV A: 72 h contínuas com rede | Sem tela preta, sem travar; comprovantes contínuos no admin; anotar memória/temperatura se possível | |
-| 42 | TV B: 24 h alternando 1 h offline / 1 h online | Nenhum comprovante perdido (contar no admin vs. exibições esperadas); segmentos operacionais contínuos | |
+| 41 | TV A: 2–4 h contínuas com rede; depois 24 h (cobre a suspensão automática de 4/6/8 h); depois 48–72 h | Sem tela preta, sem travar, TV **não** entrou em suspensão; comprovantes contínuos no admin; anotar temperatura se possível | |
+| 42 | TV B: 4–6 h alternando 30 min sem rede / 30 min com rede | Nenhum comprovante perdido (contar no admin vs. exibições esperadas); segmentos operacionais contínuos | |
 
 ## Android 10+ (só se houver TV assim)
 

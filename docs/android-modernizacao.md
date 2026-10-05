@@ -55,6 +55,10 @@ Android 10+ — e duas coisas já valiam lá **independentemente do target**.
 - **`SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`**: `set` atende o retorno de
   5 s sem permissão nova.
 - **Câmera, microfone, OTA, BYOD**: fora do escopo (`CONSTRAINTS.md`).
+- **Operação offline de vários dias**: cancelada (05/10/2026). A Mostraí é
+  online-first; nada de trabalho em segundo plano para pré-carregar dias de
+  programação — e, portanto, nenhuma necessidade de serviço em primeiro
+  plano ou de tarefa agendada para isso.
 
 ## O que ficou para depois
 

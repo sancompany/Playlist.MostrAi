@@ -12,16 +12,49 @@ Passo a passo de chave e build em `RUNBOOK.md` ("Chave de assinatura").
 2. **A mesma chave para sempre.** O Android recusa atualizar um app
    assinado com outra chave. Perder a chave = desinstalar e reprovisionar a
    frota inteira, TV por TV.
-3. **Nenhuma sessão automatizada gera, guarda ou vê a chave.** Ela vive na
-   máquina do dono (e em cópia offline). `keystore.properties` e `*.jks`
-   estão no `.gitignore`, e `scripts/varrer-segredos.sh` (no CI) falha se
-   algum deles entrar no Git — inclusive no histórico.
+3. **A chave nasce uma vez, num ambiente persistente sob controle do
+   dono** (a máquina dele, ou uma sessão que ele autorize e de onde possa
+   recuperar o arquivo). Sessão efêmera (contêiner que é descartado) nunca
+   gera a chave definitiva — foi o caso da rodada final de 05/10/2026, que
+   parou na assinatura por isso. A chave vive fora do repositório, com
+   cópia offline. `keystore.properties` e `*.jks` estão no `.gitignore`, e
+   `scripts/varrer-segredos.sh` (no CI) falha se algum deles entrar no Git
+   — inclusive no histórico. Só a impressão digital pública do certificado
+   é versionada (`scripts/certificado-producao.sha256`).
 4. **`versionCode` sempre sobe.** O Android só instala por cima de uma
    versão com `versionCode` menor. 3.0.0 = 4.
 5. **Produção começa do zero no 3.0.0** (decisão do dono, 05/10/2026): as
    TVs de teste são apagadas e reinstaladas; não há migração de credencial,
    cache, fila ou SQLite de instalações debug/2.0.0. O primeiro
    provisionamento oficial já é com o release assinado.
+
+## Primeira assinatura (uma vez só, na máquina do dono)
+
+```sh
+# 1. Gerar a chave definitiva FORA do repositório (pede as senhas; anotar
+#    em gerenciador de senhas, nunca em arquivo do projeto)
+keytool -genkeypair -v -keystore ~/mostrai-chaves/mostrai-release.jks \
+  -alias mostrai -keyalg RSA -keysize 4096 -validity 10000
+
+# 2. keystore.properties na raiz do repositório (já no .gitignore)
+#    storeFile=/caminho/absoluto/mostrai-release.jks
+#    storePassword=…   keyAlias=mostrai   keyPassword=…
+
+# 3. Primeiro candidato: o registro mostra a impressão digital e pede para
+#    registrá-la
+scripts/release-candidato.sh
+
+# 4. Gravar a impressão digital pública e commitar (só ela)
+echo "<sha-256 do certificado, do REGISTRO.txt>" > scripts/certificado-producao.sha256
+git add scripts/certificado-producao.sha256 && git commit -m "Release: impressão digital da chave definitiva"
+
+# 5. Candidato oficial, agora conferido contra a impressão registrada
+#    (numa cópia limpa do commit — o registro marca árvore suja)
+scripts/release-candidato.sh
+```
+
+Fazer **duas cópias** do `.jks` (uma offline) e guardar as senhas
+separadas do arquivo antes de instalar em qualquer TV.
 
 ## Gerar o candidato
 
@@ -34,7 +67,7 @@ scripts/release-candidato.sh
 O script:
 
 1. roda a varredura de segredos;
-2. `./gradlew clean assembleRelease`;
+2. `./gradlew assembleRelease` (sem `clean`; para cliente, rodar numa cópia limpa do commit);
 3. confere o APK (`scripts/verificar-apk.sh --release`): pacote, `minSdk 26`,
    `targetSdk 36`, `compileSdk 36`, exatamente as 4 permissões decididas (+ a
    de assinatura que o androidx.core declara para o próprio app), sem
@@ -80,13 +113,16 @@ Prova que a frota consegue receber a próxima versão sem desinstalar.
 
 1. Gerar o candidato 3.0.0 (`versionCode 4`) e instalar numa TCL de teste;
    provisionar; deixar tocar e gerar comprovantes.
-2. Gerar um candidato N+1 **da mesma árvore**, só com `versionCode 5` e
-   `versionName "3.0.1-teste"` (alteração local, não commitada), com a
-   mesma `keystore.properties`.
+2. Gerar o N+1 de teste **da mesma árvore e com a mesma chave**, sem
+   editar nada: `scripts/release-teste-n-mais-1.sh` (passa
+   `-Pmostrai.versionCodeTeste=5` só na linha de comando; sai
+   `app/build/release-teste-n1/Mostrai-Player-3.0.0-teste-n5-NAO-DISTRIBUIR.apk`).
+   O script recusa sem a chave definitiva ou com outra chave, e o candidato
+   oficial recusa qualquer APK de teste.
 3. Instalar o N+1 por cima pelo pendrive, **sem desinstalar**.
 4. Esperado: instala sem "app não instalado"; a TV volta a tocar sem pedir
    ID/código; comprovantes e segmentos pendentes continuam e são enviados;
-   o bloco técnico mostra `3.0.1-teste+5`.
+   o bloco técnico mostra `3.0.0-teste-n5+5`.
 5. Instalar de volta um APK com `versionCode` **menor** (o 3.0.0): o
    Android deve **recusar** (downgrade). Registrar.
 6. Instalar um APK com a mesma versão mas assinado com **outra** chave (o

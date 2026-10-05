@@ -26,6 +26,18 @@ para o porquê de cada decisão de escopo.
 
 ## Fora do escopo (2.0.0; vale para a 3.0.0)
 
+**A Mostraí é online-first.** Offline é tolerância a interrupções
+temporárias, não modo normal de operação: ponto fixo usa a internet do
+estabelecimento; ponto móvel, hospedagem e eventos sem internet local usam
+dados móveis (hotspot, roteador 4G/5G). Numa queda, a tela segue com a
+programação já autorizada até o fim da janela e depois com o institucional;
+comprovantes e tempo operacional ficam guardados até a confirmação.
+Operação comercial por dias sem conexão não existe na V1 (decisão de
+05/10/2026). Por isso **não** entram: pacote offline de vários dias,
+manifesto comercial de vários dias, pré-carregamento da semana, troca de
+anfitrião offline, rota de backend só para isso
+(`docs/historico/offline-prolongado-proposta-backend.md`, CANCELADO).
+
 Se não é necessário para instalar, reproduzir, ficar offline, comprovar,
 receber config, ajustar margens, respeitar horário, sair com PIN ou se
 recuperar, não entra. Em especial, **não** reintroduzir:

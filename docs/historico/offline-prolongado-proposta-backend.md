@@ -1,5 +1,15 @@
 # Offline prolongado (Ponto Móvel) — o que o Player já faz e o que pede ao backend
 
+> **CANCELADO (decisão do dono, 05/10/2026 — definitiva para a V1).** A
+> Mostraí é *online-first*: pontos fixos usam a internet do
+> estabelecimento; ponto móvel, hospedagem e eventos sem internet local usam
+> dados móveis (hotspot, roteador 4G/5G). Offline é tolerância a
+> interrupções temporárias, não modo de operação. O pacote offline de vários
+> dias, o manifesto comercial de vários dias e a rota nova de backend
+> propostos abaixo **não serão implementados**. Documento mantido só como
+> histórico; a resiliência que já existe no Player (seção "O que já está no
+> Player") continua valendo.
+
 Pedido do dono de 02/10/2026 ("Master Player — cache e operação offline
 prolongada para pontos móveis"). Regra-mestra: **offline não autoriza o
 Player a inventar veiculação. O Player registra fatos; o backend decide

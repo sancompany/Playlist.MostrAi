@@ -240,9 +240,12 @@ coordenadas do layout — "cima" no controle já é "cima" para o instalador.
   playlist se a atual não veio do servidor.
 - **Servidor fora na virada da hora**: segue a última playlist válida até
   o fim da janela dela; depois, só o institucional guardado (RN-07).
-- **Dias sem internet (ponto móvel)**: comprovantes e segmentos operacionais
+- **Queda de internet mais longa**: comprovantes e segmentos operacionais
   ficam guardados até a confirmação; ao reconectar, saem em lotes (até 20
-  por rodada), a espera zera e a playlist é buscada na hora.
+  por rodada), a espera zera e a playlist é buscada na hora. Operação
+  comercial prolongada sem conexão **não** é cenário suportado (decisão de
+  05/10/2026: a Mostraí é *online-first*; ponto sem internet local usa dados
+  móveis) — passada a janela autorizada, a tela fica no institucional.
 - **Sem servidor e sem cache**: "Não foi possível carregar a programação",
   nova tentativa a cada 60 s.
 - **Mídia não toca**: pula o item; uma volta inteira sem nenhuma exibição
