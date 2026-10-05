@@ -24,7 +24,7 @@ para o porquê de cada decisão de escopo.
   hora), é só para *quando* agir, nunca para *o quê* creditar — documentado
   no ponto de uso (`PlayerActivity.agendarViradaDeHora`).
 
-## Fora do MVP (2.0.0)
+## Fora do escopo (2.0.0; vale para a 3.0.0)
 
 Se não é necessário para instalar, reproduzir, ficar offline, comprovar,
 receber config, ajustar margens, respeitar horário, sair com PIN ou se
@@ -35,13 +35,28 @@ recuperar, não entra. Em especial, **não** reintroduzir:
 - **Device Owner, MDM, lock task, launcher `HOME`.** O `HOME` foi provado
   incompatível com o instalador da TCL (`docs/erros/2026-09-25-…`). Quem
   traz o player de volta é o `Watchdog`.
+- **Serviço em primeiro plano, alarme exato com permissão
+  (`SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`), câmera, microfone, BYOD,
+  Tizen/webOS.** Nenhum é necessário (`docs/android-modernizacao.md`).
+- **Permissão nova sem decisão registrada.** São 4: `INTERNET`,
+  `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED` e — exceção registrada em
+  05/10/2026 (ADR 0001) — `SYSTEM_ALERT_WINDOW`, só como exceção oficial ao
+  bloqueio de abrir Activity do segundo plano no Android 10+; o Player
+  nunca desenha sobre outros apps. `GuardaMvpTest` e
+  `scripts/verificar-apk.sh` falham com qualquer outra.
+- **Regra de negócio no Player.** Plano, saldo, benefício, percentual, o
+  que conta como hospedagem: o Player registra fatos (comprovante,
+  segmento, estado); o backend calcula.
 - **Painel técnico na TV** (gesto de 3 toques, tela de diagnóstico). O único
   diálogo local é o PIN de saída. **Exceção registrada (02/10/2026, pedido
-  do dono — Ponto Móvel):** a tela de PIN mostra, abaixo do teclado, um
-  bloco técnico de suporte só leitura (`InfoSuporte`: conexão, programação
-  válida até, mídias em cache, espaço, fila, "pronto para offline até").
-  Só aparece para quem apertou VOLTAR diante da TV; não tem ação, não abre
-  por gesto e nunca vai ao público.
+  do dono — Ponto Móvel; ampliada em 05/10/2026):** a tela de PIN mostra,
+  abaixo do teclado, um bloco técnico de suporte só leitura (`InfoSuporte`:
+  versão, aparelho, Android, estado, conexão, programação válida até,
+  mídias em cache, espaço, fila, tempo operacional pendente, último erro,
+  retorno automático bloqueado, "pronto para offline até"). Só aparece para
+  quem apertou VOLTAR diante da TV; não tem ação, não abre por gesto, nunca
+  vai ao público e nunca mostra chave, token, código, cabeçalho, URL ou
+  dado pessoal (`SegredoForaTest`).
 - **Provisionamento por JSON, pendrive, `BuildConfig` por tela ou extras de
   ADB.** A única forma é ID da tela + código de instalação digitados na TV.
 - **`baseUrl` variável, multi-host, rotação configurável ou
@@ -84,8 +99,10 @@ sideload, sem interface web. Consequências assumidas:
 ## Limites assumidos (Lei 7)
 
 - **Fila de proof-of-play**: até 150.000 eventos pendentes por aparelho
-  (`FilaProofOfPlay.TAMANHO_MAXIMO_FILA`, ≈ 40 dias de uma tela cheia
-  offline; era 50.000). Acima disso, descarta o mais antigo, conta a perda
+  (`FilaProofOfPlay.TAMANHO_MAXIMO_FILA`; com o item mínimo de 5 s são 720
+  por hora, ≈ 8,7 dias de tela 24 h offline, ~50–60 MB; com itens de 15 s,
+  ≈ 26 dias; era 50.000). A exibição em andamento nunca é escolhida para
+  descarte nem para a limpeza por idade. Acima disso, descarta o mais antigo, conta a perda
   e grava `FILA_CHEIA` no diário. Aviso no diário a partir de 10.000.
 - **Lote de `/played`**: 50 eventos por requisição (o contrato aceita até
   500; lote pequeno mantém o corpo longe dos 100 KB).
@@ -96,8 +113,17 @@ sideload, sem interface web. Consequências assumidas:
   + 1 h vale só para o que não tem valor de cobrança (órfão, quarentena).
 - **Cache de mídia**: sem teto fixo; reserva livre de max(512 MB, 10 % do
   disco), sem nunca apagar mídia referenciada (`CacheMidia`).
-- **Sessões operacionais**: confirmadas e fechadas saem depois de 7 dias;
-  pendentes ficam até o ACK; lote de 50 por envio.
+- **Segmentos operacionais** (05/10/2026; as "sessões" de 02/10 foram
+  superadas pelo contrato do backend #114): saem com `ok`, `item_invalido`
+  ou `ignorado`; pendentes ficam até a resposta; até 200 por lote; segmento
+  de no máximo 6 h − 1 min; boot sem âncora do servidor é descartado.
+- **Relógio de parede hostil**: espera de reenvio marcada mais de 31 min à
+  frente é tratada como relógio que voltou (o comprovante sai); carimbo de
+  comprovante e de segmento vem do relógio do servidor (âncora +
+  monotônico), nunca da TV quando há âncora.
+- **Download**: a reserva de disco é conferida antes (pelo
+  `Content-Length`) e a cada 8 MB baixados; atingida, o download para e o
+  parcial é apagado.
 - **Watchdog**: retorno exato em 5/10/20/40/60 s depois de sair sem PIN;
   alarme de segurança de 60 s (até 16 min), 90 s sem sinal de vida reabre.
 - **PIN de saída**: 3 erros → bloqueio de 5 s, dobrando até 5 min.
@@ -118,13 +144,17 @@ dependências de negócio.
 - **A chave do aparelho fica em texto claro no armazenamento privado do
   app.** Extraí-la exige acesso root ou físico à TV. A chave é revogável por
   tela no admin: o pior caso é uma tela, não a rede.
-- **O APK de teste físico é debug.** Assinado com a chave de debug — não é
-  produção e não deve ir para cliente real (`RUNBOOK.md`).
+- **Só o release assinado com a chave definitiva vai a cliente**
+  (`docs/release-producao.md`). O debug aceita HTTP em `127.0.0.1` (testes) e
+  é assinado com a chave de depuração; o release é só HTTPS
+  (`networkSecurityConfig`) e não entra em backup nem transferência entre
+  aparelhos (`dataExtractionRules`).
 
 ## CI (estação 3)
 
-Sem verificação automática de segurança dedicada (SAST, scanner de
-dependência) nesta versão — desproporcional a um app sem dado pessoal, sem
-pagamento e sem superfície web exposta (Lei 0). Mantido: build + testes
-unitários automáticos a cada push (`.github/workflows/ci.yml`), que é o piso
-que nenhum projeto pula.
+Sem SAST nem scanner de dependência — desproporcional a um app sem dado
+pessoal, sem pagamento e sem superfície web exposta (Lei 0). A cada push
+(`.github/workflows/ci.yml`): varredura de segredos no conteúdo e no
+histórico (`scripts/varrer-segredos.sh`), build debug e release,
+conferência do APK (SDK, permissões, manifesto — `scripts/verificar-apk.sh`),
+lint como portão (`abortOnError`) e testes unitários.

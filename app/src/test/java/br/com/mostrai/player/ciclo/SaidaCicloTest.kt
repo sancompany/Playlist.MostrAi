@@ -57,6 +57,24 @@ class SaidaCicloTest {
     }
 
     @Test
+    fun `voltar pelo despachante (Android 16, voltar preditivo) tambem pede o PIN`() {
+        // No Android 16 com target 36 o VOLTAR não chega a dispatchKeyEvent:
+        // vai direto ao OnBackPressedDispatcher.
+        comPin()
+        val atividade = h.subir().get()
+
+        atividade.onBackPressedDispatcher.onBackPressed()
+        h.idle()
+        assertEquals(View.VISIBLE, h.vista<View>(atividade, R.id.telaPin).visibility)
+        assertFalse(atividade.isFinishing)
+
+        atividade.onBackPressedDispatcher.onBackPressed()
+        h.idle()
+        assertEquals(View.GONE, h.vista<View>(atividade, R.id.telaPin).visibility)
+        assertFalse(atividade.isFinishing)
+    }
+
+    @Test
     fun `PIN errado continua o player`() {
         comPin()
         val atividade = h.subir().get()
@@ -139,6 +157,7 @@ class SaidaCicloTest {
         val baixo = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK)
         atividade.dispatchKeyEvent(baixo)
         (1..6).forEach { atividade.dispatchKeyEvent(android.view.KeyEvent.changeTimeRepeat(baixo, 0L, it)) }
+        atividade.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
         h.idle()
 
         assertEquals(View.VISIBLE, h.vista<View>(atividade, R.id.telaPin).visibility)

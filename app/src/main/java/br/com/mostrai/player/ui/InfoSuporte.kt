@@ -12,13 +12,26 @@ import java.time.format.DateTimeFormatter
  * "Pronto para offline" exige: aparelho instalado, programação autorizada
  * agora, toda a mídia dela já no disco e espaço livre acima da reserva. A
  * validade é o fim da janela que o servidor autorizou — no contrato atual,
- * uma hora; um pacote de vários dias depende do backend (docs/offline-prolongado.md).
+ * uma hora; um pacote de vários dias depende do backend
+ * (docs/offline-prolongado-proposta-backend.md).
+ *
+ * Só leitura e sem segredo: nunca a chave do aparelho, token, cabeçalho,
+ * URL interna nem dado pessoal — o teste `InfoSuporteTest` confere.
  */
 object InfoSuporte {
 
     data class Dados(
         val dispositivoId: String?,
         val versao: String,
+        val aparelho: String = "",
+        val android: String = "",
+        /** Estado no vocabulário do heartbeat (PLAYING, IDLE…). */
+        val estado: String = "",
+        /** Volta sozinho à frente? Null = não se aplica (antes do Android 10, sempre). */
+        val retornoAutomatico: Boolean = true,
+        val espacoLivreBytes: Long = -1,
+        val ultimoErro: String? = null,
+        val ancoradoNesteBoot: Boolean = false,
         val online: Boolean,
         val ultimaSincronizacaoMs: Long?,
         val programacaoValidaAteMs: Long?,
@@ -49,14 +62,21 @@ object InfoSuporte {
         } else {
             "NÃO PRONTO PARA OFFLINE: ${motivos.joinToString("; ")}"
         }
-        return listOf(
+        return listOfNotNull(
             "Tela ${d.dispositivoId ?: "—"} · versão ${d.versao}",
+            d.aparelho.takeIf { it.isNotBlank() }?.let { "Aparelho: $it · ${d.android}" },
+            d.estado.takeIf { it.isNotBlank() }?.let { "Estado: $it" },
             "Conexão: ${if (d.online) "online" else "offline"}",
             "Última sincronização: ${quando(d.ultimaSincronizacaoMs)}",
             "Programação válida até: ${if (d.programacaoValidaAteMs == null) "—" else quando(d.programacaoValidaAteMs)}",
             "Mídia: ${d.midiaEmCache}/${d.midiaTotal} no aparelho · institucional: ${d.institucionalGuardado}",
+            d.espacoLivreBytes.takeIf { it >= 0 }?.let { "Espaço livre: ${it / (1024 * 1024)} MB" },
             "Comprovantes aguardando envio: ${d.comprovantesPendentes}",
-            "Tempo operacional aguardando envio: ${duracao(d.tempoOperacionalPendenteMs)} (${d.sessoesPendentes} sessões)",
+            "Tempo operacional aguardando envio: ${duracao(d.tempoOperacionalPendenteMs)} (${d.sessoesPendentes} segmentos)" +
+                if (d.ancoradoNesteBoot) "" else " · sem hora do servidor neste boot",
+            if (d.retornoAutomatico) null else
+                "Retorno automático BLOQUEADO pelo Android: permitir \"Exibir sobre outros apps\"",
+            d.ultimoErro?.let { "Último erro: $it" },
             prontidao,
         ).joinToString("\n")
     }

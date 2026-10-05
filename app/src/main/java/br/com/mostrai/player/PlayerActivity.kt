@@ -2,8 +2,10 @@ package br.com.mostrai.player
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Network
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -12,8 +14,12 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -26,6 +32,7 @@ import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.estado.DiarioBordo
 import br.com.mostrai.player.estado.EstadoPlayer
+import br.com.mostrai.player.kiosk.PoliticaDeRetorno
 import br.com.mostrai.player.kiosk.Watchdog
 import br.com.mostrai.player.network.HeartbeatJson
 import br.com.mostrai.player.network.MostraiApi
@@ -53,6 +60,7 @@ import br.com.mostrai.player.ui.TelaProvisionamento
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -104,7 +112,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private var playlist: Playlist = Playlist.VAZIA
     private var janelaIdAtual: String? = null
-    private var relogioJanela: RelogioJanela? = null
+    @Volatile private var relogioJanela: RelogioJanela? = null
     private var indice = 0
 
     /** execucaoId da exibição em andamento, ou null se o item não conta. */
@@ -113,7 +121,19 @@ class PlayerActivity : AppCompatActivity() {
     /** criativoId do item comercial no ar — vai no heartbeat. */
     private var criativoAtualId: String? = null
 
+    /**
+     * O que o heartbeat diz e o que decide o tempo operacional: a tela está
+     * "exibindo" (contrato §8.5) em `PLAYING` ou `IDLE` — o institucional
+     * também é a tela no ar — com o ciclo ativo. Toda troca passa por aqui.
+     */
     private var estadoAtual: EstadoPlayer = EstadoPlayer.IDLE
+        set(valor) {
+            field = valor
+            atualizarSegmento()
+        }
+
+    /** O que o registro operacional sabe: há um segmento aberto agora. */
+    private var exibindo = false
 
     /**
      * O que já está aplicado na tela (R11): trocar `layoutParams` dispara
@@ -170,14 +190,7 @@ class PlayerActivity : AppCompatActivity() {
     private var emFallback = false
     private var indiceFallback = 0
 
-    /** Sessão operacional em curso ([RegistroOperacional]); escrita só na thread principal. */
-    @Volatile
-    private var sessaoAtual: String? = null
-
-    /** Conta os ciclos que abriram sessão (só na thread principal): a sessão só fica com o ciclo que a pediu. */
-    private var cicloOperacional = 0
-
-    /** Último envio de sessões (uptime): a sessão aberta vai a cada 15 min, as encerradas na hora. */
+    /** Último envio de segmentos (uptime): o aberto vai a cada 15 min, os fechados na hora. */
     @Volatile
     private var ultimoEnvioOperacaoMs = 0L
     @Volatile
@@ -238,10 +251,7 @@ class PlayerActivity : AppCompatActivity() {
         override fun run() {
             Watchdog.registrarSinalDeVida(this@PlayerActivity)
             relogio.registrarPiso(relogioJanela)
-            sessaoAtual?.let { id ->
-                val servidor = servidorAgoraMs()
-                lifecycleScope.launch(Dispatchers.IO) { registro.checkpoint(id, servidor) }
-            }
+            if (exibindo) noRegistro { registro.estender() }
             handler.postDelayed(this, INTERVALO_SINAL_DE_VIDA_MS)
         }
     }
@@ -301,7 +311,7 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         repositorio = PlaylistRepositorio(this, api)
-        fila = FilaProofOfPlay(this, api, diario)
+        fila = FilaProofOfPlay(this, api, diario) { agoraConfiavelMs() }
         cacheMidia = CacheMidia(this)
         relogio = RelogioConfiavel(this)
         institucionalLocal = InstitucionalLocal(this)
@@ -318,8 +328,19 @@ class PlayerActivity : AppCompatActivity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         aplicarRotacaoEMargem()
+        // VOLTAR pelo dispatcher, não por onKeyDown: com target 36, o Android
+        // 16 não entrega mais KEYCODE_BACK a onKeyDown/onBackPressed (voltar
+        // preditivo). O callback funciona do API 26 ao atual.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = aoVoltar()
+        })
 
         registrarNoDiario(DiarioBordo.Codigo.BOOT, "versão ${BuildConfig.VERSION_NAME}")
+        // Android 10+ sem "Exibir sobre outros apps": o Player abre, mas não
+        // volta sozinho depois de HOME, crash ou boot — fica no diário.
+        if (!PoliticaDeRetorno.permitidoAgora(this)) {
+            registrarNoDiario(DiarioBordo.Codigo.RETORNO_BLOQUEADO, "Android ${Build.VERSION.SDK_INT} sem Exibir sobre outros apps")
+        }
     }
 
     override fun onStart() {
@@ -397,7 +418,7 @@ class PlayerActivity : AppCompatActivity() {
     // ---------------------------------------------------------- provisionamento
 
     private fun mostrarProvisionamento() {
-        pararCiclo(MOTIVO_SEM_CREDENCIAL)
+        pararCiclo()
         telaPin.esconder()
         estadoAtual = EstadoPlayer.NOT_PROVISIONED
         playerView.visibility = View.GONE
@@ -450,6 +471,10 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun iniciarCicloNormal() {
         if (cicloAtivo || !iniciada) return
+        // Antes de o ciclo valer: arrumar fecha o que ficou aberto de antes,
+        // e não pode fechar o segmento que este ciclo abre logo abaixo (a
+        // troca NOT_PROVISIONED → IDLE da instalação já abre um).
+        arrumarRegistroOperacional()
         cicloAtivo = true
         telaProvisionamento.esconder()
         // Instalada agora: o primeiro heartbeat não pode dizer o contrário.
@@ -461,7 +486,7 @@ class PlayerActivity : AppCompatActivity() {
         mostrarCartaoLocal(EstadoInstitucional.CARREGANDO)
         emFallback = false
         cacheMidia.proteger(playlist.itens + institucionalLocal.itens())
-        abrirSessaoOperacional()
+        atualizarSegmento()
 
         criarPlayer()
         aplicarHorarioOperacional()
@@ -487,9 +512,9 @@ class PlayerActivity : AppCompatActivity() {
      * a exibição em andamento sem comprovante (R5). Não mexe no sinal de
      * vida do watchdog.
      */
-    private fun pararCiclo(motivo: String = MOTIVO_PAROU) {
-        if (cicloAtivo) fecharSessaoOperacional(motivo)
+    private fun pararCiclo() {
         cicloAtivo = false
+        atualizarSegmento()
         // Invalida qualquer mostrarVideo ainda resolvendo cache.
         geracaoReproducao++
         listOf(
@@ -510,53 +535,63 @@ class PlayerActivity : AppCompatActivity() {
 
     // ---------------------------------------------------------- tempo operacional
 
-    /** O ciclo começou: uma sessão nova (e a anterior, se ficou aberta, é encerrada). */
-    private fun abrirSessaoOperacional() {
-        val dispositivo = config.dispositivoId
-        val servidor = servidorAgoraMs()
-        val meuCiclo = ++cicloOperacional
-        lifecycleScope.launch(Dispatchers.IO) {
-            val id = registro.abrir(dispositivo, servidor)
-            val ficou = withContext(Dispatchers.Main) {
-                // O ciclo pode ter parado (ou parado e recomeçado) enquanto a
-                // sessão abria: sessão de um ciclo que já não é o atual seria
-                // estendida pelo sinal de vida sem ter ciclo por trás.
-                if (cicloAtivo && meuCiclo == cicloOperacional) {
-                    sessaoAtual = id
-                    true
-                } else {
-                    false
-                }
-            }
-            if (!ficou && id != null) registro.fechar(id, RegistroOperacional.MOTIVO_INTERROMPIDA, servidor)
-            enviarOperacao(forcar = true)
-        }
-    }
-
     /**
-     * O ciclo parou: a sessão fecha com o motivo. Não depende do
-     * lifecycleScope (que morre com a Activity): é um fato curto e precisa
-     * chegar ao disco mesmo na saída por PIN.
+     * Abre ou fecha o segmento operacional conforme a tela está exibindo
+     * (`PLAYING`/`IDLE`, ciclo ativo, Activity na frente). Na fila única do
+     * registro: abrir e fechar chegam ao disco na ordem em que aconteceram,
+     * mesmo depois de a Activity morrer.
      */
-    private fun fecharSessaoOperacional(motivo: String) {
-        val id = sessaoAtual ?: return
-        sessaoAtual = null
-        val servidor = servidorAgoraMs()
-        Thread({ registro.fechar(id, motivo, servidor) }, "fechar-sessao").start()
+    private fun atualizarSegmento() {
+        val deve = cicloAtivo && iniciada && estadoAtual in ESTADOS_EXIBINDO
+        if (deve == exibindo) return
+        exibindo = deve
+        val dispositivo = config.dispositivoId
+        noRegistro { if (deve) registro.abrir(dispositivo) else registro.fechar() }
     }
 
     /**
-     * Manda as sessões ainda não confirmadas. A aberta vai a cada 15 min
-     * (ela só anda); as encerradas e a volta da rede mandam na hora. Lotes
+     * Começo do ciclo: fecha o que um processo anterior deixou aberto, e
+     * descarta (com registro no diário) o tempo de um boot que nunca falou
+     * com o servidor — não há como pô-lo no relógio do servidor (§8.5).
+     */
+    private fun arrumarRegistroOperacional() {
+        val dispositivo = config.dispositivoId
+        noRegistro {
+            val descarte = registro.arrumar(dispositivo)
+            if (descarte.segmentos > 0) {
+                diario.registrar(
+                    DiarioBordo.Codigo.OPERACAO_SEM_ANCORA,
+                    "${descarte.segmentos} segmentos, ${descarte.duracaoMs / 60_000} min sem âncora do servidor",
+                )
+            }
+        }
+        lifecycleScope.launch(Dispatchers.IO) { enviarOperacao(forcar = true) }
+    }
+
+    private fun noRegistro(bloco: () -> Unit) {
+        execRegistro.execute { runCatching(bloco).onFailure { Log.w(TAG, "registro operacional falhou", it) } }
+    }
+
+    /** Âncora do servidor neste boot: os segmentos dele já podem ir. */
+    private fun ancorarRegistroOperacional() {
+        val servidor = servidorAgoraMs() ?: return
+        val uptime = android.os.SystemClock.elapsedRealtime()
+        noRegistro { registro.ancorar(servidor, uptime) }
+    }
+
+    /**
+     * Manda os segmentos ainda não confirmados. O aberto vai a cada 15 min
+     * (ele só cresce); os fechados e a volta da rede mandam na hora. Lotes
      * em sequência, nunca em paralelo. Bloqueante — chamar fora da thread
      * principal.
      */
     private fun enviarOperacao(forcar: Boolean) {
         val agora = android.os.SystemClock.elapsedRealtime()
+        val dispositivo = config.dispositivoId ?: return
         repeat(MAX_LOTES_OPERACAO) {
-            val pendentes = registro.pendentes()
+            val pendentes = registro.pendentes(dispositivo)
             if (pendentes.isEmpty()) return
-            val soAberta = pendentes.all { it.aberta }
+            val soAberta = pendentes.all { it.aberto }
             if (!forcar && soAberta && agora - ultimoEnvioOperacaoMs < INTERVALO_ENVIO_OPERACAO_MS) return
             // Servidor sem a rota (404) ou fora: espera o intervalo, em vez
             // de a frota inteira bater nele a cada minuto.
@@ -602,6 +637,11 @@ class PlayerActivity : AppCompatActivity() {
                 janelaIdAtual = resultado.playlist.janelaId
                 relogio.registrarPiso(relogioJanela)
                 if (resultado.origem == Origem.SERVIDOR) {
+                    // Só a resposta do servidor ancora: o relógio de uma
+                    // playlist guardada pode ser de outro boot (sem
+                    // BOOT_COUNT, "mesmo boot" é palpite) e a âncora fica o
+                    // boot inteiro.
+                    ancorarRegistroOperacional()
                     institucionalLocal.atualizar(playlist)
                     relogio.registrarSincronizacao(agoraConfiavelMs())
                 }
@@ -866,13 +906,17 @@ class PlayerActivity : AppCompatActivity() {
         }
         execucaoAtualId = null
         criativoAtualId = null
-        estadoAtual = EstadoPlayer.NO_PLAYLIST
         val lista = institucionalLocal.itens()
         if (lista.isEmpty()) {
+            // Nada da Mostraí guardado para exibir: aí sim não há programação.
+            estadoAtual = EstadoPlayer.NO_PLAYLIST
             mostrarCartaoLocal(EstadoInstitucional.CARTAO)
             handler.postDelayed(avancarPorTempo, ESPERA_EM_FALLBACK_SEM_MIDIA_MS)
             return
         }
+        // Institucional na tela é a tela no ar (contrato §8.5): IDLE, não
+        // erro — mas só quando ele de fato começa (mostrarVideo). Sem mídia
+        // e sem rede, o que vai à tela é o cartão "sem conteúdo".
         mostrarVideo(lista[Math.floorMod(indiceFallback, lista.size)], minhaGeracao, fallback = true)
     }
 
@@ -926,7 +970,7 @@ class PlayerActivity : AppCompatActivity() {
 
             execucaoAtualId = id
             criativoAtualId = if (item.contabiliza && !fallback) item.criativoId else null
-            estadoAtual = if (fallback) EstadoPlayer.NO_PLAYLIST else EstadoPlayer.PLAYING
+            estadoAtual = if (fallback) EstadoPlayer.IDLE else EstadoPlayer.PLAYING
 
             // O cartão (se estiver na tela) só sai no primeiro quadro do vídeo.
             playerView.visibility = View.VISIBLE
@@ -943,9 +987,10 @@ class PlayerActivity : AppCompatActivity() {
     private fun mostrarCartaoDoItem(item: ItemPlaylist) {
         falhasSeguidas = 0
         mostrarCartaoLocal(EstadoInstitucional.CARTAO)
-        if (estadoAtual != EstadoPlayer.PLAYBACK_ERROR && estadoAtual != EstadoPlayer.DOWNLOAD_ERROR) {
-            estadoAtual = EstadoPlayer.IDLE
-        }
+        // O cartão é um item da programação no ar: IDLE (conta como
+        // operação). Um erro anterior continua no diário e no `erro` do
+        // heartbeat; o estado não fica preso nele enquanto a tela exibe.
+        estadoAtual = EstadoPlayer.IDLE
         val duracao = if (item.duracaoSegundos > 0) item.duracaoSegundos else 10
         handler.postDelayed(avancarPorTempo, duracao * 1000L)
     }
@@ -986,6 +1031,8 @@ class PlayerActivity : AppCompatActivity() {
         }
         falhasSeguidas = 0
         handler.removeCallbacks(avancarPorTempo)
+        // Uma volta inteira sem exibir nada: a tela não está no ar.
+        if (estadoAtual in ESTADOS_EXIBINDO) estadoAtual = EstadoPlayer.NO_PLAYLIST
         mostrarCartaoLocal(EstadoInstitucional.SEM_CONTEUDO)
         handler.postDelayed(avancarPorTempo, ESPERA_APOS_VOLTA_SEM_EXIBICAO_MS)
     }
@@ -1064,16 +1111,17 @@ class PlayerActivity : AppCompatActivity() {
         raiz.post { RotacaoTela.aplicar(raiz, rotor, margens, Produto.ROTACAO_GRAUS) }
     }
 
-    @Suppress("DEPRECATION")
+    /**
+     * Tela cheia de borda a borda, sem barras. A API compat escolhe o
+     * mecanismo por versão (flags antigas no API 26, controlador de insets no
+     * atual) — e com target 35+ o Android já desenha de borda a borda.
+     */
     private fun esconderInterfaceDoSistema() {
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            )
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1097,23 +1145,25 @@ class PlayerActivity : AppCompatActivity() {
      * aplicativo nenhum — dela cuida o watchdog). No Player, pede o PIN; com
      * o PIN aberto, fecha o pedido; na instalação, não faz nada (BUG-027:
      * um toque acidental no controle da loja não pode derrubar o Player).
+     * Vem do [onBackPressedDispatcher]: uma vez por toque — segurar VOLTAR
+     * não abre e fecha o pedido a cada repetição.
      */
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
-        // VOLTAR segurado repete: abriria e fecharia o pedido de PIN a cada repetição.
-        if ((event?.repeatCount ?: 0) > 0) return true
+    private fun aoVoltar() {
         when {
             telaPin.visivel -> telaPin.esconder()
             cicloAtivo -> if (telaPin.pedir()) preencherInfoSuporte()
         }
-        return true
     }
 
     /** Monta o bloco técnico fora da thread principal (consultas de disco). */
     private fun preencherInfoSuporte() {
         val playlistAgora = playlist
+        val estadoAgora = estadoAtual
         val agora = agoraConfiavelMs()
-        val online = runCatching { conectividade().activeNetworkInfo?.isConnected == true }.getOrDefault(false)
+        val online = runCatching {
+            val cm = conectividade()
+            cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        }.getOrDefault(false)
         lifecycleScope.launch {
             val dados = withContext(Dispatchers.IO) {
                 val (emCache, total) = cacheMidia.disponiveis(playlistAgora.itens)
@@ -1121,6 +1171,13 @@ class PlayerActivity : AppCompatActivity() {
                 InfoSuporte.Dados(
                     dispositivoId = config.dispositivoId,
                     versao = "${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}",
+                    aparelho = "${Build.MANUFACTURER} ${Build.MODEL}",
+                    android = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                    estado = estadoAgora.name,
+                    retornoAutomatico = PoliticaDeRetorno.permitidoAgora(this@PlayerActivity),
+                    espacoLivreBytes = cacheMidia.espacoLivre(),
+                    ultimoErro = diario.ultimoErro()?.let { "${it.codigo} ${it.emIso.take(16)}" },
+                    ancoradoNesteBoot = registro.ancorado(),
                     online = online,
                     ultimaSincronizacaoMs = relogio.ultimaSincronizacaoMs(),
                     programacaoValidaAteMs = playlistAgora.validaAteMs(),
@@ -1141,7 +1198,7 @@ class PlayerActivity : AppCompatActivity() {
     /** PIN certo: o watchdog não reabre, e o Player fecha normalmente (contrato §6). */
     private fun sairComAutorizacao() {
         Watchdog.autorizarSaida(this)
-        pararCiclo(MOTIVO_SAIDA_PIN)
+        pararCiclo()
         finish()
     }
 
@@ -1159,11 +1216,17 @@ class PlayerActivity : AppCompatActivity() {
         /** Bem abaixo de [Watchdog.TOLERANCIA_MS], com folga para atraso do looper. */
         const val INTERVALO_SINAL_DE_VIDA_MS = 30_000L
 
-        const val MOTIVO_PAROU = "parou"
-        const val MOTIVO_SAIDA_PIN = "saida_pin"
-        const val MOTIVO_SEM_CREDENCIAL = "sem_credencial"
+        /** Contrato §8.5: o tempo operacional conta com a tela nestes estados. */
+        val ESTADOS_EXIBINDO = setOf(EstadoPlayer.PLAYING, EstadoPlayer.IDLE)
 
-        /** A sessão aberta vai ao servidor a cada 15 min; as encerradas, na hora. */
+        /**
+         * Fila única do registro operacional, do processo (não da Activity):
+         * abrir, estender e fechar segmento chegam ao disco na ordem, mesmo
+         * com a Activity já destruída (saída por PIN).
+         */
+        private val execRegistro = Executors.newSingleThreadExecutor { Thread(it, "registro-operacional") }
+
+        /** O segmento aberto vai ao servidor a cada 15 min; os fechados, na hora. */
         const val INTERVALO_ENVIO_OPERACAO_MS = 15 * 60_000L
         const val MAX_LOTES_OPERACAO = 10
 

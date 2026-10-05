@@ -68,7 +68,7 @@ class WatchdogRetornoTest {
     }
 
     @Test
-    fun `HOME com a tela instalada agenda o retorno exato em 5 segundos`() {
+    fun `HOME com a tela instalada agenda o retorno em 5 segundos`() {
         instalar()
         val controle = Robolectric.buildActivity(PlayerActivity::class.java).setup()
         assertTrue("já agendado com o Player na frente", alarmesDeRetorno().isEmpty())
@@ -78,7 +78,14 @@ class WatchdogRetornoTest {
 
         val retorno = alarmesDeRetorno().single()
         assertEquals(5_000L, retorno.triggerAtTime - antes)
-        assertEquals("inexato atrasaria até 75%", ShadowAlarmManager.WINDOW_EXACT, retorno.windowLengthMs)
+        // Exato até o Android 11; do 12 em diante `set` (sem permissão de
+        // alarme exato), que o AlarmManager não adia abaixo de 10 s.
+        // Os cinco níveis: RetornoPorApiTest.
+        if (android.os.Build.VERSION.SDK_INT < 31) {
+            assertEquals("inexato atrasaria até 75%", ShadowAlarmManager.WINDOW_EXACT, retorno.windowLengthMs)
+        } else {
+            assertTrue(retorno.windowLengthMs != ShadowAlarmManager.WINDOW_EXACT)
+        }
     }
 
     @Test

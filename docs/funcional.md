@@ -21,7 +21,7 @@ pendrive, ADB ou backend:
 | Busca da playlist | virada de cada hora, a cada 15 min, quando o heartbeat pedir, quando a rede voltar |
 | Envio de proof-of-play | a cada 60 s e quando a rede volta (até 20 lotes seguidos por rodada) |
 | `POP_RETENTION` | **até a confirmação do servidor** — nunca apagado só por idade (02/10/2026; o servidor aceita até 7 dias depois do fim da janela e responde status final depois disso) |
-| Sessões operacionais | aberta a cada 15 min, fechada assim que houver rede (`POST /player/:id/operacao`) |
+| Segmentos operacionais | o aberto a cada 15 min, os fechados assim que houver rede (`POST /player/:id/operacao`, até 200 por lote) |
 | `PROVISIONING` | ID da tela `M-xxxx` + código de instalação `XXXX-XXXX` |
 
 ## 1. Público-alvo
@@ -69,14 +69,17 @@ pendrive, ADB ou backend:
 | Player | Item com `url` | Vídeo tela cheia | `PLAYING` |
 | Cartão local | Item sem `url` (pelo tempo do item), tela em reparo/inativa (403), fora do horário | Degradê de marca, sem legenda | `IDLE` ou `OUT_OF_SCHEDULE` |
 | Sem conteúdo / erro | Playlist vazia, sem servidor e sem cache, ou uma volta inteira sem nenhuma exibição | Arte "Não foi possível carregar a programação" | `NO_PLAYLIST`, `DOWNLOAD_ERROR` ou `PLAYBACK_ERROR` |
-| Institucional de reserva | Programação comercial vencida (passou de `janelaFim`) sem playlist nova, ou relógio não confiável | Só os vídeos institucionais da Mostraí já guardados, em laço, sem comprovante; sem nenhum guardado, o cartão local | `NO_PLAYLIST` |
+| Institucional de reserva | Programação comercial vencida (passou de `janelaFim`) sem playlist nova, ou relógio não confiável | Só os vídeos institucionais da Mostraí já guardados, em laço, sem comprovante; sem nenhum guardado, o cartão local | `IDLE` (a tela está no ar; 05/10/2026 — antes `NO_PLAYLIST`); `NO_PLAYLIST` só sem institucional guardado |
 | Pedido de PIN | VOLTAR com o app operando e `pinSaida` recebido | Sobreposição "PIN PARA SAIR" com teclado numérico e, embaixo, o bloco técnico de suporte (só para quem está diante do PIN) | o do vídeo que continua por trás |
 
 O público **nunca** vê "sem internet": a falta de rede só aparece no bloco
 de suporte da tela de PIN (instalação, conexão, último contato com o
 servidor, programação válida até, mídias em cache x/y, espaço livre, fila
-de comprovantes, sessões a enviar, e "PRONTO PARA OFFLINE ATÉ …" ou "NÃO
-PRONTO PARA OFFLINE: motivo"). `InfoSuporte`.
+de comprovantes, tempo operacional a enviar, versão, aparelho, Android,
+estado, último erro, se há hora do servidor neste boot, se o retorno
+automático está bloqueado, e "PRONTO PARA OFFLINE ATÉ …" ou "NÃO PRONTO
+PARA OFFLINE: motivo"). Nunca chave, token, código de instalação,
+cabeçalho, URL ou dado pessoal. `InfoSuporte`.
 
 Tudo é desenhado dentro do contêiner girado (`rotor`), então a tela de
 instalação e o PIN também aparecem na orientação certa. As setas do controle
@@ -144,13 +147,21 @@ coordenadas do layout — "cima" no controle já é "cima" para o instalador.
   Sem rede, não insiste a cada item (60 s de silêncio, ou até a rede voltar).
   `CacheMidia`.
 
-- **RN-07b — Tempo operacional é fato local.** Cada ciclo de exibição abre
-  uma sessão operacional (SQLite, `RegistroOperacional`) com o `BOOT_COUNT`,
-  o uptime (monotônico) e, quando há âncora, o instante do servidor;
-  checkpoint a cada 30 s. Reboot sem fechar → a sessão fica `interrompida`
-  e a próxima abre nova — nunca duplica nem estende pelo outro boot. Sai da
-  TV só com confirmação do servidor; sem a rota no servidor (404), fica
-  guardada. O Player registra fatos; o backend decide o que valem.
+- **RN-07b — Tempo operacional é fato local, em segmentos.** (05/10/2026,
+  contrato do backend #114; as "sessões" de 02/10 foram **SUPERADAS**.)
+  Enquanto a tela exibe (`PLAYING` ou `IDLE`, ciclo ativo, Activity na
+  frente) há um segmento aberto (SQLite, `RegistroOperacional`), medido pelo
+  relógio **monotônico** do boot (`bootId` = `b<BOOT_COUNT>.<aleatório>`,
+  `seq` crescente que nunca se repete); checkpoint a cada 30 s; parar de
+  exibir fecha. Mais de 6 h − 1 min rola para o próximo `seq`. Vai ao
+  servidor como `{bootId, seq, inicio, fim}` no relógio **do servidor** — o
+  `servidorAgora` recebido no mesmo boot é a âncora; sem âncora, espera. Se
+  o boot terminar sem nunca ter falado com o servidor, os segmentos dele são
+  descartados no boot seguinte e contados no diário (`OPERACAO_SEM_ANCORA`)
+  — nunca vão com o relógio da TV. Queda de energia fecha no último
+  checkpoint (nunca inventa tempo). `ok` confirma; `item_invalido` e
+  `ignorado` são finais; 404/5xx/rede guardam e tentam em 15 min. O Player
+  registra fatos; o backend decide o que valem.
 
 - **RN-08 — Config só é marcada como aplicada depois de aplicada.**
   `configVersion` do heartbeat diferente da aplicada → `GET /config`
@@ -229,7 +240,7 @@ coordenadas do layout — "cima" no controle já é "cima" para o instalador.
   playlist se a atual não veio do servidor.
 - **Servidor fora na virada da hora**: segue a última playlist válida até
   o fim da janela dela; depois, só o institucional guardado (RN-07).
-- **Dias sem internet (ponto móvel)**: comprovantes e sessões operacionais
+- **Dias sem internet (ponto móvel)**: comprovantes e segmentos operacionais
   ficam guardados até a confirmação; ao reconectar, saem em lotes (até 20
   por rodada), a espera zera e a playlist é buscada na hora.
 - **Sem servidor e sem cache**: "Não foi possível carregar a programação",
@@ -243,8 +254,9 @@ coordenadas do layout — "cima" no controle já é "cima" para o instalador.
 - **Reboot**: `BootReceiver` rearma o watchdog e abre o app (um
   `QUICKBOOT_POWERON` com a TV ligada há mais de 10 min é ignorado); a
   playlist guardada, as mídias e a fila sobrevivem, a posição na hora vem do
-  relógio confiável (nunca recomeça do zero), e a sessão operacional
-  anterior fecha como `interrompida`.
+  relógio confiável (nunca recomeça do zero), e o segmento operacional
+  aberto fecha no último checkpoint. Em TV Android 10+, abrir sozinho
+  depende de "Exibir sobre outros apps" (`docs/android-modernizacao.md`).
 
 ## 7. Direitos e obrigações que viram tela
 

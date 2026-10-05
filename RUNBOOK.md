@@ -8,11 +8,32 @@ servidor é `sancompany/MostrAi` → `docs/player-mvp-contract.md`.
 
 **Instalar e provisionar**: `README.md`, "Instalar numa TV". ID da tela
 (`M-0235`) + código de instalação (`XXXX-XXXX`, 30 min, uso único) gerado no
-admin.
+admin. Só o APK de release assinado com a chave definitiva vai para TV de
+cliente (`docs/release-producao.md`).
+
+**Ajustes da TV na instalação** (uma vez por TV, antes de provisionar):
+suspensão automática ("Entrar no modo de suspensão") **desligada**, modo
+loja/"Ambiente: Loja" desligado, protetor de tela desligado, Wi-Fi 2,4 GHz
+WPA2-AES ou cabo (`docs/hardware/tcl-32s6500s.md`). Em TV **Android 10 ou
+mais nova**: conceder "Exibir sobre outros apps" ao Mostraí Player
+(Configurações › Apps › Acesso especial a apps) — sem isso o Player não volta
+sozinho depois de HOME, crash ou religar a TV, e o bloco técnico do PIN diz
+"Retorno automático BLOQUEADO". Na TCL (Android 8) não é preciso. Em
+bancada, o mesmo por `adb`:
+
+```sh
+adb shell appops set br.com.mostrai.player SYSTEM_ALERT_WINDOW allow
+```
 
 **Ver o estado de uma tela**: no admin (Aguardando instalação, Operando, Fora
 do horário, Sem sinal, Erro do Player). O Player manda `estado`, `erro`,
-`fila` e a config aplicada a cada 15 s. Não há painel de diagnóstico na TV.
+`fila` e a config aplicada a cada 15 s (fonte única do intervalo:
+`Produto.INTERVALO_HEARTBEAT_MS`; o servidor considera "sem sinal" depois
+de 2 min). Na TV, o bloco técnico abaixo do pedido de PIN (VOLTAR) mostra
+versão, aparelho, Android, estado, conexão, programação válida até, mídia
+no aparelho, espaço livre, comprovantes e tempo operacional aguardando
+envio, último erro e se o retorno automático está bloqueado — nunca chave,
+token, código ou URL.
 
 **Mudar margens, horário ou PIN**: no admin. A TV aplica em até ~15 s (próximo
 heartbeat → `GET /config`), sem reiniciar.
@@ -28,32 +49,55 @@ adb logcat --pid=$(adb shell pidof -s br.com.mostrai.player)
 ```
 
 Tags: `MostraiPlayer`, `MostraiApi`, `FilaProofOfPlay`, `PlaylistRepositorio`,
-`Watchdog`. A chave do aparelho nunca aparece nos logs.
+`Watchdog`, `CacheMidia`, `RegistroOperacional`. A chave do aparelho, o
+código de instalação e os cabeçalhos nunca aparecem nos logs
+(`SegredoForaTest`). O release não é `debuggable`: `pidof`/`logcat` por pid
+só no debug; no release, `adb logcat -s` pelas tags.
+
+## Atualizar (N → N+1)
+
+Não há OTA. Atualizar é instalar o APK novo por cima, pelo pendrive, **sem
+desinstalar**, assinado com **a mesma chave** e `versionCode` maior.
+Credencial, config, cache, fila de comprovantes e segmentos operacionais
+sobrevivem. O teste N → N+1 está em `docs/release-producao.md` e no
+checklist (itens 34–38); fazer em bancada antes de cada versão nova.
 
 ## Reverter
 
-Não há OTA. Reverter é reinstalar a versão anterior do APK por sideload,
-**assinada com a mesma chave** (senão o Android só instala depois de
-desinstalar, e desinstalar apaga a credencial e a fila de proof-of-play).
-Com a mesma chave, credencial, config e fila sobrevivem à reinstalação.
+O Android não instala `versionCode` menor por cima (downgrade). Reverter
+uma versão com defeito é **publicar uma versão nova** (`versionCode` maior)
+com o código anterior, assinada com a mesma chave. A alternativa —
+desinstalar e instalar a antiga — apaga a credencial e os comprovantes não
+enviados: só com a fila vazia (bloco técnico: "Comprovantes aguardando
+envio: 0") e reprovisionando a tela.
 
-A 2.0.0 lê a fila SQLite da 1.x sem perda (migração não destrutiva). A
-credencial da 1.x também é lida; se a tela não existir mais no backend, o
-primeiro 401 leva à tela de instalação.
+**3.0.0 começa do zero** (decisão do dono, 05/10/2026): TVs de teste com
+debug ou 2.0.0 são desinstaladas e reinstaladas; nada da instalação de teste
+é migrado.
 
 ## Restaurar
 
-Não há backup: o único estado que importa é a fila de proof-of-play, e o
-servidor é quem guarda a cópia de verdade depois do `contabilizado`. TV que
-perde o armazenamento (reset, troca) perde só o que estava pendente de envio.
+Não há backup (`dataExtractionRules` exclui tudo de backup e de
+transferência entre aparelhos — a credencial é da TV, não da conta): o
+estado que importa é a fila de proof-of-play e os segmentos operacionais, e
+o servidor guarda a cópia de verdade depois da confirmação. TV que perde o
+armazenamento (reset, troca) perde só o que estava pendente de envio.
 Restaurar uma tela = instalar o APK e provisionar de novo com um código novo.
+
+**Atualização de firmware da SEMP pede reset de fábrica** (procedimento
+oficial). Antes: deixar a fila esvaziar (online, bloco técnico com 0
+pendentes). Depois: refazer os ajustes da TV, reinstalar o APK e
+provisionar com código novo.
 
 ## Responder a incidente
 
 **App não sobe depois de ligar a TV**: `adb logcat | grep BootReceiver`. O app
 trata `BOOT_COMPLETED` e `QUICKBOOT_POWERON`. Se nenhum chegar, o watchdog
 não tem como agir (ele é rearmado pelo boot ou pela abertura manual) — é
-limite do firmware.
+limite do firmware. Em TV Android 10+: conferir "Exibir sobre outros apps"
+(o bloco técnico diz "Retorno automático BLOQUEADO" quando falta). A TV
+pode também ter voltado da tomada em standby (LED aceso): ligar pelo
+controle; se o menu de fábrica tiver "Power on Mode", deixar em ON.
 
 **TV voltou para a tela de instalação sozinha**: o servidor respondeu 401 —
 Player revogado, tela arquivada ou código antigo. Gerar código novo no admin e
@@ -67,7 +111,15 @@ cache, ou playlist vazia. Conferir internet do ponto; o app tenta de novo a
 cada 60 s.
 
 **Fila de proof-of-play crescendo** (heartbeat mostra `fila.pendentes` alto):
-rede do ponto ou 403. Nada se perde antes de 7 dias.
+rede do ponto ou 403. Comprovante só sai da TV com a resposta do servidor
+(não expira por idade); o servidor responde `janela_expirada` quando for
+tarde, pelo relógio dele. O teto é 150.000 linhas (~8,7 dias de tela 24 h
+com itens de 5 s); estourar vai para o diário como `FILA_CHEIA`.
+
+**"Sem hora do servidor neste boot"** no bloco técnico: a TV religou sem
+rede. O tempo operacional desse boot só vai ao servidor se ela falar com
+ele antes do próximo reboot; senão é descartado e contado no diário
+(`OPERACAO_SEM_ANCORA`) — nunca vai com o relógio da TV.
 
 **Imagem de ponta-cabeça**: build nova com `ROTACAO_GRAUS = 270` em
 `Produto.kt`. Nunca tornar configurável.

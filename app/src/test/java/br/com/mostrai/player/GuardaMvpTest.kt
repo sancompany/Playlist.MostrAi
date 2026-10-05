@@ -29,9 +29,23 @@ class GuardaMvpTest {
         listOf(
             "REQUEST_INSTALL_PACKAGES", "READ_EXTERNAL_STORAGE", "android.intent.category.HOME",
             "BIND_DEVICE_ADMIN", "PainelActivity", "ReceptorInstalacao", "<service",
+            // V1 de produção (05/10/2026): sem câmera/microfone, sem serviço em
+            // primeiro plano, sem alarme exato (o retorno usa set() no 12+).
+            "CAMERA", "RECORD_AUDIO", "FOREGROUND_SERVICE", "SCHEDULE_EXACT_ALARM", "USE_EXACT_ALARM",
+            "usesCleartextTraffic=\"true\"",
         ).forEach { assertFalse("manifesto voltou a declarar $it", manifesto.contains(it)) }
         assertEquals(1, Regex("<activity\\b").findAll(manifesto).count())
-        assertEquals(3, Regex("<uses-permission\\b").findAll(manifesto).count())
+        // INTERNET, ACCESS_NETWORK_STATE, RECEIVE_BOOT_COMPLETED e
+        // SYSTEM_ALERT_WINDOW (exceção do retorno em segundo plano no 10+,
+        // docs/android-modernizacao.md). Nenhuma outra sem decisão registrada.
+        assertEquals(
+            setOf(
+                "android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE",
+                "android.permission.RECEIVE_BOOT_COMPLETED", "android.permission.SYSTEM_ALERT_WINDOW",
+            ),
+            Regex("<uses-permission[^>]*android:name=\"([^\"]+)\"").findAll(manifesto).map { it.groupValues[1] }.toSet(),
+        )
+        assertEquals(4, Regex("<uses-permission\\b").findAll(manifesto).count())
         assertTrue(manifesto.contains("android.intent.category.LEANBACK_LAUNCHER"))
         assertTrue(manifesto.contains("android.intent.action.BOOT_COMPLETED"))
     }

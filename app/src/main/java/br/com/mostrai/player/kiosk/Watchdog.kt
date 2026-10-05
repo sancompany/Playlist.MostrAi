@@ -55,6 +55,7 @@ object Watchdog {
     private const val CHAVE_SAIDA_AUTORIZADA = "saida_autorizada"
     private const val CHAVE_NA_FRENTE = "na_frente"
     private const val CHAVE_TENTATIVA_RETORNO = "tentativa_retorno"
+    private const val CHAVE_RETORNO_BLOQUEADO_EM = "retorno_bloqueado_em"
 
     const val ACAO_RETORNO = "br.com.mostrai.player.RETORNO_RAPIDO"
 
@@ -116,15 +117,22 @@ object Watchdog {
 
     private fun alarmes(context: Context) = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
 
-    /** Exato: `set` é inexato desde o API 19 e poderia atrasar até 75% do prazo. */
+    /**
+     * Exato até o Android 11 (`set` é inexato desde o API 19 e poderia
+     * atrasar até 75% do prazo). Do 12 em diante, `setExact` exigiria
+     * `SCHEDULE_EXACT_ALARM`: usa `set`, que o AlarmManager não adia abaixo
+     * de 10 s — o primeiro retorno (5 s) continua no tempo
+     * ([PoliticaDeRetorno.usaAlarmeExato]).
+     */
     private fun agendarRetorno(context: Context, atrasoMs: Long) {
         val alarmes = alarmes(context) ?: return
+        val quando = SystemClock.elapsedRealtime() + atrasoMs
         runCatching {
-            alarmes.setExact(
-                AlarmManager.ELAPSED_REALTIME,
-                SystemClock.elapsedRealtime() + atrasoMs,
-                pendingIntentRetorno(context),
-            )
+            if (PoliticaDeRetorno.usaAlarmeExato(Build.VERSION.SDK_INT)) {
+                alarmes.setExact(AlarmManager.ELAPSED_REALTIME, quando, pendingIntentRetorno(context))
+            } else {
+                alarmes.set(AlarmManager.ELAPSED_REALTIME, quando, pendingIntentRetorno(context))
+            }
         }.onFailure { Log.w(TAG, "não foi possível agendar o retorno rápido", it) }
     }
 
@@ -211,11 +219,23 @@ object Watchdog {
     private fun telaLigada(context: Context): Boolean =
         (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
 
-    private fun abrirPlayer(context: Context) {
+    /**
+     * Abre a Activity. No Android 10+ sem "Exibir sobre outros apps" o
+     * sistema bloqueia em silêncio ([PoliticaDeRetorno]): a tentativa fica,
+     * e o bloqueio fica registrado para o bloco técnico.
+     */
+    fun abrirPlayer(context: Context) {
+        if (!PoliticaDeRetorno.permitidoAgora(context)) {
+            prefs(context).edit().putLong(CHAVE_RETORNO_BLOQUEADO_EM, System.currentTimeMillis()).apply()
+        }
         val abrir = Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(abrir) }
             .onFailure { Log.w(TAG, "watchdog não conseguiu reabrir o player", it) }
     }
+
+    /** Última vez que o sistema provavelmente bloqueou a volta do Player (relógio da TV), ou null. */
+    fun retornoBloqueadoEm(context: Context): Long? =
+        prefs(context).getLong(CHAVE_RETORNO_BLOQUEADO_EM, 0L).takeIf { it > 0L }
 
     class Receptor : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {

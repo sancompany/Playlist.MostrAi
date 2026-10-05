@@ -170,6 +170,12 @@ class DiarioBordo(context: Context) {
         // Estado esperado offline (e por segundos na virada da hora), não
         // defeito do Player: INFO, para não virar "erro" no heartbeat.
         PROGRAMACAO_EXPIRADA(Severidade.INFO),
+        // Boot que terminou sem nunca falar com o servidor: o tempo dele não
+        // tem como ir ao relógio do servidor (contrato §8.5). Fato, não erro.
+        OPERACAO_SEM_ANCORA(Severidade.INFO),
+        // Android 10+ sem "Exibir sobre outros apps": o sistema não deixa o
+        // Player voltar sozinho à frente (boot, HOME, crash).
+        RETORNO_BLOQUEADO(Severidade.INFO),
         CONFIG_APLICADA(Severidade.INFO),
         CONFIG_FALHOU(Severidade.ERRO),
         FORA_DO_HORARIO(Severidade.INFO),

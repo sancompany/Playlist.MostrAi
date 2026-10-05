@@ -6,46 +6,46 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Corpo de `POST /player/:dispositivoId/operacao` — as sessões operacionais
- * locais ([RegistroOperacional]). Fatos, nunca conclusões: o servidor decide
- * o que é tempo válido e a que local ele pertence.
+ * Corpo de `POST /player/:dispositivoId/operacao` (contrato §8.5):
+ * `{segmentos: [{bootId, seq, inicio, fim}]}`, `inicio`/`fim` no relógio do
+ * servidor (uptime + âncora do mesmo boot). Fatos, nunca conclusões: o
+ * servidor decide o que é tempo válido e a que local ele pertence.
  */
 object OperacaoJson {
 
-    fun corpo(sessoes: List<RegistroOperacional.Sessao>): String = JSONObject().put(
-        "sessoes",
+    /** Só segmentos com âncora chegam aqui ([RegistroOperacional.pendentes]). */
+    fun corpo(segmentos: List<RegistroOperacional.Segmento>): String = JSONObject().put(
+        "segmentos",
         JSONArray().apply {
-            sessoes.forEach { s ->
+            segmentos.forEach { s ->
+                val inicio = s.inicioServidorMs ?: return@forEach
+                val fim = s.fimServidorMs ?: return@forEach
                 put(
                     JSONObject()
-                        .put("sessaoId", s.sessaoId)
-                        .put("bootCount", s.bootCount)
-                        .put("inicioUptimeMs", s.inicioUptimeMs)
-                        .put("fimUptimeMs", s.fimUptimeMs)
-                        .put("duracaoMs", s.duracaoMs)
-                        .put("inicioEm", iso(s.inicioParedeMs))
-                        .put("fimEm", iso(s.fimParedeMs))
-                        .put("inicioServidorEm", s.inicioServidorMs?.let(::iso) ?: JSONObject.NULL)
-                        .put("fimServidorEm", s.fimServidorMs?.let(::iso) ?: JSONObject.NULL)
-                        .put("encerrada", !s.aberta)
-                        .put("motivo", s.motivoFim ?: JSONObject.NULL),
+                        .put("bootId", s.bootId)
+                        .put("seq", s.seq)
+                        .put("inicio", Instant.ofEpochMilli(inicio).toString())
+                        .put("fim", Instant.ofEpochMilli(fim).toString()),
                 )
             }
         },
     ).toString()
 
-    /** `sessaoId` das sessões que o servidor registrou (ou recusou de vez). Null = resposta fora do contrato. */
-    fun parseConfirmadas(corpoBruto: String): Set<String>? = runCatching {
+    /**
+     * `{resultados: [{bootId, seq, status}]}` → status por `(bootId, seq)`.
+     * Null = resposta fora do contrato (o lote fica para a próxima).
+     */
+    fun parseResultados(corpoBruto: String): Map<Pair<String, Int>, String>? = runCatching {
         val resultados = JSONObject(corpoBruto).getJSONArray("resultados")
-        (0 until resultados.length()).mapNotNullTo(mutableSetOf()) { i ->
-            val r = resultados.optJSONObject(i) ?: return@mapNotNullTo null
-            val status = r.optString("status")
-            r.optString("sessaoId").ifBlank { null }?.takeIf { status in STATUS_FINAIS }
+        buildMap {
+            for (i in 0 until resultados.length()) {
+                val r = resultados.optJSONObject(i) ?: continue
+                val boot = r.optString("bootId").ifBlank { null } ?: continue
+                if (!r.has("seq") || r.isNull("seq")) continue
+                val seq = r.optInt("seq", -1).takeIf { it >= 0 } ?: continue
+                val status = r.optString("status").ifBlank { null } ?: continue
+                put(boot to seq, status)
+            }
         }
     }.getOrNull()
-
-    /** `registrada` (gravada ou já existia) e `invalida` (nunca vai ser aceita): os dois encerram o reenvio. */
-    val STATUS_FINAIS = setOf("registrada", "invalida")
-
-    private fun iso(ms: Long): String = Instant.ofEpochMilli(ms).toString()
 }

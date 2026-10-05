@@ -12,6 +12,9 @@ import org.robolectric.annotation.Config
 @Config(sdk = [26])
 class CacheMidiaTest {
 
+    @get:org.junit.Rule
+    val disco = DiscoFolgado()
+
     private val itemEsquemaInesperado = ItemPlaylist(
         itemProgramacaoId = "slot-1",
         criativoId = "crv-1",

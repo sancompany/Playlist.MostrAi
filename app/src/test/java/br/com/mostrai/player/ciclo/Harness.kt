@@ -28,6 +28,10 @@ class Harness {
     val servidor = ServidorDeTeste()
 
     init {
+        // Disco folgado e fixo: 100 GB, 50 livres — a reserva nunca depende
+        // da máquina que roda o teste.
+        br.com.mostrai.player.cache.MedidorDeDisco.livre = { 50L shl 30 }
+        br.com.mostrai.player.cache.MedidorDeDisco.total = { 100L shl 30 }
         limparEstado()
         HostDaApi.base = servidor.baseUrl
         // Heartbeat responde "nada a fazer" até o teste dizer outra coisa.
@@ -42,6 +46,7 @@ class Harness {
         contexto.deleteDatabase(ProofOfPlayDb.NOME_ARQUIVO)
         contexto.deleteDatabase(DiarioBordo.NOME_ARQUIVO)
         contexto.deleteDatabase(br.com.mostrai.player.operacao.RegistroOperacional.NOME_ARQUIVO)
+        contexto.getSharedPreferences(br.com.mostrai.player.operacao.RegistroOperacional.ARQUIVO_BOOT, Context.MODE_PRIVATE).edit().clear().commit()
         File(contexto.cacheDir, "midia").deleteRecursively()
         File(contexto.filesDir, "midia").deleteRecursively()
         pularIntroducao()
@@ -170,6 +175,7 @@ class Harness {
     }
 
     fun encerrar() {
+        br.com.mostrai.player.cache.MedidorDeDisco.padrao()
         servidor.encerrar()
         HostDaApi.base = br.com.mostrai.player.Produto.BASE_URL
     }

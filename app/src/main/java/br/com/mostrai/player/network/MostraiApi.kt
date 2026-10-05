@@ -112,15 +112,14 @@ open class MostraiApi(
     // ----------------------------------------------------------------- operação
 
     /**
-     * `POST /player/:dispositivoId/operacao` — sessões operacionais locais
-     * (proposta de contrato de 02/10/2026, Ponto Móvel). Devolve os
-     * `sessaoId` confirmados. 404 = backend ainda sem a rota: as sessões
-     * ficam guardadas na TV e vão quando ela existir.
+     * `POST /player/:dispositivoId/operacao` — segmentos de tempo operacional
+     * (contrato §8.5). Devolve o status por `(bootId, seq)`. Qualquer falha
+     * (404 de um backend sem a rota, 5xx, rede) deixa os segmentos na TV.
      */
-    open fun enviarOperacao(sessoes: List<RegistroOperacional.Sessao>): ResultadoHttp<Set<String>> =
+    open fun enviarOperacao(segmentos: List<RegistroOperacional.Segmento>): ResultadoHttp<Map<Pair<String, Int>, String>> =
         chamarAutenticado("operacao") { id, cabecalhos ->
-            http.post("${base()}/player/$id/operacao", cabecalhos, OperacaoJson.corpo(sessoes))
-        }.transformar { corpo -> OperacaoJson.parseConfirmadas(corpo)?.let { ResultadoHttp.Ok(it) } }
+            http.post("${base()}/player/$id/operacao", cabecalhos, OperacaoJson.corpo(segmentos))
+        }.transformar { corpo -> OperacaoJson.parseResultados(corpo)?.let { ResultadoHttp.Ok(it) } }
 
     // ------------------------------------------------------------------- config
 

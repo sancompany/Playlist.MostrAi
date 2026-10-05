@@ -2,6 +2,7 @@ package br.com.mostrai.player.offline
 
 import android.content.Context
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
 import br.com.mostrai.player.PlayerActivity
 import br.com.mostrai.player.cache.CacheMidia
@@ -39,6 +40,9 @@ import org.robolectric.shadows.ShadowSystemClock
  */
 @RunWith(RobolectricTestRunner::class)
 class OfflinePecasTest {
+
+    @get:org.junit.Rule
+    val disco = br.com.mostrai.player.cache.DiscoFolgado()
 
     private val contexto: Context = ApplicationProvider.getApplicationContext()
     private val hora = 3_600_000L
@@ -154,6 +158,8 @@ class OfflinePecasTest {
         val servidor = ServidorDeTeste().apply { corpo = "x".repeat(10).toByteArray() }
         try {
             val cache = CacheMidia(contexto)
+            cache.espacoLivre = { 50L shl 30 }
+            cache.espacoTotal = { 100L shl 30 }
             val protegido = comercial.copy(url = "${servidor.baseUrl}/a.mp4", criativoId = "a")
             val descartavel = comercial.copy(url = "${servidor.baseUrl}/b.mp4", criativoId = "b")
             assertNotNull(cache.resolver(protegido))
@@ -206,91 +212,187 @@ class OfflinePecasTest {
 
     // ---------------------------------------------------- tempo operacional
 
-    @Test
-    fun `sessao operacional dura pelo relogio monotonico e sobrevive ao reinicio do app`() {
-        val registro = RegistroOperacional(contexto)
-        val id = registro.abrir("M-0235", servidorMs = 1_000L)!!
-        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(90))
-        registro.checkpoint(id, servidorMs = null)
-
-        // Processo morto: outra instância, mesma base.
-        val depois = RegistroOperacional(contexto).pendentes()
-        assertEquals(1, depois.size)
-        assertEquals(90 * 60_000L, depois[0].duracaoMs)
-        assertTrue(depois[0].aberta)
+    private fun registroLimpo(): RegistroOperacional {
+        contexto.deleteDatabase(RegistroOperacional.NOME_ARQUIVO)
+        contexto.getSharedPreferences(RegistroOperacional.ARQUIVO_BOOT, Context.MODE_PRIVATE).edit().clear().commit()
+        return RegistroOperacional(contexto)
     }
 
-    @Test
-    fun `relogio do servidor anda com o monotonico, inicio recalculado e fim projetado`() {
-        val registro = RegistroOperacional(contexto)
-        // Abriu antes da primeira âncora: sem instante do servidor.
-        val id = registro.abrir("M-0235", servidorMs = null)!!
-        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(10))
-        // Veio a âncora: o servidor diz que agora é 1_000_000.
-        registro.checkpoint(id, servidorMs = 1_000_000L)
-        // A âncora se perdeu (403, sem playlist) e a sessão seguiu 5 min.
-        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(5))
-        registro.checkpoint(id, servidorMs = null)
+    private fun bootCount(n: Int) =
+        Settings.Global.putInt(contexto.contentResolver, Settings.Global.BOOT_COUNT, n)
 
-        val s = registro.pendentes().single()
-        assertEquals("início projetado para trás", 1_000_000L - 10 * 60_000L, s.inicioServidorMs)
-        assertEquals("fim não fica parado", 1_000_000L + 5 * 60_000L, s.fimServidorMs)
+    private fun minutos(n: Long) = ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(n))
+
+    @Test
+    fun `segmento dura pelo relogio monotonico e sobrevive ao reinicio do app`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.ancorar(servidorAgoraMs = 1_000_000_000L)
+        registro.abrir("M-0235")
+        minutos(90)
+        registro.estender()
+
+        // Processo morto: outra instância, mesma base, mesmo boot.
+        val s = RegistroOperacional(contexto).pendentes("M-0235").single()
+        assertEquals(90 * 60_000L, s.duracaoMs)
+        assertTrue(s.aberto)
         assertEquals(s.duracaoMs, s.fimServidorMs!! - s.inicioServidorMs!!)
+        assertTrue(s.bootId.startsWith("b5."))
     }
 
     @Test
-    fun `queda de energia encerra a sessao no ultimo checkpoint, sem inventar tempo`() {
-        val registro = RegistroOperacional(contexto)
-        val id = registro.abrir("M-0235", null)!!
-        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(30))
-        registro.checkpoint(id, null)
-        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(45)) // sem checkpoint: a TV apagou
+    fun `sem ancora neste boot o segmento espera, e vai no relogio do servidor quando ela chega`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.abrir("M-0235")
+        minutos(10)
+        registro.estender()
+        assertTrue("sem âncora não há como pôr no relógio do servidor", registro.pendentes("M-0235").isEmpty())
 
-        val nova = registro.abrir("M-0235", null)!!
-
-        val sessoes = registro.pendentes().associateBy { it.sessaoId }
-        assertEquals(RegistroOperacional.MOTIVO_INTERROMPIDA, sessoes.getValue(id).motivoFim)
-        assertEquals("contou tempo depois do último sinal", 30 * 60_000L, sessoes.getValue(id).duracaoMs)
-        assertTrue(sessoes.getValue(nova).aberta)
+        registro.ancorar(servidorAgoraMs = 50_000_000L)
+        val s = registro.pendentes("M-0235").single()
+        assertEquals("início recalculado para trás pela âncora", 50_000_000L - 10 * 60_000L, s.inicioServidorMs)
+        assertEquals(50_000_000L, s.fimServidorMs)
     }
 
     @Test
-    fun `confirmacao e idempotente e o que andou depois volta a ser enviado`() {
-        val registro = RegistroOperacional(contexto)
-        val id = registro.abrir("M-0235", null)!!
-        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(10))
-        registro.checkpoint(id, null)
-        val enviadas = registro.pendentes()
+    fun `boot que terminou sem nunca falar com o servidor e descartado, e o descarte e contado`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.abrir("M-0235")
+        minutos(40)
+        registro.fechar()
 
-        registro.confirmar(enviadas, setOf(id))
-        registro.confirmar(enviadas, setOf(id)) // retentativa: nada muda
-        assertTrue("sessão confirmada continuou pendente", registro.pendentes().isEmpty())
+        bootCount(6) // reboot sem rede
+        val descarte = registro.arrumar("M-0235")
 
-        ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(5))
-        registro.fechar(id, "parou", null)
-        val resto = registro.pendentes()
-        assertEquals(1, resto.size)
-        assertEquals(15 * 60_000L, resto[0].duracaoMs)
-        assertFalse(resto[0].aberta)
-
-        registro.confirmar(resto, setOf(id))
-        assertTrue(registro.pendentes().isEmpty())
+        assertEquals(1, descarte.segmentos)
+        assertEquals(40 * 60_000L, descarte.duracaoMs)
+        assertTrue(registro.pendentes("M-0235").isEmpty())
+        assertEquals(0, registro.resumoPendente().first)
     }
 
     @Test
-    fun `corpo da sessao leva fatos, nunca conclusao de negocio`() {
-        val registro = RegistroOperacional(contexto)
-        val id = registro.abrir("M-0235", servidorMs = Instant.parse("2026-10-05T14:00:00Z").toEpochMilli())!!
-        registro.fechar(id, "saida_pin", null)
+    fun `queda de energia fecha no ultimo checkpoint, sem inventar tempo, e o novo boot abre outro seq`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.ancorar(1_000_000_000L)
+        registro.abrir("M-0235")
+        minutos(30)
+        registro.estender()
+        minutos(45) // sem checkpoint: a TV apagou
 
-        val sessao = JSONObject(OperacaoJson.corpo(registro.pendentes())).getJSONArray("sessoes").getJSONObject(0)
+        bootCount(6)
+        registro.arrumar("M-0235")
+        registro.ancorar(2_000_000_000L)
+        registro.abrir("M-0235")
+        minutos(1)
+        registro.estender()
 
-        assertEquals(id, sessao.getString("sessaoId"))
-        assertEquals("2026-10-05T14:00:00Z", sessao.getString("inicioServidorEm"))
-        assertTrue(sessao.getBoolean("encerrada"))
-        assertEquals("saida_pin", sessao.getString("motivo"))
-        assertFalse(sessao.has("hospedagemId"))
-        assertEquals(setOf(id), OperacaoJson.parseConfirmadas("""{"resultados":[{"sessaoId":"$id","status":"registrada"}]}"""))
+        val segmentos = registro.pendentes("M-0235")
+        assertEquals(2, segmentos.size)
+        val antigo = segmentos.first { it.bootId.startsWith("b5.") }
+        assertEquals("contou tempo depois do último checkpoint", 30 * 60_000L, antigo.duracaoMs)
+        assertFalse(antigo.aberto)
+        assertTrue(segmentos.first { it.bootId.startsWith("b6.") }.aberto)
+    }
+
+    @Test
+    fun `segmento passa de 6 h e rola para o proximo seq, nenhum acima do teto do contrato`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.ancorar(1_000_000_000L)
+        registro.abrir("M-0235")
+        minutos(13 * 60)
+        registro.estender()
+
+        val segmentos = registro.pendentes("M-0235")
+        assertEquals(listOf(0, 1, 2), segmentos.map { it.seq })
+        assertTrue(segmentos.all { it.duracaoMs <= 6 * 60 * 60_000L })
+        assertEquals(13 * 60 * 60_000L, segmentos.sumOf { it.duracaoMs })
+        assertEquals("contínuos, sem buraco", segmentos[0].fimUptimeMs, segmentos[1].inicioUptimeMs)
+    }
+
+    @Test
+    fun `ok confirma o aberto ate onde foi, e o que cresceu depois volta, fechado sai`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.ancorar(1_000_000_000L)
+        registro.abrir("M-0235")
+        minutos(10)
+        registro.estender()
+        val enviados = registro.pendentes("M-0235")
+        val ok = enviados.associate { (it.bootId to it.seq) to RegistroOperacional.STATUS_OK }
+
+        registro.confirmar(enviados, ok)
+        registro.confirmar(enviados, ok) // retentativa: nada muda
+        assertTrue("aberto confirmado continuou pendente", registro.pendentes("M-0235").isEmpty())
+
+        minutos(5)
+        registro.fechar()
+        val resto = registro.pendentes("M-0235").single()
+        assertEquals(15 * 60_000L, resto.duracaoMs)
+        assertFalse(resto.aberto)
+
+        registro.confirmar(listOf(resto), mapOf((resto.bootId to resto.seq) to RegistroOperacional.STATUS_OK))
+        assertTrue(registro.pendentes("M-0235").isEmpty())
+        assertEquals(0, registro.resumoPendente().first)
+    }
+
+    @Test
+    fun `item_invalido e ignorado sao finais, e um seq nunca se repete no mesmo boot`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.ancorar(1_000_000_000L)
+        registro.abrir("M-0235"); minutos(5); registro.fechar()
+        registro.abrir("M-0235"); minutos(5); registro.fechar()
+        val enviados = registro.pendentes("M-0235")
+        registro.confirmar(
+            enviados,
+            mapOf(
+                (enviados[0].bootId to enviados[0].seq) to RegistroOperacional.STATUS_INVALIDO,
+                (enviados[1].bootId to enviados[1].seq) to RegistroOperacional.STATUS_IGNORADO,
+            ),
+        )
+        assertTrue(registro.pendentes("M-0235").isEmpty())
+
+        registro.abrir("M-0235"); minutos(5); registro.fechar()
+        assertEquals("seq reaproveitado mesclaria no servidor", 2, registro.pendentes("M-0235").single().seq)
+    }
+
+    @Test
+    fun `reinstalado como outra tela, segmentos da anterior nao vao com a credencial nova`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.ancorar(1_000_000_000L)
+        registro.abrir("M-0235"); minutos(5); registro.fechar()
+
+        registro.arrumar("M-0999")
+
+        assertTrue(registro.pendentes("M-0999").isEmpty())
+        assertTrue(registro.pendentes("M-0235").isEmpty())
+    }
+
+    @Test
+    fun `corpo e o do contrato 8_5, fatos sem conclusao de negocio`() {
+        bootCount(5)
+        val registro = registroLimpo()
+        registro.ancorar(Instant.parse("2026-10-05T14:00:00Z").toEpochMilli())
+        registro.abrir("M-0235"); minutos(30); registro.fechar()
+
+        val s = registro.pendentes("M-0235").single()
+        val corpo = JSONObject(OperacaoJson.corpo(listOf(s)))
+        val seg = corpo.getJSONArray("segmentos").getJSONObject(0)
+
+        assertEquals(setOf("bootId", "seq", "inicio", "fim"), seg.keys().asSequence().toSet())
+        assertEquals("2026-10-05T14:00:00Z", seg.getString("inicio"))
+        assertEquals("2026-10-05T14:30:00Z", seg.getString("fim"))
+        assertTrue(Regex("^[A-Za-z0-9._:-]{1,64}$").matches(seg.getString("bootId")))
+        assertEquals(
+            mapOf((s.bootId to 0) to "ok"),
+            OperacaoJson.parseResultados("""{"resultados":[{"bootId":"${s.bootId}","seq":0,"status":"ok"}]}"""),
+        )
+        assertNull(OperacaoJson.parseResultados("""{"erro":"x"}"""))
     }
 
     @After

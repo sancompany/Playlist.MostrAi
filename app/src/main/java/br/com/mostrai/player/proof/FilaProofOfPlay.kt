@@ -8,7 +8,9 @@ import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
+import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
@@ -34,6 +36,14 @@ class FilaProofOfPlay(
     context: Context,
     private val api: MostraiApi,
     private val diario: DiarioBordo? = null,
+    /**
+     * Instante de `iniciadoEm`/`terminadoEm`: o relógio confiável (âncora do
+     * servidor + monotônico) quando há, o de parede só sem ele. Comercial só
+     * toca com relógio confiável, então na prática é sempre o do servidor —
+     * a TV que voltou do reboot com a hora errada não carimba o comprovante
+     * com ela.
+     */
+    private val relogio: () -> Long? = { null },
 ) {
     private val db = ProofOfPlayDb(context)
     private val prefsPerdas = context.applicationContext
@@ -50,6 +60,15 @@ class FilaProofOfPlay(
      * envios simultâneos de mandarem o mesmo evento.
      */
     private val enviando = AtomicBoolean(false)
+
+    /**
+     * Exibições no ar deste processo: a linha já existe e ainda não tem
+     * `terminado_em`, igual a um órfão. Nem a limpeza por idade (que usa o
+     * relógio de parede, e ele pode saltar dias para frente) nem a fila
+     * cheia (que descarta órfão primeiro) podem levá-la — no fim ela vira
+     * comprovante, e [registrarFim] não teria mais o que marcar.
+     */
+    private val emAndamento: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /** Fotografia da fila para o heartbeat e para o painel. */
     data class Resumo(val aguardandoEnvio: Int, val total: Int, val quarentena: Int, val maisAntigoMs: Long?)
@@ -83,20 +102,25 @@ class FilaProofOfPlay(
                 janelaId = playlist.janelaId,
                 itemProgramacaoId = item.itemProgramacaoId,
                 criativoId = item.criativoId,
-                iniciadoEm = OffsetDateTime.now().toString(),
+                iniciadoEm = agoraIso(),
                 terminadoEm = null,
                 tentativas = 0,
                 proximoEnvioElegivelEm = 0L,
                 criadoEmMs = System.currentTimeMillis(),
             )
         )
+        emAndamento += execucaoId
         execucaoId
     }
 
     /** Chamado só no STATE_ENDED — aqui a exibição vira comprovante elegível. */
     @Synchronized
     fun registrarFim(execucaoId: String) {
-        seguro(Unit) { db.marcarTerminado(execucaoId, OffsetDateTime.now().toString()) }
+        try {
+            seguro(Unit) { db.marcarTerminado(execucaoId, agoraIso()) }
+        } finally {
+            emAndamento -= execucaoId
+        }
     }
 
     /**
@@ -109,7 +133,16 @@ class FilaProofOfPlay(
      */
     @Synchronized
     fun registrarFalha(execucaoId: String) {
-        seguro(Unit) { db.remover(execucaoId) }
+        try {
+            seguro(Unit) { db.remover(execucaoId) }
+        } finally {
+            emAndamento -= execucaoId
+        }
+    }
+
+    private fun agoraIso(): String {
+        val ms = relogio() ?: System.currentTimeMillis()
+        return OffsetDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneId.systemDefault()).toString()
     }
 
     fun pendentes(): Int = seguro(0) { db.contarAguardandoEnvio() }
@@ -264,7 +297,7 @@ class FilaProofOfPlay(
      */
     private fun limitarTamanho() {
         if (db.contarPendentes() < TAMANHO_MAXIMO_FILA) return
-        db.proximoADescartar()?.let {
+        db.proximoADescartar(emAndamento.toList())?.let {
             val eraComprovante = db.aguardaEnvio(it)
             db.remover(it)
             if (eraComprovante) {
@@ -279,8 +312,9 @@ class FilaProofOfPlay(
      * que começou e não terminou) e quarentena (já contada como perda).
      * Comprovante terminado nunca sai daqui — só pelo ACK do servidor.
      */
+    @Synchronized
     private fun removerSemValor() {
-        db.removerSemValorAntesDe(System.currentTimeMillis() - HORIZONTE_SEM_VALOR_MS)
+        db.removerSemValorAntesDe(System.currentTimeMillis() - HORIZONTE_SEM_VALOR_MS, emAndamento.toList())
     }
 
     private inline fun <T> seguro(padrao: T, bloco: () -> T): T = try {

@@ -63,7 +63,9 @@ class FilaPerdasTest {
         fila.registrarFim(rejeitado)
         ProofOfPlayDb(contexto).marcarQuarentena(rejeitado, "teste")
 
-        fila.registrarInicio(item, playlist) // órfão
+        // Órfão de um processo anterior (a exibição em andamento DESTE
+        // processo é protegida — FilaRelogioHostilTest).
+        FilaProofOfPlay(contexto, api).registrarInicio(item, playlist)
         envelhecerTudo()
 
         fila.tentarEnviar()

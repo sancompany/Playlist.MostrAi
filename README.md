@@ -8,7 +8,7 @@ Projeto separado do backend (`sancompany/MostrAi`). Este repositório não alter
 o backend. Projeto da San & Co. — segue a esteira do plugin `san-co` (skill
 `leis`). Estado atual, decisões e pendências vivem em `CLAUDE.md`.
 
-## O que o Player faz (MVP 2.0.0)
+## O que o Player faz (3.0.0 — V1 de produção)
 
 ```
 PROVISIONAR → RECEBER PLAYLIST → REPRODUZIR → CACHEAR → FUNCIONAR OFFLINE
@@ -20,7 +20,7 @@ E nada além disso. Tela por tela em `docs/funcional.md`.
 
 ## Contrato com o backend
 
-Fonte oficial: **`sancompany/MostrAi` → `docs/player-mvp-contract.md`**. Cinco
+Fonte oficial: **`sancompany/MostrAi` → `docs/player-mvp-contract.md`**. Seis
 rotas, e só elas:
 
 | Método | Caminho |
@@ -30,6 +30,7 @@ rotas, e só elas:
 | POST | `/player/:dispositivoId/played` |
 | POST | `/player/:dispositivoId/heartbeat` |
 | GET | `/player/:dispositivoId/config` |
+| POST | `/player/:dispositivoId/operacao` (tempo operacional em segmentos — Ponto Móvel) |
 
 Conferência campo a campo: `docs/player-mvp-matriz.md`.
 
@@ -42,7 +43,7 @@ preferência, JSON, pendrive, ADB nem campo do backend que os mude.
 BASE_URL      = https://mostrai.sancocore.com.br
 ROTATION      = 90
 HEARTBEAT     = 15s
-POP_RETENTION = 7 dias
+POP_RETENTION = até a confirmação do servidor (nunca por idade)
 PROVISIONING  = M-xxxx + XXXX-XXXX
 ```
 
@@ -55,13 +56,16 @@ Se o primeiro teste físico mostrar a imagem de ponta-cabeça, a correção é
 |---|---|
 | Hardware de referência | SEMP TCL 32S6500S |
 | Android | 8.0 Oreo — API 26 |
-| `minSdk` / `targetSdk` | 26 / 26 |
-| `compileSdk` | 35 |
+| `minSdk` / `targetSdk` | 26 / 36 |
+| `compileSdk` | 36 |
+| Versão | 3.0.0 (`versionCode 4`) |
 | `applicationId` | `br.com.mostrai.player` |
-| Distribuição | sideload por pendrive |
+| Distribuição | sideload por pendrive, APK de release assinado com a chave definitiva |
 
-`targetSdk` fica em 26 de propósito: o app não vai à Play Store e precisa de
-auto-boot e execução contínua.
+O piso é a TCL (Android 8); o alvo é o Android TV mais novo (16). O que muda
+por versão de Android — e por que `SYSTEM_ALERT_WINDOW` — está em
+`docs/android-modernizacao.md` e no ADR `docs/adr/0001-target-sdk-moderno.md`.
+Hardware: `docs/hardware/tcl-32s6500s.md`.
 
 ## Regras que não se negociam
 
@@ -78,8 +82,12 @@ auto-boot e execução contínua.
 
 ## Instalar numa TV
 
-1. Copiar o APK para um pendrive e instalar pelo gerenciador de arquivos da TV.
-2. Abrir **Mostraí Player**.
+1. Na TV: suspensão automática, modo loja e protetor de tela desligados
+   (`RUNBOOK.md`, "Ajustes da TV na instalação"). Em TV Android 10+,
+   conceder "Exibir sobre outros apps" ao Mostraí Player depois de instalar.
+2. Copiar o APK de release (`Mostrai-Player-3.0.0-release.apk`) para um
+   pendrive e instalar pelo gerenciador de arquivos da TV. Abrir **Mostraí
+   Player**.
 3. No admin (Rede → Ponto → Tela): copiar o **ID da tela** (`M-0235`) e gerar
    o **código de instalação** (`XXXX-XXXX`, vale 30 min, uso único).
 4. Na TV: digitar os dois com o controle e apertar **CONECTAR**.
@@ -95,17 +103,26 @@ de instalação em até 15 s) e gerar um código novo.
 
 ## Compilar e testar
 
-JDK 17+ e Android SDK (platform 35, build-tools 35.0.1).
+JDK 21 (o Robolectric roda o SDK 36 só em JDK 21+; o bytecode é JVM 17) e
+Android SDK (platform 36, build-tools 36.0.0).
 
 ```sh
 echo "sdk.dir=/caminho/para/android-sdk" > local.properties
 ./gradlew testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease
+scripts/varrer-segredos.sh                 # nada de chave/senha no Git
+scripts/verificar-apk.sh app/build/outputs/apk/debug/app-debug.apk
+scripts/release-candidato.sh               # candidato + REGISTRO.txt
 ```
 
-- `app/build/outputs/apk/debug/app-debug.apk` — assinado com a chave de
-  debug. Serve para teste físico, **não** é produção.
-- `app/build/outputs/apk/release/app-release-unsigned.apk` — sem
-  `keystore.properties` o release sai sem assinatura, de propósito.
+- `app/build/outputs/apk/debug/app-debug.apk` — chave de debug e HTTP só
+  para `127.0.0.1`. Bancada; **não** é produção.
+- `app/build/release-candidato/` — o release e o registro dele
+  (`docs/release-producao.md`). Sem `keystore.properties` sai
+  `…-NAO-ASSINADO.apk` e o registro diz "NÃO É PRODUÇÃO".
+
+O CI (`.github/workflows/ci.yml`) roda a varredura de segredos, os dois
+builds, a conferência do APK, lint e os testes (Robolectric, com a política
+de retorno conferida nos níveis 26, 29, 31, 34 e 36).
 
 ## Assinar o release
 
@@ -119,6 +136,12 @@ proof-of-play. Uma TV instalada com a chave de debug só troca de versão com
 desinstalação + reprovisionamento.
 
 ## Histórico
+
+A 3.0.0 (05/10/2026) é a V1 de produção: target 36, tempo operacional em
+segmentos (contrato do backend #114), institucional de reserva como `IDLE`,
+fila de comprovantes e cache endurecidos contra relógio e disco hostis,
+release assinado com registro. Produção começa do zero nela — nada das
+instalações de teste é migrado.
 
 A 1.x tinha V1, `/hello`, OTA, Device Owner, painel técnico, provisionamento
 por JSON/pendrive/ADB, `baseUrl` e rotação configuráveis. Tudo isso saiu na

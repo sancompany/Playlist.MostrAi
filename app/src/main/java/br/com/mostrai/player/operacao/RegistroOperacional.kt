@@ -9,82 +9,86 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
-import java.util.UUID
+import java.security.SecureRandom
 
 /**
- * Tempo operacional registrado na própria TV (Ponto Móvel, 02/10/2026).
+ * Tempo operacional medido na própria TV (Ponto Móvel) — contrato
+ * `sancompany/MostrAi` `docs/player-mvp-contract.md` §8.5.
  *
  * Heartbeat prova que a tela FALA com o servidor, não que ela FUNCIONA: uma
- * tela num evento sem internet passa dias operando sem mandar nenhum. Este
- * registro guarda o fato — "o ciclo de exibição esteve rodando de X a Y" —
- * para o servidor reconstruir depois, quando a rede voltar.
+ * tela num evento sem internet passa dias exibindo sem mandar nenhum. Este
+ * registro guarda o fato — "de X a Y a tela esteve exibindo" — em
+ * **segmentos** `{bootId, seq, inicio, fim}`, e manda quando a rede volta.
  *
- * Uma sessão = um período contínuo de ciclo ativo (provisionado, na frente,
- * reproduzindo). Ela nasce em [abrir], ganha um checkpoint a cada minuto e
- * fecha em [fechar] com o motivo. Queda de energia ou processo morto não
- * passam por [fechar]: a sessão aberta é encerrada na próxima abertura com
- * motivo `interrompida`, no último checkpoint — nunca além dele (no máximo
- * um minuto de operação real fica de fora; nunca uma hora inventada).
+ * Regras do contrato:
+ * - **Só exibindo:** o segmento abre quando a tela entra em `PLAYING`/`IDLE`
+ *   com a Activity na frente, e fecha quando sai disso (fora do horário,
+ *   erro, saída, standby). Quem decide é [PlayerActivity]; aqui só o fato.
+ * - **Relógio monotônico:** início e fim em `elapsedRealtime` do boot, nunca
+ *   no relógio de parede — acertar a hora, o fuso ou o NTP não cria nem apaga
+ *   tempo. Para mandar, cada boot precisa de uma **âncora** do servidor
+ *   (`servidorAgora` de uma playlist recebida NESSE boot): `inicio` e `fim`
+ *   saem em hora do servidor = uptime + deslocamento da âncora.
+ * - **Boot sem âncora é descartado** — a TV ligou sem internet e desligou sem
+ *   nunca ter falado com o servidor: não há como pôr esse tempo no relógio
+ *   do servidor sem confiar no relógio da TV. O contrato manda descartar;
+ *   o descarte fica no diário ([Descarte]).
+ * - **Até 6 h por segmento:** passou disso, fecha e abre o próximo `seq`.
+ * - **Idempotente:** `(bootId, seq)` é a chave; o segmento aberto é
+ *   reenviado maior e o servidor só estende. Sai daqui só com resposta final
+ *   (`ok` do segmento fechado, `item_invalido`, `ignorado`).
  *
- * **Duração pelo relógio monotônico** (`elapsedRealtime`, mesmo boot), nunca
- * pela diferença de relógio de parede: mudar a hora, o fuso ou perder a
- * sincronização não cria nem apaga tempo. Os instantes de parede e do
- * servidor vão junto só para localizar a sessão no tempo — o servidor
- * prefere o do servidor ([inicioServidorMs]) quando existe.
- *
- * O Player NÃO decide o que é tempo "válido", nem em que hospedagem ou
- * evento ele caiu: registra o fato; o servidor cruza com o local em que a
- * tela estava e com o horário do ponto.
- *
- * **Idempotente:** cada sessão tem um id gerado aqui e é reenviada inteira
- * (com o fim mais recente) até o servidor confirmar. Nada sai daqui sem
- * confirmação; só sessões confirmadas e encerradas são apagadas, depois de
- * [RETENCAO_CONFIRMADA_MS].
+ * O Player NÃO decide o que é tempo válido, nem a que hospedagem ou evento
+ * ele pertence: o servidor cruza com o ponto da tela e o estado do cadastro.
  */
 class RegistroOperacional(context: Context) :
     SQLiteOpenHelper(context.applicationContext, NOME_ARQUIVO, null, VERSAO) {
 
-    private val resolver = context.applicationContext.contentResolver
+    private val app = context.applicationContext
+    private val prefs = app.getSharedPreferences(ARQUIVO_BOOT, Context.MODE_PRIVATE)
 
-    data class Sessao(
-        val sessaoId: String,
+    init {
+        // O formato de sessões (PR #7, nunca publicado) não vale mais.
+        app.deleteDatabase(NOME_ARQUIVO_ANTIGO)
+    }
+
+    data class Segmento(
+        val bootId: String,
+        val seq: Int,
         val dispositivoId: String?,
-        val bootCount: Int,
         val inicioUptimeMs: Long,
         val fimUptimeMs: Long,
-        val inicioParedeMs: Long,
-        val fimParedeMs: Long,
-        val inicioServidorMs: Long?,
-        val fimServidorMs: Long?,
-        val aberta: Boolean,
-        val motivoFim: String?,
-        /** Até onde (fim, em uptime) o servidor já confirmou; -1 = nunca. */
-        val confirmadaAteUptimeMs: Long,
-        val confirmadaEncerrada: Boolean,
+        val aberto: Boolean,
+        /** Fim (uptime) que o servidor já confirmou; -1 = nunca. */
+        val confirmadoAteUptimeMs: Long,
+        /** Deslocamento da âncora deste boot (servidor − uptime), ou null. */
+        val deslocamentoMs: Long?,
     ) {
         val duracaoMs: Long get() = (fimUptimeMs - inicioUptimeMs).coerceAtLeast(0L)
-        val pendente: Boolean get() = confirmadaAteUptimeMs < fimUptimeMs || (!aberta && !confirmadaEncerrada)
+        val inicioServidorMs: Long? get() = deslocamentoMs?.let { inicioUptimeMs + it }
+        val fimServidorMs: Long? get() = deslocamentoMs?.let { fimUptimeMs + it }
     }
+
+    /** Tempo que nunca vai ao servidor: boot que terminou sem âncora. */
+    data class Descarte(val segmentos: Int, val duracaoMs: Long)
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE $TABELA (
-                sessao_id TEXT PRIMARY KEY,
+                boot_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
                 dispositivo_id TEXT,
-                boot_count INTEGER NOT NULL,
                 inicio_uptime_ms INTEGER NOT NULL,
                 fim_uptime_ms INTEGER NOT NULL,
-                inicio_parede_ms INTEGER NOT NULL,
-                fim_parede_ms INTEGER NOT NULL,
-                inicio_servidor_ms INTEGER,
-                fim_servidor_ms INTEGER,
-                aberta INTEGER NOT NULL,
-                motivo_fim TEXT,
-                confirmada_ate_uptime_ms INTEGER NOT NULL DEFAULT -1,
-                confirmada_encerrada INTEGER NOT NULL DEFAULT 0
+                aberto INTEGER NOT NULL,
+                confirmado_ate_uptime_ms INTEGER NOT NULL DEFAULT -1,
+                PRIMARY KEY (boot_id, seq)
             )
             """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE TABLE $TABELA_ANCORA (boot_id TEXT PRIMARY KEY, deslocamento_ms INTEGER NOT NULL)"
         )
     }
 
@@ -92,98 +96,179 @@ class RegistroOperacional(context: Context) :
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 
+    // ------------------------------------------------------------------- boot
+
     /**
-     * Abre uma sessão nova e encerra qualquer outra que tenha ficado aberta
-     * (processo morto, queda de energia) no último checkpoint dela.
+     * Identidade do boot atual: `b<BOOT_COUNT>.<aleatório>`. Mesmo boot =
+     * mesmo `BOOT_COUNT` (ou, se o sistema não o expõe, uptime que só cresceu
+     * desde o último registro). Um processo novo no mesmo boot reaproveita o
+     * id — os uptimes continuam comparáveis.
      */
     @Synchronized
-    fun abrir(dispositivoId: String?, servidorMs: Long?): String? = seguro(null) {
-        encerrarInterrompidas()
-        val id = UUID.randomUUID().toString()
+    fun bootAtual(): String {
+        val contagem = contagemDeBoot()
         val uptime = SystemClock.elapsedRealtime()
-        val parede = System.currentTimeMillis()
-        writableDatabase.insertOrThrow(
-            TABELA, null,
-            ContentValues().apply {
-                put("sessao_id", id)
-                put("dispositivo_id", dispositivoId)
-                put("boot_count", contagemDeBoot())
-                put("inicio_uptime_ms", uptime)
-                put("fim_uptime_ms", uptime)
-                put("inicio_parede_ms", parede)
-                put("fim_parede_ms", parede)
-                if (servidorMs != null) {
-                    put("inicio_servidor_ms", servidorMs)
-                    put("fim_servidor_ms", servidorMs)
-                }
-                put("aberta", 1)
-            },
-        )
-        id
-    }
-
-    /** Estende a sessão até agora. Chamado a cada minuto enquanto o ciclo roda. */
-    @Synchronized
-    fun checkpoint(sessaoId: String, servidorMs: Long?) {
-        seguro(Unit) { estender(sessaoId, servidorMs, fechar = null) }
-    }
-
-    @Synchronized
-    fun fechar(sessaoId: String, motivo: String, servidorMs: Long?) {
-        seguro(Unit) { estender(sessaoId, servidorMs, fechar = motivo) }
-    }
-
-    /** Sessões que o servidor ainda não confirmou por inteiro, mais antigas primeiro. */
-    @Synchronized
-    fun pendentes(limite: Int = LIMITE_LOTE): List<Sessao> = seguro(emptyList()) {
-        readableDatabase.query(
-            TABELA, null,
-            "confirmada_ate_uptime_ms < fim_uptime_ms OR (aberta = 0 AND confirmada_encerrada = 0)",
-            null, null, null, "inicio_parede_ms ASC", limite.toString(),
-        ).use { c -> generateSequence { if (c.moveToNext()) c.paraSessao() else null }.toList() }
-    }
-
-    /** Resumo para o bloco técnico: quantas sessões e quanto tempo ainda não confirmados. */
-    @Synchronized
-    fun resumoPendente(): Pair<Int, Long> = seguro(0 to 0L) {
-        val todas = pendentes(Int.MAX_VALUE)
-        todas.size to todas.sumOf { it.duracaoMs }
+        val guardado = prefs.getString(CHAVE_BOOT_ID, null)
+        val contagemGuardada = prefs.getInt(CHAVE_BOOT_COUNT, Int.MIN_VALUE)
+        val uptimeGuardado = prefs.getLong(CHAVE_ULTIMO_UPTIME, Long.MAX_VALUE)
+        // Uptime que caiu prova reboot, mesmo com BOOT_COUNT igual (firmware
+        // que não o incrementa).
+        val mesmoBoot = guardado != null && contagemGuardada == contagem && uptime >= uptimeGuardado
+        val id = if (mesmoBoot) guardado!! else "b${if (contagem >= 0) contagem else "x"}.${aleatorio()}"
+        val editor = prefs.edit().putLong(CHAVE_ULTIMO_UPTIME, uptime)
+        if (!mesmoBoot) editor.putString(CHAVE_BOOT_ID, id).putInt(CHAVE_BOOT_COUNT, contagem)
+        editor.commit()
+        return id
     }
 
     /**
-     * O servidor confirmou estas sessões até o fim que foi enviado. Se a
-     * sessão andou depois do envio, o resto fica pendente para o próximo.
+     * Primeiro contato com o servidor neste boot: fixa o deslocamento entre o
+     * relógio do servidor e o uptime. Fica o primeiro — reenvios do segmento
+     * aberto nunca mudam de lugar no tempo.
      */
     @Synchronized
-    fun confirmar(enviadas: List<Sessao>, confirmadas: Set<String>) {
+    fun ancorar(servidorAgoraMs: Long, uptimeMs: Long = SystemClock.elapsedRealtime()) {
+        seguro(Unit) {
+            val boot = bootAtual()
+            writableDatabase.insertWithOnConflict(
+                TABELA_ANCORA, null,
+                ContentValues().apply {
+                    put("boot_id", boot)
+                    put("deslocamento_ms", servidorAgoraMs - uptimeMs)
+                },
+                SQLiteDatabase.CONFLICT_IGNORE,
+            )
+        }
+    }
+
+    // ------------------------------------------------------------- segmentos
+
+    /** A tela começou a exibir: abre um segmento se ainda não há um aberto neste boot. */
+    @Synchronized
+    fun abrir(dispositivoId: String?) {
+        seguro(Unit) {
+            val boot = bootAtual()
+            if (aberto(boot) != null) return@seguro
+            val agora = SystemClock.elapsedRealtime()
+            inserir(boot, proximoSeq(boot), dispositivoId, agora, agora)
+        }
+    }
+
+    /**
+     * Estende o segmento aberto até agora (checkpoint a cada 30 s). Passou de
+     * [SEGMENTO_MAXIMO_MS], fecha naquele limite e continua num `seq` novo.
+     */
+    @Synchronized
+    fun estender() {
+        seguro(Unit) {
+            val boot = bootAtual()
+            var atual = aberto(boot) ?: return@seguro
+            val agora = SystemClock.elapsedRealtime()
+            while (agora - atual.inicioUptimeMs > SEGMENTO_MAXIMO_MS) {
+                val limite = atual.inicioUptimeMs + SEGMENTO_MAXIMO_MS
+                atualizarFim(boot, atual.seq, limite, aberto = false)
+                val seq = proximoSeq(boot)
+                inserir(boot, seq, atual.dispositivoId, limite, limite)
+                atual = aberto(boot) ?: return@seguro
+            }
+            atualizarFim(boot, atual.seq, agora, aberto = true)
+        }
+    }
+
+    /** A tela parou de exibir: fecha o segmento aberto agora. */
+    @Synchronized
+    fun fechar() {
+        seguro(Unit) {
+            estender()
+            val boot = bootAtual()
+            val atual = aberto(boot) ?: return@seguro
+            atualizarFim(boot, atual.seq, atual.fimUptimeMs, aberto = false)
+        }
+    }
+
+    /**
+     * Começo de processo: o que ficou aberto (processo morto, queda de
+     * energia) fecha no último checkpoint — nunca além dele. Segmentos de um
+     * boot anterior que nunca teve âncora são descartados (contrato §8.5), e
+     * os de outra tela (reinstalação como outra tela) também: não há com
+     * que credencial mandá-los.
+     */
+    @Synchronized
+    fun arrumar(dispositivoAtual: String?): Descarte = seguro(Descarte(0, 0)) {
+        val boot = bootAtual()
+        writableDatabase.execSQL("UPDATE $TABELA SET aberto = 0 WHERE aberto = 1")
+        val semAncora = "boot_id <> ? AND boot_id NOT IN (SELECT boot_id FROM $TABELA_ANCORA)"
+        val descartados = todos("$semAncora AND fim_uptime_ms > inicio_uptime_ms", arrayOf(boot))
+        writableDatabase.delete(TABELA, semAncora, arrayOf(boot))
+        if (dispositivoAtual != null) {
+            writableDatabase.delete(TABELA, "dispositivo_id IS NOT ?", arrayOf(dispositivoAtual))
+        }
+        // Fechado e já confirmado até o fim (o processo morreu entre o `ok`
+        // do aberto e o próximo checkpoint): não tem mais o que mandar.
+        writableDatabase.delete(TABELA, "aberto = 0 AND confirmado_ate_uptime_ms >= fim_uptime_ms", null)
+        writableDatabase.delete(TABELA_ANCORA, "boot_id <> ? AND boot_id NOT IN (SELECT boot_id FROM $TABELA)", arrayOf(boot))
+        // Contador de seq só importa no boot atual.
+        prefs.all.keys.filter { it.startsWith(CHAVE_PROXIMO_SEQ_PREFIXO) && it != CHAVE_PROXIMO_SEQ_PREFIXO + boot }
+            .takeIf { it.isNotEmpty() }
+            ?.let { velhas -> prefs.edit().apply { velhas.forEach(::remove) }.commit() }
+        Descarte(descartados.size, descartados.sumOf { it.duracaoMs })
+    }
+
+    /**
+     * O que ainda precisa ir ao servidor, mais antigo primeiro: só segmentos
+     * com âncora (os do boot atual sem âncora esperam) e com algo novo — o
+     * aberto cresceu, ou o fechado ainda não teve resposta final.
+     */
+    @Synchronized
+    fun pendentes(dispositivoId: String?, limite: Int = TETO_LOTE): List<Segmento> = seguro(emptyList()) {
+        if (dispositivoId == null) return@seguro emptyList()
+        todos(
+            "dispositivo_id = ? AND fim_uptime_ms > inicio_uptime_ms AND fim_uptime_ms > confirmado_ate_uptime_ms " +
+                "AND deslocamento_ms IS NOT NULL",
+            arrayOf(dispositivoId),
+            limite,
+        )
+    }
+
+    /**
+     * Resposta do servidor por `(bootId, seq)`: `ok` confirma até o fim
+     * enviado (o fechado sai daqui; o aberto volta quando crescer);
+     * `item_invalido` e `ignorado` são finais — sai daqui, nunca mais vai.
+     */
+    @Synchronized
+    fun confirmar(enviados: List<Segmento>, resultados: Map<Pair<String, Int>, String>) {
         seguro(Unit) {
             val db = writableDatabase
             db.beginTransaction()
             try {
-                for (s in enviadas) {
-                    if (s.sessaoId !in confirmadas) continue
-                    db.update(
-                        TABELA,
-                        ContentValues().apply {
-                            put("confirmada_ate_uptime_ms", s.fimUptimeMs)
-                            if (!s.aberta) put("confirmada_encerrada", 1)
-                        },
-                        "sessao_id = ? AND confirmada_ate_uptime_ms < ?",
-                        arrayOf(s.sessaoId, s.fimUptimeMs.toString()),
-                    )
-                    if (!s.aberta) {
-                        db.update(
-                            TABELA, ContentValues().apply { put("confirmada_encerrada", 1) },
-                            "sessao_id = ?", arrayOf(s.sessaoId),
-                        )
+                for (s in enviados) {
+                    when (resultados[s.bootId to s.seq]) {
+                        STATUS_OK -> {
+                            db.execSQL(
+                                "UPDATE $TABELA SET confirmado_ate_uptime_ms = MAX(confirmado_ate_uptime_ms, ?) " +
+                                    "WHERE boot_id = ? AND seq = ?",
+                                arrayOf<Any>(s.fimUptimeMs, s.bootId, s.seq),
+                            )
+                            db.delete(
+                                TABELA, "boot_id = ? AND seq = ? AND aberto = 0 AND confirmado_ate_uptime_ms >= fim_uptime_ms",
+                                arrayOf(s.bootId, s.seq.toString()),
+                            )
+                        }
+                        STATUS_INVALIDO, STATUS_IGNORADO -> db.delete(
+                            TABELA, "boot_id = ? AND seq = ? AND aberto = 0",
+                            arrayOf(s.bootId, s.seq.toString()),
+                        ).also {
+                            // Aberto e já recusado: não volta a ir até crescer.
+                            db.execSQL(
+                                "UPDATE $TABELA SET confirmado_ate_uptime_ms = ? WHERE boot_id = ? AND seq = ?",
+                                arrayOf<Any>(s.fimUptimeMs, s.bootId, s.seq),
+                            )
+                        }
+                        else -> Unit // sem resultado: fica para a próxima
                     }
                 }
-                // Encerrada e confirmada há tempo: o servidor já tem a cópia.
-                db.delete(
-                    TABELA,
-                    "aberta = 0 AND confirmada_encerrada = 1 AND confirmada_ate_uptime_ms >= fim_uptime_ms AND fim_parede_ms < ?",
-                    arrayOf((System.currentTimeMillis() - RETENCAO_CONFIRMADA_MS).toString()),
-                )
+                // Fechado de duração zero não tem o que provar.
+                db.delete(TABELA, "aberto = 0 AND fim_uptime_ms <= inicio_uptime_ms", null)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -191,90 +276,111 @@ class RegistroOperacional(context: Context) :
         }
     }
 
-    /**
-     * Estende a sessão até agora. O relógio do servidor anda com o
-     * monotônico dentro do mesmo boot, então: com o instante do servidor em
-     * mãos, um início que ficou sem ele (sessão aberta antes da primeira
-     * âncora) é recalculado para trás; sem ele (âncora perdida no meio do
-     * ciclo), o fim de servidor anterior é projetado para a frente — nunca
-     * fica parado enquanto a duração cresce.
-     */
-    private fun estender(sessaoId: String, servidorMs: Long?, fechar: String?) {
-        val agoraUptime = SystemClock.elapsedRealtime()
-        // Só a sessão aberta e do mesmo boot anda: depois de um reboot o
-        // uptime recomeça do zero e "estender" criaria duração negativa.
-        // (No UPDATE do SQLite, toda expressão do SET lê os valores ANTIGOS
-        // da linha.)
-        writableDatabase.execSQL(
-            """
-            UPDATE $TABELA SET
-              inicio_servidor_ms = CASE
-                WHEN inicio_servidor_ms IS NULL AND ?1 IS NOT NULL THEN ?1 - (?2 - inicio_uptime_ms)
-                ELSE inicio_servidor_ms END,
-              fim_servidor_ms = CASE
-                WHEN ?1 IS NOT NULL THEN ?1
-                WHEN fim_servidor_ms IS NOT NULL THEN fim_servidor_ms + (?2 - fim_uptime_ms)
-                ELSE NULL END,
-              fim_uptime_ms = ?2,
-              fim_parede_ms = ?3,
-              aberta = CASE WHEN ?4 IS NULL THEN aberta ELSE 0 END,
-              motivo_fim = COALESCE(?4, motivo_fim)
-            WHERE sessao_id = ?5 AND aberta = 1 AND boot_count = ?6
-            """.trimIndent(),
-            arrayOf<Any?>(servidorMs, agoraUptime, System.currentTimeMillis(), fechar, sessaoId, contagemDeBoot()),
-        )
+    /** Para o bloco técnico: segmentos ainda não confirmados e o tempo neles. */
+    @Synchronized
+    fun resumoPendente(): Pair<Int, Long> = seguro(0 to 0L) {
+        val todos = todos("fim_uptime_ms > confirmado_ate_uptime_ms", emptyArray(), Int.MAX_VALUE)
+        todos.size to todos.sumOf { it.duracaoMs }
     }
 
-    private fun encerrarInterrompidas() {
-        writableDatabase.update(
-            TABELA,
+    /** Há âncora do servidor neste boot? (bloco técnico e testes) */
+    @Synchronized
+    fun ancorado(): Boolean = seguro(false) {
+        readableDatabase.rawQuery("SELECT 1 FROM $TABELA_ANCORA WHERE boot_id = ?", arrayOf(bootAtual())).use { it.moveToFirst() }
+    }
+
+    // ---------------------------------------------------------------- interno
+
+    private fun aberto(boot: String): Segmento? =
+        todos("boot_id = ? AND aberto = 1", arrayOf(boot), 1).firstOrNull()
+
+    private fun proximoSeq(boot: String): Int =
+        readableDatabase.rawQuery("SELECT COALESCE(MAX(seq), -1) + 1 FROM $TABELA WHERE boot_id = ?", arrayOf(boot))
+            .use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+            .coerceAtLeast(prefs.getInt(CHAVE_PROXIMO_SEQ_PREFIXO + boot, 0))
+            .also { prefs.edit().putInt(CHAVE_PROXIMO_SEQ_PREFIXO + boot, it + 1).commit() }
+
+    private fun inserir(boot: String, seq: Int, dispositivoId: String?, inicio: Long, fim: Long) {
+        writableDatabase.insertOrThrow(
+            TABELA, null,
             ContentValues().apply {
-                put("aberta", 0)
-                put("motivo_fim", MOTIVO_INTERROMPIDA)
+                put("boot_id", boot)
+                put("seq", seq)
+                put("dispositivo_id", dispositivoId)
+                put("inicio_uptime_ms", inicio)
+                put("fim_uptime_ms", fim)
+                put("aberto", 1)
             },
-            "aberta = 1", null,
         )
     }
 
-    private fun contagemDeBoot(): Int =
-        runCatching { Settings.Global.getInt(resolver, Settings.Global.BOOT_COUNT, -1) }.getOrDefault(-1)
+    private fun atualizarFim(boot: String, seq: Int, fim: Long, aberto: Boolean) {
+        writableDatabase.execSQL(
+            "UPDATE $TABELA SET fim_uptime_ms = MAX(fim_uptime_ms, ?), aberto = ? WHERE boot_id = ? AND seq = ?",
+            arrayOf<Any>(fim, if (aberto) 1 else 0, boot, seq),
+        )
+    }
 
-    private fun Cursor.paraSessao() = Sessao(
-        sessaoId = getString(getColumnIndexOrThrow("sessao_id")),
-        dispositivoId = getString(getColumnIndexOrThrow("dispositivo_id")),
-        bootCount = getInt(getColumnIndexOrThrow("boot_count")),
+    private fun todos(onde: String, args: Array<String>, limite: Int = Int.MAX_VALUE): List<Segmento> =
+        readableDatabase.rawQuery(
+            "SELECT * FROM (SELECT s.*, a.deslocamento_ms FROM $TABELA s " +
+                "LEFT JOIN $TABELA_ANCORA a ON a.boot_id = s.boot_id) " +
+                "WHERE $onde ORDER BY boot_id, seq LIMIT $limite",
+            args,
+        ).use { c -> generateSequence { if (c.moveToNext()) c.paraSegmento() else null }.toList() }
+
+    private fun Cursor.paraSegmento() = Segmento(
+        bootId = getString(getColumnIndexOrThrow("boot_id")),
+        seq = getInt(getColumnIndexOrThrow("seq")),
+        dispositivoId = getColumnIndexOrThrow("dispositivo_id").let { if (isNull(it)) null else getString(it) },
         inicioUptimeMs = getLong(getColumnIndexOrThrow("inicio_uptime_ms")),
         fimUptimeMs = getLong(getColumnIndexOrThrow("fim_uptime_ms")),
-        inicioParedeMs = getLong(getColumnIndexOrThrow("inicio_parede_ms")),
-        fimParedeMs = getLong(getColumnIndexOrThrow("fim_parede_ms")),
-        inicioServidorMs = longOuNulo("inicio_servidor_ms"),
-        fimServidorMs = longOuNulo("fim_servidor_ms"),
-        aberta = getInt(getColumnIndexOrThrow("aberta")) == 1,
-        motivoFim = getString(getColumnIndexOrThrow("motivo_fim")),
-        confirmadaAteUptimeMs = getLong(getColumnIndexOrThrow("confirmada_ate_uptime_ms")),
-        confirmadaEncerrada = getInt(getColumnIndexOrThrow("confirmada_encerrada")) == 1,
+        aberto = getInt(getColumnIndexOrThrow("aberto")) == 1,
+        confirmadoAteUptimeMs = getLong(getColumnIndexOrThrow("confirmado_ate_uptime_ms")),
+        deslocamentoMs = getColumnIndexOrThrow("deslocamento_ms").let { if (isNull(it)) null else getLong(it) },
     )
 
-    private fun Cursor.longOuNulo(coluna: String): Long? {
-        val i = getColumnIndexOrThrow(coluna)
-        return if (isNull(i)) null else getLong(i)
+    private fun contagemDeBoot(): Int =
+        runCatching { Settings.Global.getInt(app.contentResolver, Settings.Global.BOOT_COUNT, -1) }.getOrDefault(-1)
+
+    private fun aleatorio(): String {
+        val alfabeto = "abcdefghijklmnopqrstuvwxyz0123456789"
+        val r = SecureRandom()
+        return String(CharArray(8) { alfabeto[r.nextInt(alfabeto.length)] })
     }
 
-    /** Disco cheio ou banco ilegível não derrubam a tela: o registro só deixa de crescer. */
+    /** Disco cheio ou banco corrompido nunca derrubam o Player — só este registro falha. */
     private inline fun <T> seguro(padrao: T, bloco: () -> T): T = try {
         bloco()
     } catch (e: SQLiteException) {
-        Log.e(TAG, "registro operacional indisponível: ${e.javaClass.simpleName}")
+        Log.w(TAG, "registro operacional indisponível", e)
+        padrao
+    } catch (e: IllegalStateException) {
+        Log.w(TAG, "registro operacional indisponível", e)
         padrao
     }
 
     companion object {
         private const val TAG = "RegistroOperacional"
-        const val NOME_ARQUIVO = "mostrai_operacao.db"
-        const val VERSAO = 1
-        const val TABELA = "sessao_operacional"
-        const val LIMITE_LOTE = 50
-        const val MOTIVO_INTERROMPIDA = "interrompida"
-        const val RETENCAO_CONFIRMADA_MS = 7L * 24 * 60 * 60 * 1000
+        const val NOME_ARQUIVO = "mostrai_operacao_v2.db"
+        const val NOME_ARQUIVO_ANTIGO = "mostrai_operacao.db"
+        private const val VERSAO = 1
+        private const val TABELA = "segmento"
+        private const val TABELA_ANCORA = "ancora"
+        const val ARQUIVO_BOOT = "mostrai_boot"
+        private const val CHAVE_BOOT_ID = "boot_id"
+        private const val CHAVE_BOOT_COUNT = "boot_count"
+        private const val CHAVE_ULTIMO_UPTIME = "ultimo_uptime"
+        private const val CHAVE_PROXIMO_SEQ_PREFIXO = "proximo_seq_"
+
+        /** Contrato §8.5: até 6 h por segmento. Um minuto de folga contra arredondamento. */
+        const val SEGMENTO_MAXIMO_MS = 6 * 60 * 60 * 1000L - 60_000L
+
+        /** Contrato §8.5: até 200 segmentos por lote. */
+        const val TETO_LOTE = 200
+
+        const val STATUS_OK = "ok"
+        const val STATUS_INVALIDO = "item_invalido"
+        const val STATUS_IGNORADO = "ignorado"
     }
 }

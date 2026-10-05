@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
-import android.util.Log
 import br.com.mostrai.player.kiosk.Watchdog
 
 /**
@@ -25,11 +24,10 @@ class BootReceiver : BroadcastReceiver() {
         // atrasando ou recusando), sem isto nada tentaria de novo.
         Watchdog.rearmar(context)
 
-        val abrir = Intent(context, PlayerActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        runCatching { context.startActivity(abrir) }
-            .onFailure { Log.w("BootReceiver", "não abriu o player no boot; o watchdog tenta de novo", it) }
+        // Até o Android 9 (a TCL) abre direto. No 10+, só com "Exibir sobre
+        // outros apps" ([kiosk.PoliticaDeRetorno]); sem ela, o sistema
+        // bloqueia em silêncio e o bloqueio fica registrado no bloco técnico.
+        Watchdog.abrirPlayer(context)
     }
 
     private companion object {

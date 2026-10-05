@@ -11,6 +11,9 @@ Projeto da San & Co. Segue as leis do plugin `san-co`.
 - `RUNBOOK.md` — como operar, reverter e restaurar
 - `README.md` — como rodar e testar
 - `sancompany/MostrAi` → `docs/player-mvp-contract.md` — **o** protocolo com o backend (fonte da verdade); conferência em `docs/player-mvp-matriz.md`
+- `docs/android-modernizacao.md` e `docs/adr/0001-target-sdk-moderno.md` — target 36 com minSdk 26, o que muda por versão de Android
+- `docs/hardware/tcl-32s6500s.md` — o que se sabe (e o que não) da TV do parque
+- `docs/release-producao.md` — chave definitiva, candidato, registro, teste N → N+1
 - `docs/historico/` — V1/V2, OTA, Device Owner, painel, provisionamento por JSON/ADB: só histórico, nada disso existe mais
 
 ## Classificação (estação 2)
@@ -290,6 +293,32 @@ Fechadas:
   vários dias: `docs/offline-prolongado-proposta-backend.md`. Erros:
   `docs/erros/2026-10-02-*.md`.
 
+- **V1 de produção + modernização Android — 3.0.0 (05/10/2026)** — pedido
+  do dono (65 seções; decisões 1–9 aprovadas). Heartbeat: investigado o APK
+  de campo — 0.1.0/1.0.0 batiam a cada 5 min, 2.0.0+ a cada 15 s; 15 s é a
+  fonte única (`Produto.INTERVALO_HEARTBEAT_MS`), backend alinhado em
+  [sancompany/MostrAi#115](https://github.com/sancompany/MostrAi/pull/115)
+  (tolerância 2 min); #113 fechado. Toolchain: target/compile 36, minSdk 26,
+  AGP 8.13.2, Kotlin 2.3.21, Robolectric 4.16.1, CI em JDK 21. Android
+  moderno: VOLTAR por `OnBackPressedCallback` (voltar preditivo),
+  `SYSTEM_ALERT_WINDOW` só como exceção ao bloqueio de abertura do segundo
+  plano no 10+ (bloqueio visível no bloco técnico e no diário), alarme `set`
+  do 12 em diante, `networkSecurityConfig` só HTTPS, `dataExtractionRules`.
+  Tempo operacional reescrito para **segmentos** do contrato #114
+  (`{bootId, seq, inicio, fim}`, âncora do servidor por boot, boot sem
+  âncora descartado e contado), executor serial único. Institucional de
+  reserva = `IDLE`. Fila de comprovantes contra relógio hostil (espera
+  impossível liberada, exibição em andamento protegida, carimbo no relógio
+  confiável); reserva de disco conferida durante o download. Bloco técnico
+  ampliado, sem segredo (`SegredoForaTest`). CI: varredura de segredos,
+  release + `REGISTRO.txt` (`scripts/release-candidato.sh`), conferência do
+  APK, lint como portão. Testes por API (26/29/31/34/36). Revisão focal em
+  três frentes: 5 HIGH e 6 MEDIUM corrigidos (detalhe em
+  `docs/pendencias.md`), baixos aceitos registrados. Checklist físico
+  de 45 itens (TV A, TV B offline, N → N+1, 1080×1920, soak). Produção
+  começa do zero no 3.0.0. versionCode 4. Estado: **PLAYER PRONTO PARA
+  TESTE FÍSICO DE RELEASE** — falta a chave definitiva e o teste nas TCLs.
+
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
 
@@ -298,14 +327,15 @@ que o dono confirmar o app rodando em aparelho real.
 - Entrada da aplicação (única Activity): `app/src/main/java/br/com/mostrai/player/PlayerActivity.kt`
 - Valores fixos do produto: `app/src/main/java/br/com/mostrai/player/Produto.kt` (`BASE_URL`, `ROTACAO_GRAUS`, intervalos); `HostDaApi` em `app/src/release/` (constante) e `app/src/debug/` (trocável só por teste)
 - Provisionamento: `app/src/main/java/br/com/mostrai/player/provisionamento/` (`Codigos` normaliza ID e código, `Provisionador` troca pela credencial) + `ui/TelaProvisionamento.kt`
-- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi` = as 6 rotas, `ResultadoHttp` separa as famílias de falha, `Sincronizacao` aplica os efeitos do heartbeat, `HeartbeatJson`/`PlaylistJson`/`PlayedJson` são os corpos)
+- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi` = as 6 rotas, `OperacaoJson` = segmentos, `ResultadoHttp` separa as famílias de falha, `Sincronizacao` aplica os efeitos do heartbeat, `HeartbeatJson`/`PlaylistJson`/`PlayedJson` são os corpos)
 - Playlist e reposicionamento: `app/src/main/java/br/com/mostrai/player/playlist/`
 - Cache de mídia: `app/src/main/java/br/com/mostrai/player/cache/`
 - Proof-of-play (fila durável): `app/src/main/java/br/com/mostrai/player/proof/`
 - Sessões operacionais: `app/src/main/java/br/com/mostrai/player/operacao/` · relógio confiável e institucional de reserva: `playlist/RelogioConfiavel.kt`, `playlist/InstitucionalLocal.kt` · bloco de suporte: `ui/InfoSuporte.kt`
 - Configuração: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda credencial e config aplicada; `ConfigRemota` lê `GET /config`; `HorarioOperacional` é o horário do ponto, puro e testável)
 - Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer` = os 9 estados do contrato)
-- Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `BootReceiver.kt`
+- Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `kiosk/PoliticaDeRetorno.kt` (o que cada Android deixa), `BootReceiver.kt`
+- Release e CI: `scripts/release-candidato.sh`, `scripts/verificar-apk.sh`, `scripts/varrer-segredos.sh`, `.github/workflows/ci.yml`
 - Rotação: `ui/RotacaoTela.kt` (as setas do controle não se remapeiam — `docs/funcional.md`, seção 3)
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`; `GuardaMvpTest` falha se algo removido voltar
 - Variáveis/segredos: nenhum `.env` e nenhum caminho de provisionamento fora da TV. Keystore de release: `keystore.properties` fora do Git (`RUNBOOK.md`)
@@ -317,5 +347,6 @@ conformidade: ou corrige, ou vira exceção registrada no `CONSTRAINTS.md`.
 
 ## Pendências que bloqueiam a esteira
 
-- Verificação "no ar" da estação 5 em hardware real — checklist de 40 itens, só o dono faz (ver `docs/pendencias.md`)
+- Chave de assinatura definitiva (só o dono gera; `RUNBOOK.md`)
+- Verificação "no ar" da estação 5 em hardware real — checklist de 45 itens do 3.0.0, só o dono faz (ver `docs/pendencias.md`)
 - CI (`.github/workflows/ci.yml`) pode precisar ser aplicado manualmente pelo dono se a ferramenta recusar o push do workflow (ver `docs/pendencias.md`)

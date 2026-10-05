@@ -112,8 +112,8 @@ class CacheMidia(context: Context) {
     private var protegidas: Set<String> = emptySet()
 
     /** Espaço do disco onde o cache mora — trocável só em teste. */
-    internal var espacoLivre: () -> Long = { diretorio.usableSpace }
-    internal var espacoTotal: () -> Long = { diretorio.totalSpace }
+    internal var espacoLivre: () -> Long = { MedidorDeDisco.livre(diretorio) }
+    internal var espacoTotal: () -> Long = { MedidorDeDisco.total(diretorio) }
 
     /** A rede voltou: a próxima resolução tenta baixar sem esperar o silêncio. */
     fun redeVoltou() {
@@ -171,6 +171,10 @@ class CacheMidia(context: Context) {
                 baixarPara(url, arquivo, hashEsperado)
                 limitarTamanho()
                 Resolucao(arquivo, null)
+            } catch (e: SemEspacoNoDownload) {
+                arquivo.delete()
+                Log.w(TAG, "download interrompido para manter a reserva de disco ($chave)")
+                Resolucao(null, Falha.SemEspaco)
             } catch (e: HashDivergenteException) {
                 Log.e(TAG, "mídia descartada: hash não confere ($chave)", e)
                 arquivo.delete()
@@ -230,7 +234,7 @@ class CacheMidia(context: Context) {
         val conexao = try {
             URL(url).openConnection() as HttpURLConnection
         } catch (e: ClassCastException) {
-            throw IOException("URL de mídia não é http(s): $url", e)
+            throw IOException("URL de mídia não é http(s): esquema ${url.substringBefore(':').take(16)}", e)
         }
         try {
             conexao.connectTimeout = TIMEOUT_CONEXAO_MS
@@ -258,10 +262,28 @@ class CacheMidia(context: Context) {
                 throw IOException("resposta não é mídia (${conexao.contentType})")
             }
 
+            // A reserva vale DURANTE o download, não só antes dele: um vídeo
+            // de 600 MB começado com a reserva no limite enchia o disco que a
+            // fila de comprovantes e o sistema precisam. Tamanho anunciado:
+            // abre espaço antes (ou desiste); sem ele, confere a cada bloco.
+            val anunciado = conexao.contentLengthLong
+            if (anunciado > 0 && !garantirEspaco(anunciado)) throw SemEspacoNoDownload()
+
             val digest = MessageDigest.getInstance("SHA-256")
             DigestInputStream(conexao.inputStream, digest).use { entrada ->
                 temporario.outputStream().use { saida ->
-                    entrada.copyTo(saida)
+                    val bloco = ByteArray(64 * 1024)
+                    var desdeConferencia = 0L
+                    while (true) {
+                        val lidos = entrada.read(bloco)
+                        if (lidos < 0) break
+                        saida.write(bloco, 0, lidos)
+                        desdeConferencia += lidos
+                        if (desdeConferencia >= CONFERENCIA_DE_ESPACO_BYTES) {
+                            desdeConferencia = 0L
+                            if (espacoLivre() < reservaBytes()) throw SemEspacoNoDownload()
+                        }
+                    }
                     // ROB-004: sem isto, uma queda de energia logo depois do
                     // renameTo pode deixar o nome final apontando para dados
                     // que nunca chegaram ao disco — e o caminho rápido de
@@ -305,10 +327,10 @@ class CacheMidia(context: Context) {
     fun reservaBytes(): Long = maxOf(RESERVA_MINIMA_BYTES, espacoTotal() / 10)
 
     /** Espaço livre suficiente para mais um download, liberando o que não é protegido. */
-    private fun garantirEspaco(): Boolean {
-        if (espacoLivre() >= reservaBytes()) return true
-        limitarTamanho()
-        return espacoLivre() >= reservaBytes()
+    private fun garantirEspaco(aBaixar: Long = 0L): Boolean {
+        if (espacoLivre() - aBaixar >= reservaBytes()) return true
+        limitarTamanho(aBaixar)
+        return espacoLivre() - aBaixar >= reservaBytes()
     }
 
     /**
@@ -318,9 +340,9 @@ class CacheMidia(context: Context) {
      * sobrou ela, a limpeza para e o download seguinte falha com
      * [Falha.SemEspaco], em vez de apagar o que a programação ainda vai tocar.
      */
-    private fun limitarTamanho() {
+    private fun limitarTamanho(aBaixar: Long = 0L) {
         val arquivos = diretorio.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") } ?: return
-        var falta = reservaBytes() - espacoLivre()
+        var falta = reservaBytes() + aBaixar - espacoLivre()
         if (falta <= 0) return
         val protegidasAgora = protegidas
         for (arquivo in arquivos.filter { it.name !in protegidasAgora }.sortedBy { it.lastModified() }) {
@@ -335,6 +357,9 @@ class CacheMidia(context: Context) {
             it is java.net.NoRouteToHostException
     }
 
+    /** O download chegaria (ou chegou) na reserva de disco: desiste e apaga o parcial. */
+    private class SemEspacoNoDownload : IOException("reserva de disco atingida")
+
     /** A conexão nem abriu (DNS, rota, recusa, timeout de conexão). */
     private class SemConexao(causa: IOException) : IOException(causa.message, causa)
 
@@ -348,6 +373,9 @@ class CacheMidia(context: Context) {
 
         /** Depois de uma tentativa que nem conectou, a rede só é tentada de novo depois disto. */
         const val SILENCIO_SEM_REDE_MS = 60_000L
+
+        /** De quanto em quanto o download confere se ainda está fora da reserva. */
+        const val CONFERENCIA_DE_ESPACO_BYTES = 8L * 1024 * 1024
 
         // limite: reserva de 512 MB ou 10% do disco, o que for maior — o
         // resto é do cache. Revisar com a TCL real (espaço livre medido no
@@ -371,5 +399,20 @@ class CacheMidia(context: Context) {
             }
             antigo.delete()
         }
+    }
+}
+
+/**
+ * Como o cache mede o disco. Trocável só em teste: os testes de ciclo
+ * sobem a Activity inteira, e o resultado não pode depender de quanto
+ * espaço sobrou na máquina que roda a suíte.
+ */
+internal object MedidorDeDisco {
+    @Volatile var livre: (File) -> Long = { it.usableSpace }
+    @Volatile var total: (File) -> Long = { it.totalSpace }
+
+    fun padrao() {
+        livre = { it.usableSpace }
+        total = { it.totalSpace }
     }
 }

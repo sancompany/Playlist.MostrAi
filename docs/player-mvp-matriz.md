@@ -45,9 +45,24 @@ Contrato relido no backend, branch `claude/conectividade-nao-e-operacao`
 |---|---|---|---|
 | `GET /playlist/:dispositivoId` | `janelaFim` deixou de ser informativo: o comercial só toca dentro da janela (sem ele, `janelaInicio` + 1 h), medido por relógio confiável; `institucional` passou a ser lido para guardar o institucional de reserva | §7 marca "na virada da hora sem rede, continua a última" como SUPERADA | **MATCH** |
 | `POST /player/:dispositivoId/played` | pendente fica até o ACK (não expira mais em 7 dias + 1 h); quarentena por bisseção só com prova de irmão aceito; até 20 lotes por rodada | inalterado — aceita até 7 dias depois da janela e responde status final depois | **MATCH** |
-| `POST /player/:dispositivoId/operacao` | **nova**: `{sessoes: [{sessaoId, bootCount, inicioUptimeMs, fimUptimeMs, duracaoMs, inicioEm, fimEm, inicioServidorEm, fimServidorEm, encerrada, motivo}]}`, até 50; tira da fila local só `registrada`/`invalida`; 404 (backend antigo) → guarda e segue | §8.1: até 100 por lote; `resultados[{sessaoId, status: registrada\|invalida}]`; 400 lote ruim; 401/403 como §4; sem exigir tela Ativa | **MATCH** (coberto por `PontoMovelCicloTest` aqui e `tests/conectividade-operacao.test.js` lá) |
+| `POST /player/:dispositivoId/operacao` | ~~**nova**~~ (superado em 05/10 — ver abaixo): `{sessoes: [{sessaoId, bootCount, inicioUptimeMs, fimUptimeMs, duracaoMs, inicioEm, fimEm, inicioServidorEm, fimServidorEm, encerrada, motivo}]}`, até 50; tira da fila local só `registrada`/`invalida`; 404 (backend antigo) → guarda e segue | §8.1: até 100 por lote; `resultados[{sessaoId, status: registrada\|invalida}]`; 400 lote ruim; 401/403 como §4; sem exigir tela Ativa | **MATCH** (coberto por `PontoMovelCicloTest` aqui e `tests/conectividade-operacao.test.js` lá) |
 
 Heartbeat e config não mudaram. `GuardaMvpTest` passou de 5 para 6 rotas.
+
+## Atualização 05/10/2026 — V1 de produção (3.0.0) contra o backend `main` pós-#114
+
+Contrato relido no `main` do backend (commit `d267b8c`, Ponto Móvel V1
+mesclado em [sancompany/MostrAi#114](https://github.com/sancompany/MostrAi/pull/114);
+#113 fechado sem mesclar). Header `X-Player-Version: 3.0.0+4`.
+
+| Endpoint | O que mudou no Player | Backend (`main`) | Match |
+|---|---|---|---|
+| `POST /player/:dispositivoId/operacao` | **reescrita para segmentos**: `{segmentos: [{bootId, seq, inicio, fim}]}`, até 200 por lote; `bootId` = `b<BOOT_COUNT>.<aleatório>` (`^[A-Za-z0-9._:-]{1,64}$`); `inicio`/`fim` ISO no relógio do **servidor** (âncora `servidorAgora` + monotônico do mesmo boot); segmento ≤ 6 h − 1 min (rola para o próximo `seq`); o aberto é reenviado crescendo; boot sem âncora não vai (descartado no próximo boot e contado no diário); `ok` confirma até o fim enviado, `item_invalido`/`ignorado` são finais; 404/5xx/rede → guarda e tenta de novo em 15 min | `src/player/operacao.js`: mesmos campos e regex; ≤ 6 h; até 2 min no futuro e 8 dias no passado; ≤ 200 por lote; idempotente por (tela, boot, seq), o reenvio só estende | **MATCH** (`PontoMovelCicloTest`, `OfflinePecasTest`) |
+| `POST /player/:dispositivoId/heartbeat` | institucional de reserva (programação vencida offline) agora manda `estado: IDLE` (a tela está no ar), não `NO_PLAYLIST`; `NO_PLAYLIST` só sem nada para exibir | `PLAYING`/`IDLE` estendem o tempo operacional pelo heartbeat; `NO_PLAYLIST` é erro | **MATCH** |
+| heartbeat (intervalo) | 15 s (`Produto.INTERVALO_HEARTBEAT_MS`, desde a 2.0.0) | `main` ainda diz 5 min e tolera 390 s; alinhado a 15 s / 2 min em [sancompany/MostrAi#115](https://github.com/sancompany/MostrAi/pull/115) | **MATCH depois do #115**; antes dele, só o admin fica mais lento para dizer "sem sinal" |
+| `POST /player/:dispositivoId/played` | `iniciadoEm`/`terminadoEm` no relógio confiável (servidor), não no da TV; espera de reenvio impossível (> 31 min à frente, relógio que voltou) não prende mais o comprovante | inalterado | **MATCH** |
+
+`playlist`, `config` e `provisionar`: sem mudança.
 
 ## Métricas antes → depois
 

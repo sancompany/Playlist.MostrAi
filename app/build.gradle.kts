@@ -30,17 +30,24 @@ val propriedadesAssinatura = lerPropriedadesDeAssinatura()
 
 android {
     namespace = "br.com.mostrai.player"
-    compileSdk = 35
+    // API 36 (Android 16): o Android TV mais novo que existe (Android 16 for
+    // TV). O 37 é estável desde 06/2026, mas nenhuma TV roda 37 e ele exige
+    // AGP 9 — docs/adr/0001-target-sdk-moderno.md.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "br.com.mostrai.player"
+        // Piso: SEMP TCL 32S6500S (Android TV 8.0). O alvo é o Android atual —
+        // o app suporta a TCL sem se declarar feito para 2017.
         minSdk = 26
-        targetSdk = 26
+        targetSdk = 36
         // Atualização é manual (sideload). O Android só instala por cima de
         // uma versão com `versionCode` menor — subir a cada build de campo.
         // 3 / 2.0.0: Player MVP (contrato docs/player-mvp-contract.md).
-        versionCode = 3
-        versionName = "2.0.0"
+        // 4 / 3.0.0: V1 de produção — target 36, segmentos operacionais,
+        // offline endurecido, release assinado (docs/release-producao.md).
+        versionCode = 4
+        versionName = "3.0.0"
     }
 
     buildFeatures {
@@ -71,23 +78,26 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     lint {
-        // Regra de política da Play Store. Este app é sideload e nunca vai à
-        // loja; targetSdk 26 é decisão deliberada (README, "Alvo"): subir
-        // traria restrições de background e foreground service que só
-        // atrapalham um player de quiosque. Desligar só esta regra mantém o
-        // lint útil como sinal para todo o resto.
-        disable += "ExpiredTargetSdkVersion"
+        // Lint vale como portão (CI roda debug e release): erro quebra o build.
+        abortOnError = true
     }
 
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all {
+                // Robolectric guarda um sandbox por nível de SDK (RetornoPorApiTest
+                // roda em 26, 29, 31, 34 e 36): os 512 MB padrão estouram.
+                it.maxHeapSize = "2g"
+            }
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 

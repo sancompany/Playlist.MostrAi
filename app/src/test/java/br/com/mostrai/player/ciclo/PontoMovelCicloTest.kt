@@ -81,7 +81,9 @@ class PontoMovelCicloTest {
 
         assertEquals("o comercial vencido foi tocado", 0, h.servidor.contar("/midia/comercial.mp4"))
         assertEquals("comprovante inventado", 0, linhasNaFila())
-        assertEquals(EstadoPlayer.NO_PLAYLIST, estado(atividade))
+        // A tela segue no ar com o institucional: IDLE (conta como operação),
+        // não NO_PLAYLIST (que o servidor lê como falha).
+        h.esperar { estado(atividade) == EstadoPlayer.IDLE }
     }
 
     @Test
@@ -162,79 +164,112 @@ class PontoMovelCicloTest {
         assertEquals(0, linhasNaFila())
     }
 
+    /** O que a tela M-0001 ainda tem para mandar (só com âncora do servidor). */
+    private fun segmentos(): List<RegistroOperacional.Segmento> =
+        RegistroOperacional(h.contexto).pendentes("M-0001")
+
+    private fun enviados(): List<JSONObject> = h.servidor.detalhadas
+        .filter { it.caminho.startsWith("/player/M-0001/operacao") }
+        .flatMap { req -> JSONObject(req.corpo).getJSONArray("segmentos").let { a -> (0 until a.length()).map(a::getJSONObject) } }
+
     @Test
-    fun `sessao operacional abre com o ciclo e fecha com o motivo`() {
+    fun `segmento operacional abre quando a tela exibe e fecha quando para`() {
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, h.playlistComUmVideo(duracao = 600))
         h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(404, "")
 
         val controle = h.subir()
-        h.esperar { RegistroOperacional(h.contexto).pendentes().any { it.aberta } }
+        h.esperar { estado(controle.get()) == EstadoPlayer.PLAYING }
+        h.avancar(40_000L) // um checkpoint do sinal de vida estende o aberto
+        h.esperar { segmentos().any { it.aberto && it.duracaoMs > 0 } }
 
         controle.pause().stop()
-        h.esperar { RegistroOperacional(h.contexto).pendentes().none { it.aberta } }
+        h.esperar { segmentos().isNotEmpty() && segmentos().none { it.aberto } }
 
-        val sessao = RegistroOperacional(h.contexto).pendentes().single()
-        assertEquals("parou", sessao.motivoFim)
-        assertEquals("M-0001", sessao.dispositivoId)
+        val s = segmentos().single()
+        assertEquals("M-0001", s.dispositivoId)
+        assertTrue("sem âncora do servidor", s.deslocamentoMs != null)
+        assertTrue(s.duracaoMs > 0)
     }
 
     @Test
-    fun `sessao aberta antes da ancora nao leva o relogio da TV como se fosse do servidor`() {
+    fun `sem ancora do servidor neste boot o segmento espera, nunca vai com o relogio da TV`() {
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(503, "")
-        h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(404, "")
-        // O relógio da TV passa no piso (seria aceito para decidir o horário),
-        // mas não é o do servidor.
+        h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(200, """{"resultados":[]}""")
+        // Programação válida guardada e relógio confiável: a tela exibe offline.
+        val agora = System.currentTimeMillis()
+        Settings.Global.putInt(h.contexto.contentResolver, Settings.Global.BOOT_COUNT, 5)
+        PlaylistCache(h.contexto).salvar(
+            playlist(Math.floorDiv(agora, hora) * hora, agora),
+            RelogioJanela.agora(Instant.ofEpochMilli(agora).toString()),
+        )
         h.contexto.getSharedPreferences(RelogioConfiavel.ARQUIVO, Context.MODE_PRIVATE).edit()
-            .putLong("piso_servidor_ms", System.currentTimeMillis() - 60_000L).commit()
+            .putLong("piso_servidor_ms", agora - 60_000L).commit()
+        Settings.Global.putInt(h.contexto.contentResolver, Settings.Global.BOOT_COUNT, 6)
 
-        h.subir()
-        h.esperar { RegistroOperacional(h.contexto).pendentes().any { it.aberta } }
+        val atividade = h.subir().get()
+        h.esperar { estado(atividade) == EstadoPlayer.PLAYING }
+        h.avancar(40_000L)
+        h.deixarRodar(1_000)
 
-        val sessao = RegistroOperacional(h.contexto).pendentes().single { it.aberta }
-        assertEquals(null, sessao.inicioServidorMs)
+        assertFalse("âncora de um boot sem servidor", RegistroOperacional(h.contexto).ancorado())
+        assertTrue("segmento sem âncora foi para a fila de envio", segmentos().isEmpty())
+        assertTrue("segmento sem âncora foi enviado", enviados().isEmpty())
+        assertTrue("o tempo não ficou guardado", RegistroOperacional(h.contexto).resumoPendente().first > 0)
     }
 
     @Test
-    fun `sessoes operacionais vao ao servidor e saem da fila so com confirmacao`() {
+    fun `segmentos vao ao servidor no formato do contrato e saem da fila so com ok`() {
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, h.playlistComUmVideo(duracao = 600))
-        // Uma sessão de antes (a TV operou offline e reiniciou).
-        val anterior = RegistroOperacional(h.contexto).abrir("M-0001", null)!!
+        h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(404, "")
+
+        val controle = h.subir()
+        h.esperar { estado(controle.get()) == EstadoPlayer.PLAYING }
+        h.avancar(40_000L)
+        h.esperar { segmentos().any { it.duracaoMs > 0 } }
+        controle.pause().stop()
+        h.esperar { segmentos().isNotEmpty() && segmentos().none { it.aberto } }
+        val s = segmentos().single()
+
+        // Volta com o servidor confirmando: o fechado sai da fila.
         h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(
             200,
-            """{"resultados":[{"sessaoId":"$anterior","status":"registrada"}]}""",
+            """{"resultados":[{"bootId":"${s.bootId}","seq":${s.seq},"status":"ok"}]}""",
         )
+        controle.start().resume()
+        h.esperar { segmentos().none { it.bootId == s.bootId && it.seq == s.seq } }
 
-        h.subir()
-        h.esperar { h.servidor.contar("/player/M-0001/operacao") > 0 }
-        h.esperar { RegistroOperacional(h.contexto).pendentes().none { it.sessaoId == anterior } }
-
-        val enviada = h.servidor.detalhadas
-            .filter { it.caminho.startsWith("/player/M-0001/operacao") }
-            .flatMap { req -> JSONObject(req.corpo).getJSONArray("sessoes").let { a -> (0 until a.length()).map(a::getJSONObject) } }
-            .first { it.getString("sessaoId") == anterior }
-        assertTrue("sessão interrompida deve ir encerrada", enviada.getBoolean("encerrada"))
-        assertEquals(RegistroOperacional.MOTIVO_INTERROMPIDA, enviada.getString("motivo"))
+        val corpo = enviados().first { it.getString("bootId") == s.bootId && it.getInt("seq") == s.seq }
+        assertEquals(setOf("bootId", "seq", "inicio", "fim"), corpo.keys().asSequence().toSet())
+        val inicio = Instant.parse(corpo.getString("inicio"))
+        val fim = Instant.parse(corpo.getString("fim"))
+        assertTrue("fim antes do início", !fim.isBefore(inicio))
+        assertTrue(Regex("^[A-Za-z0-9._:-]{1,64}$").matches(s.bootId))
     }
 
     @Test
-    fun `sem a rota no servidor, as sessoes ficam guardadas na TV e a frota nao insiste a cada minuto`() {
+    fun `sem a rota no servidor, os segmentos ficam guardados na TV e a frota nao insiste a cada minuto`() {
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, h.playlistComUmVideo(duracao = 600))
         h.servidor.rotas["/player/M-0001/operacao"] = ServidorDeTeste.Resposta(404, "")
-        // Uma sessão de antes do reinício: encerrada e ainda não confirmada,
-        // o caso que mandava a cada tique da fila.
-        RegistroOperacional(h.contexto).abrir("M-0001", null)
 
-        h.subir()
+        val controle = h.subir()
+        h.esperar { estado(controle.get()) == EstadoPlayer.PLAYING }
+        h.avancar(40_000L)
+        h.esperar { segmentos().any { it.duracaoMs > 0 } }
+        // Fechado e não confirmado: o caso que mandava a cada tique da fila.
+        controle.pause().stop()
+        h.esperar { segmentos().isNotEmpty() && segmentos().none { it.aberto } }
+        controle.start().resume()
         h.esperar { h.servidor.contar("/player/M-0001/operacao") > 0 }
+        val antes = h.servidor.contar("/player/M-0001/operacao")
         repeat(5) {
             h.avancar(60_000L)
             h.deixarRodar(1_000)
         }
 
-        assertFalse(RegistroOperacional(h.contexto).pendentes().isEmpty())
+        assertFalse(segmentos().isEmpty())
         assertTrue(
-            "404 a cada minuto: ${h.servidor.contar("/player/M-0001/operacao")} envios em 5 min",
-            h.servidor.contar("/player/M-0001/operacao") <= 2,
+            "404 a cada minuto: ${h.servidor.contar("/player/M-0001/operacao") - antes} envios a mais em 5 min",
+            h.servidor.contar("/player/M-0001/operacao") - antes <= 1,
         )
     }
 
@@ -248,7 +283,8 @@ class PontoMovelCicloTest {
         h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, playlist(horaAtual, agora))
 
         val atividade = h.subir().get()
-        h.esperar { estado(atividade) == EstadoPlayer.NO_PLAYLIST }
+        // A playlist vencida trouxe o institucional: reserva no ar, IDLE.
+        h.esperar { h.campo<Boolean>(atividade, "emFallback") && estado(atividade) == EstadoPlayer.IDLE }
         h.avancar(61_000L)
         h.esperar { estado(atividade) == EstadoPlayer.PLAYING }
 

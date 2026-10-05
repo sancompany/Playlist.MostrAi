@@ -21,6 +21,9 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class CacheConcorrenciaTest {
 
+    @get:org.junit.Rule
+    val disco = DiscoFolgado()
+
     private lateinit var contexto: Context
     private lateinit var cache: CacheMidia
     private lateinit var servidor: ServidorDeTeste
