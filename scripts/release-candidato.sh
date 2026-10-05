@@ -59,13 +59,14 @@ if [ "$assinado" = 1 ]; then
     if [ "$impressao" != "$registrada" ]; then
       echo "FALHOU: assinado com OUTRA chave ($impressao), não a definitiva ($registrada)" >&2; exit 1
     fi
-    situacao="CANDIDATO A RELEASE — assinado com a chave definitiva registrada"
+    situacao="PRODUCTION RELEASE SIGNING KEY — DEFINITIVE (assinado com a chave definitiva registrada)"
   else
     situacao="CANDIDATO A RELEASE — PRIMEIRA ASSINATURA: gravar '$impressao' em $registrada_arq e commitar antes de instalar em cliente"
   fi
 else
   certificado="(sem assinatura)"
   esquemas="(sem assinatura)"
+  impressao="(sem assinatura)"
   situacao="NÃO É PRODUÇÃO — APK sem assinatura (falta keystore.properties; ver RUNBOOK.md)"
 fi
 
@@ -81,6 +82,7 @@ fi
   echo "gerado_em_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "build_tools: $(basename "$bt")"
   echo "$verificacao" | sed 's/^/verificacao: /'
+  echo "impressao_certificado_sha256: $impressao"
   echo "$certificado" | sed 's/^/certificado: /'
   echo "$esquemas" | sed 's/^/assinatura: /'
 } > "$destino/REGISTRO.txt"

@@ -337,6 +337,16 @@ Fechadas:
   (`docs/release-producao.md`, "Primeira assinatura"). Estado: código e
   backend prontos; falta assinar e testar nas TCLs.
 
+- **Assinatura definitiva (05/10/2026)** — por autorização explícita do
+  dono, chave da frota gerada nesta sessão (PKCS12, RSA 4096, alias
+  `mostrai`, válida até 2056) e entregue a ele para download junto com o
+  arquivo de custódia; nada disso no Git. Impressão digital registrada em
+  `scripts/certificado-producao.sha256`; `release-candidato.sh` recusa
+  qualquer outra chave e marca o registro "PRODUCTION RELEASE SIGNING KEY —
+  DEFINITIVE". Primeiro APK oficial: `Mostrai-Player-3.0.0-release.apk`.
+  Estado: **APK assinado com a chave definitiva, pronto para teste físico
+  nas TCLs.**
+
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
 
@@ -365,6 +375,6 @@ conformidade: ou corrige, ou vira exceção registrada no `CONSTRAINTS.md`.
 
 ## Pendências que bloqueiam a esteira
 
-- Chave de assinatura definitiva (só o dono gera; `RUNBOOK.md`)
+- Custódia da chave definitiva (com o dono desde 05/10/2026; `docs/pendencias.md`)
 - Verificação "no ar" da estação 5 em hardware real — checklist de 45 itens do 3.0.0, só o dono faz (ver `docs/pendencias.md`)
 - CI (`.github/workflows/ci.yml`) pode precisar ser aplicado manualmente pelo dono se a ferramenta recusar o push do workflow (ver `docs/pendencias.md`)

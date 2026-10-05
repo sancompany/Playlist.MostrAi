@@ -28,7 +28,14 @@ Passo a passo de chave e build em `RUNBOOK.md` ("Chave de assinatura").
    cache, fila ou SQLite de instalações debug/2.0.0. O primeiro
    provisionamento oficial já é com o release assinado.
 
-## Primeira assinatura (uma vez só, na máquina do dono)
+## Primeira assinatura (uma vez só)
+
+> **Feita em 05/10/2026.** A chave definitiva foi gerada por autorização
+> explícita do dono numa sessão efêmera e entregue a ele para download; a
+> impressão digital pública está em `scripts/certificado-producao.sha256`
+> (`8c4ea2cc33201dd3410bb79ac96965e2f4e8a77cc47faf7d9fcd1b841ea6cbed`). Os passos abaixo ficam como
+> referência — **não gerar outra chave**: uma segunda chave quebraria a
+> atualização da frota.
 
 ```sh
 # 1. Gerar a chave definitiva FORA do repositório (pede as senhas; anotar

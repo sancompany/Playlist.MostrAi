@@ -80,13 +80,16 @@ fora de ordem (agora um executor serial único).
 
 ## Só o dono faz
 
-- **Gerar e guardar a chave de assinatura definitiva**, fora deste
-  repositório — **bloqueador do release**. Passo a passo: `RUNBOOK.md`,
-  "Chave de assinatura", e `docs/release-producao.md`, "Primeira
-  assinatura". A rodada final de 05/10/2026 rodou num contêiner efêmero e
-  por isso **não** gerou a chave (não haveria como recuperá-la).
-- **Gerar o candidato assinado** (`scripts/release-candidato.sh`) e guardar
-  o `REGISTRO.txt` (`docs/release-producao.md`).
+- **Custódia da chave definitiva** — gerada em 05/10/2026 por autorização
+  explícita do dono, numa sessão efêmera, e entregue a ele para download
+  (`mostrai-release.jks` + arquivo de custódia com as senhas). Impressão
+  digital registrada em `scripts/certificado-producao.sha256`
+  (`8c4ea2cc33201dd3…`). Cabe ao dono: 3 cópias do `.jks` (computador,
+  externa/offline, segunda cópia segura), senhas guardadas separadas, e
+  conferir uma cópia restaurada com `keytool -list -v` contra a impressão
+  registrada. A cópia da sessão some com o contêiner.
+- **Guardar o `REGISTRO.txt`** do primeiro APK oficial (entregue junto com o
+  APK) fora do Git.
 - **Teste físico nas duas TCLs** — `docs/checklist-fisico-producao.md`
   (45 itens: TV A operação normal, TV B quedas temporárias, N → N+1 com a
   mesma chave, vídeo em pé 1080×1920, soak em etapas 2–4 h → 24 h → 48–72 h). É o que fecha "a
