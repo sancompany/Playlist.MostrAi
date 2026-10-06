@@ -367,7 +367,9 @@ Fechadas:
   Permissões 4 → 7, auditadas (`docs/permissoes-especiais.md`). Script
   `scripts/preparar-usb-update.sh`. versionCode 6 (o 5 foi queimado pelo
   teste do 3.0.0; o 7 é o pacote de teste do modal; próxima oficial 8+).
-  TESTES_PLACEHOLDER Checklist físico 45 → 65 itens. **Atualizador não
+  370 → 462 testes (validação, cópia, acesso, `FileProvider`, Intent, pausa
+  do watchdog, `MY_PACKAGE_REPLACED`, ciclo completo com pendrive simulado,
+  ligar tela), mutações das guardas do updater mortas. Checklist físico 45 → 65 itens. **Atualizador não
   aprovado** até os itens 46–61 passarem na TCL.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
