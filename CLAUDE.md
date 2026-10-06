@@ -378,8 +378,12 @@ Fechadas:
   desligava o "turn screen on" antes de ele agir) e os baixos baratos
   (todos os assinantes nos scripts, `uses-permission-sdk-23`, argumentos do
   empacotador, guarda de `buildConfigField`, modal 30 s como o PIN, "Agora
-  não" do acesso persiste enquanto o pendrive não sai). **Atualizador não
-  aprovado** até os itens 46–61 passarem na TCL.
+  não" do acesso persiste enquanto o pendrive não sai). 469 testes. APK
+  oficial `Mostrai-Player-3.0.1-release.apk` (commit `2f27aa1`, sha256
+  `f611d409…bb2b`, mesma chave `8c4ea2cc…6cbed`) e `Mostrai-USB-3.0.1.zip`
+  entregues ao dono, com o pacote de teste `versionCode 7`
+  (NAO-DISTRIBUIR). **Atualizador não aprovado** até os itens 46–61
+  passarem na TCL.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
