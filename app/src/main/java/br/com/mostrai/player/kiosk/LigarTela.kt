@@ -36,6 +36,14 @@ object LigarTela {
     private const val ARQUIVO = "mostrai_ligar_tela"
     private const val CHAVE_AGENDADO_PARA = "agendado_para"
     private const val CHAVE_ULTIMO = "ultimo_resultado"
+    private const val CHAVE_DISPARO = "disparo"
+    private const val CHAVE_DISPARADO_EM = "disparado_em"
+
+    /** Mais que isto entre o disparo e a tela acesa: foi a pessoa que ligou, não o teste. */
+    private const val TELA_ACESA_PELO_TESTE_MS = 20_000L
+
+    /** Alarme que dispara mais que isto depois do agendado: o aparelho dormia. */
+    private const val ALARME_ATRASADO_MS = 30_000L
 
     const val ACAO = "br.com.mostrai.player.LIGAR_TELA_TESTE"
     const val EXTRA_ACORDAR = "br.com.mostrai.player.ACORDAR_TELA"
@@ -65,11 +73,39 @@ object LigarTela {
         return p.getString(CHAVE_ULTIMO, null)
     }
 
-    /** Chamado pela Activity aberta pelo teste: o que o Android diz da tela agora. */
+    /**
+     * Chamado pela Activity aberta pelo teste. Um alarme que só disparou
+     * quando alguém ligou a TV, ou uma tela que só acendeu minutos depois,
+     * pareceriam sucesso — por isso o texto diz também se o alarme veio na
+     * hora, como a tela estava no disparo e quanto tempo depois acendeu.
+     */
     fun registrarResultado(context: Context, telaLigada: Boolean) {
-        val texto = if (telaLigada) "Android informou tela ligada após o teste" else "Android informou tela ainda desligada após o teste"
-        prefs(context).edit().remove(CHAVE_AGENDADO_PARA).putString(CHAVE_ULTIMO, texto).apply()
+        val p = prefs(context)
+        val disparadoEm = p.getLong(CHAVE_DISPARADO_EM, -1L)
+        val depois = if (disparadoEm >= 0) SystemClock.elapsedRealtime() - disparadoEm else -1L
+        val tela = when {
+            !telaLigada -> "Android informou tela ainda desligada"
+            depois in 0..TELA_ACESA_PELO_TESTE_MS -> "Android informou tela ligada ${depois / 1000} s depois do disparo"
+            depois > TELA_ACESA_PELO_TESTE_MS -> "tela só ligou ${depois / 1000} s depois do disparo (pela pessoa?)"
+            else -> "Android informou tela ligada"
+        }
+        val texto = listOfNotNull(p.getString(CHAVE_DISPARO, null), tela).joinToString("; ")
+        p.edit().remove(CHAVE_AGENDADO_PARA).remove(CHAVE_DISPARO).remove(CHAVE_DISPARADO_EM).putString(CHAVE_ULTIMO, texto).apply()
         runCatching { DiarioBordo(context).registrar(DiarioBordo.Codigo.LIGAR_TELA_TESTE, texto) }
+    }
+
+    /** O que o receptor viu no disparo — antes de pedir para acender. */
+    internal fun registrarDisparo(context: Context, telaEstavaLigada: Boolean) {
+        val p = prefs(context)
+        val agendado = p.getLong(CHAVE_AGENDADO_PARA, 0L)
+        val atraso = if (agendado > 0) System.currentTimeMillis() - agendado else 0L
+        val alarme = if (atraso > ALARME_ATRASADO_MS) "alarme atrasou ${atraso / 60_000} min (aparelho dormia)" else "alarme na hora"
+        val antes = if (telaEstavaLigada) "tela já estava ligada" else "tela estava desligada"
+        p.edit()
+            .putString(CHAVE_DISPARO, "$alarme; $antes")
+            .putLong(CHAVE_DISPARADO_EM, SystemClock.elapsedRealtime())
+            .remove(CHAVE_AGENDADO_PARA)
+            .commit()
     }
 
     private fun pendingIntent(context: Context): PendingIntent {
@@ -85,6 +121,7 @@ object LigarTela {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != ACAO) return
             val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            registrarDisparo(context, pm?.isInteractive ?: true)
             // Caminho oficial para acender a tela a partir de um app: wake lock
             // de tela com ACQUIRE_CAUSES_WAKEUP, por poucos segundos — a
             // Activity, com "turn screen on", mantém a tela acesa depois.

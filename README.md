@@ -8,12 +8,13 @@ Projeto separado do backend (`sancompany/MostrAi`). Este repositório não alter
 o backend. Projeto da San & Co. — segue a esteira do plugin `san-co` (skill
 `leis`). Estado atual, decisões e pendências vivem em `CLAUDE.md`.
 
-## O que o Player faz (3.0.0 — V1 de produção)
+## O que o Player faz (3.0.1 — V1 de produção + atualização por pendrive)
 
 ```
 PROVISIONAR → RECEBER PLAYLIST → REPRODUZIR → CACHEAR → AGUENTAR QUEDA DE REDE
             → CONFIRMAR PROOF-OF-PLAY → ENVIAR HEARTBEAT → RECEBER CONFIG MÍNIMA
             → SAIR COM PIN → SE RECUPERAR (boot + watchdog)
+            → SE ATUALIZAR POR PENDRIVE (com confirmação no instalador do Android)
 ```
 
 E nada além disso. Tela por tela em `docs/funcional.md`.
@@ -94,7 +95,7 @@ Hardware: `docs/hardware/tcl-32s6500s.md`.
 1. Na TV: suspensão automática, modo loja e protetor de tela desligados
    (`RUNBOOK.md`, "Ajustes da TV na instalação"). Em TV Android 10+,
    conceder "Exibir sobre outros apps" ao Mostraí Player depois de instalar.
-2. Copiar o APK de release (`Mostrai-Player-3.0.0-release.apk`) para um
+2. Copiar o APK de release (`Mostrai-Player-3.0.1-release.apk`) para um
    pendrive e instalar pelo gerenciador de arquivos da TV. Abrir **Mostraí
    Player**.
 3. No admin (Rede → Ponto → Tela): copiar o **ID da tela** (`M-0235`) e gerar
@@ -106,6 +107,11 @@ Pronto. Margens, horário e PIN de saída chegam sozinhos pelo heartbeat.
 **Sair do app:** VOLTAR no controle → PIN de saída (definido no admin, em
 Rede). Sem PIN definido, não há saída autorizada. Reabrir o app (ou
 reiniciar a TV) volta à operação normal.
+
+**Atualizar:** pasta `MOSTRAI` do pacote `Mostrai-USB-<versão>.zip` na
+raiz de um pendrive → conectar na TV → **Atualizar agora** → confirmar no
+Android. O Player volta sozinho, com o mesmo cadastro
+(`docs/atualizacao-usb.md`, `RUNBOOK.md`, "Atualizar").
 
 **Reinstalar / trocar de tela:** revogar o Player no admin (a TV volta à tela
 de instalação em até 15 s) e gerar um código novo.
@@ -121,6 +127,7 @@ echo "sdk.dir=/caminho/para/android-sdk" > local.properties
 scripts/varrer-segredos.sh                 # nada de chave/senha no Git
 scripts/verificar-apk.sh app/build/outputs/apk/debug/app-debug.apk
 scripts/release-candidato.sh               # candidato + REGISTRO.txt
+scripts/preparar-usb-update.sh <apk>       # pacote de pendrive (Mostrai-USB-<versão>.zip)
 ```
 
 - `app/build/outputs/apk/debug/app-debug.apk` — chave de debug e HTTP só
@@ -145,6 +152,12 @@ proof-of-play. Uma TV instalada com a chave de debug só troca de versão com
 desinstalação + reprovisionamento.
 
 ## Histórico
+
+A 3.0.1 (06/10/2026) traz a atualização oficial por pendrive: o Player
+percebe o pendrive, copia e confere o APK (pacote, chave definitiva,
+versão, SHA-256) e entrega ao instalador do Android, sem OTA pela rede, sem
+`adb`, sem Device Owner (`docs/atualizacao-usb.md`). Permissões auditadas em
+`docs/permissoes-especiais.md`.
 
 A 3.0.0 (05/10/2026) é a V1 de produção: target 36, tempo operacional em
 segmentos (contrato do backend #114), institucional de reserva como `IDLE`,

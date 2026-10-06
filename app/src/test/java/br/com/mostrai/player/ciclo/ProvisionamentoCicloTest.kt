@@ -112,6 +112,11 @@ class ProvisionamentoCicloTest {
         "7K4M9Q2W".forEach { h.tecla(atividade, R.id.tecladoProvisionamento, it.toString()) }
         h.vista<TextView>(atividade, R.id.botaoConectar).performClick()
         h.esperar { h.servidor.contar("/playlist/M-0235") > 0 }
+        // O pedido chegar ao servidor não quer dizer que a tela já está
+        // exibindo: avançar o relógio antes disso pularia o checkpoint
+        // (corrida que aparecia com a suíte inteira carregando a máquina).
+        // Abrir e estender vão pela mesma fila serial do registro.
+        h.esperar { h.campo<Boolean>(atividade, "exibindo") }
 
         h.avancar(40_000L) // checkpoint do sinal de vida
         h.esperar { RegistroOperacional(h.contexto).pendentes("M-0235").any { it.aberto && it.duracaoMs > 0 } }

@@ -16,7 +16,7 @@ Levantamento de 05/10/2026. Decisão registrada em
 | JDK do CI | 17 | **21** (bytecode continua JVM 17) |
 | Media3 | 1.4.1 | 1.4.1 (sem mudança — ver "O que ficou para depois") |
 | `versionCode` / `versionName` | 3 / 2.0.0 | **4 / 3.0.0** |
-| Permissões | 3 | **4** (+ `SYSTEM_ALERT_WINDOW`, justificada abaixo) |
+| Permissões | 3 | **4** (+ `SYSTEM_ALERT_WINDOW`, justificada abaixo); **7** na 3.0.1 (`docs/permissoes-especiais.md`) |
 
 Por que 36 e não 37: o Android 17 (API 37) é estável desde 16/06/2026, mas
 **nenhuma TV roda API 37** — o Android TV mais novo é o 16 (API 36), e não
@@ -41,7 +41,10 @@ Android 10+ — e duas coisas já valiam lá **independentemente do target**.
 | Edge-to-edge obrigatório | target 35/36 | Conteúdo sob barras do sistema | O Player esconde as barras com `WindowInsetsControllerCompat` e ocupa a tela inteira (TV normalmente não tem barras) | Só no aparelho |
 | Splash do sistema | Android 12+ | Ícone/banner sobre fundo claro antes do vídeo de abertura | `values-v31/themes.xml`: fundo preto | Só no aparelho |
 | Orientação/redimensionamento ignorados | target 36, telas ≥ 600 dp | — | Não se aplica à TV (sw540dp); o Player gira o próprio conteúdo (`RotacaoTela`, fixo em 90°) | — |
-| `PendingIntent` mutável, `exported`, receivers de contexto | target 31/33/34 | — | Já conforme: `FLAG_IMMUTABLE`, `exported` em todos os componentes, nenhum receiver registrado por contexto | `GuardaMvpTest` |
+| `PendingIntent` mutável, `exported`, receivers de contexto | target 31/33/34 | — | Já conforme: `FLAG_IMMUTABLE`, `exported` em todos os componentes. Desde a 3.0.1 há **um** receiver de contexto — o aviso de pendrive (`MEDIA_MOUNTED` & cia., broadcasts protegidos que só o sistema envia), registrado com `RECEIVER_EXPORTED` só com o Player na frente | `GuardaMvpTest`, `AtualizacaoUsbCicloTest` |
+| Armazenamento com escopo | target 29/30, Android 10/11+ | Ler arquivo de pendrive pelo caminho deixa de funcionar no 11+ | 3.0.1: leitura direta (`READ_EXTERNAL_STORAGE`, `maxSdkVersion 29`, `requestLegacyExternalStorage`) só até o 10; no 11+ o seletor de pastas do Android (SAF), autorizado uma vez por pendrive. **Sem** "Acesso a todos os arquivos" | `AcessoUsbTest`, `OrigemDocumentoTest`, `docs/permissoes-especiais.md` |
+| Instalar APK de outra origem | Android 8+ (por app) | — | 3.0.1: `REQUEST_INSTALL_PACKAGES` + `canRequestPackageInstalls()`; o APK vai ao instalador por `FileProvider` (`content://`), nunca `file://` (que lança `FileUriExposedException` desde o 7) | `InstaladorApkTest`, `AtualizacaoUsbCicloTest` |
+| Visibilidade de pacotes | target 30, Android 11+ | Saber se o seletor de pastas existe | `<queries>` só com `OPEN_DOCUMENT_TREE`; sem `QUERY_ALL_PACKAGES` | `GuardaMvpTest` |
 
 ## O que **não** entrou, e por quê
 
@@ -54,7 +57,12 @@ Android 10+ — e duas coisas já valiam lá **independentemente do target**.
   `adb` em cada TV.
 - **`SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`**: `set` atende o retorno de
   5 s sem permissão nova.
-- **Câmera, microfone, OTA, BYOD**: fora do escopo (`CONSTRAINTS.md`).
+- **Câmera, microfone, OTA pela rede, BYOD**: fora do escopo
+  (`CONSTRAINTS.md`). A atualização por pendrive (3.0.1) não é OTA: o APK
+  vem do pendrive e a pessoa confirma no instalador do Android.
+- **"Acesso a todos os arquivos", otimização de bateria, acesso ao uso,
+  modificar configurações, `TURN_SCREEN_ON`**: auditadas e recusadas em
+  `docs/permissoes-especiais.md`.
 - **Operação offline de vários dias**: cancelada (05/10/2026). A Mostraí é
   online-first; nada de trabalho em segundo plano para pré-carregar dias de
   programação — e, portanto, nenhuma necessidade de serviço em primeiro

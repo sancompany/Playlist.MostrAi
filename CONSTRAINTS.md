@@ -42,20 +42,33 @@ Se não é necessário para instalar, reproduzir, ficar offline, comprovar,
 receber config, ajustar margens, respeitar horário, sair com PIN ou se
 recuperar, não entra. Em especial, **não** reintroduzir:
 
-- **OTA** (atualização remota). Atualizar é sideload de um APK assinado com a
-  mesma chave (`RUNBOOK.md`).
+- **OTA** (atualização pela rede). Atualizar é instalar um APK assinado com
+  a mesma chave. **Desde a 3.0.1 (pedido do dono, 06/10/2026):** o Player
+  se atualiza **por pendrive** — acha o pacote em lugar fixo, copia, confere
+  pacote, chave definitiva, versão e SHA-256, e entrega ao instalador do
+  Android, que pede a confirmação da pessoa (`docs/atualizacao-usb.md`).
+  Continua proibido: baixar APK pela rede, instalação silenciosa
+  (`INSTALL_PACKAGES`, sessão de `PackageInstaller`), root, `adb`, Device
+  Owner. O pacote `atualizacao/` não fala com a rede (`GuardaMvpTest`).
 - **Device Owner, MDM, lock task, launcher `HOME`.** O `HOME` foi provado
   incompatível com o instalador da TCL (`docs/erros/2026-09-25-…`). Quem
   traz o player de volta é o `Watchdog`.
 - **Serviço em primeiro plano, alarme exato com permissão
   (`SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`), câmera, microfone, BYOD,
   Tizen/webOS.** Nenhum é necessário (`docs/android-modernizacao.md`).
-- **Permissão nova sem decisão registrada.** São 4: `INTERNET`,
-  `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED` e — exceção registrada em
-  05/10/2026 (ADR 0001) — `SYSTEM_ALERT_WINDOW`, só como exceção oficial ao
-  bloqueio de abrir Activity do segundo plano no Android 10+; o Player
-  nunca desenha sobre outros apps. `GuardaMvpTest` e
-  `scripts/verificar-apk.sh` falham com qualquer outra.
+- **Permissão nova sem decisão registrada.** São 7
+  (`docs/permissoes-especiais.md`): `INTERNET`, `ACCESS_NETWORK_STATE`,
+  `RECEIVE_BOOT_COMPLETED`; `SYSTEM_ALERT_WINDOW` (exceção registrada em
+  05/10/2026, ADR 0001 — só como exceção oficial ao bloqueio de abrir
+  Activity do segundo plano no Android 10+; o Player nunca desenha sobre
+  outros apps); e, desde a 3.0.1, `REQUEST_INSTALL_PACKAGES` (entregar o APK
+  do pendrive ao instalador), `READ_EXTERNAL_STORAGE` só até o Android 10
+  (ler o pendrive) e `WAKE_LOCK` (só o teste manual de ligar a tela).
+  **Não** entram: "Acesso a todos os arquivos" (`MANAGE_EXTERNAL_STORAGE` —
+  no 11+ o pendrive é lido pelo seletor do Android), otimização de bateria,
+  acesso ao uso, modificar configurações, alarme exato, ligar a tela
+  (`TURN_SCREEN_ON`). `GuardaMvpTest` e `scripts/verificar-apk.sh` falham
+  com qualquer outra.
 - **Regra de negócio no Player.** Plano, saldo, benefício, percentual, o
   que conta como hospedagem: o Player registra fatos (comprovante,
   segmento, estado); o backend calcula.
@@ -66,9 +79,13 @@ recuperar, não entra. Em especial, **não** reintroduzir:
   versão, aparelho, Android, estado, conexão, programação válida até,
   mídias em cache, espaço, fila, tempo operacional pendente, último erro,
   retorno automático bloqueado, "pronto para offline até"). Só aparece para
-  quem apertou VOLTAR diante da TV; não tem ação, não abre por gesto, nunca
-  vai ao público e nunca mostra chave, token, código, cabeçalho, URL ou
-  dado pessoal (`SegredoForaTest`).
+  quem apertou VOLTAR diante da TV; não abre por gesto, nunca vai ao
+  público e nunca mostra chave, token, código, cabeçalho, URL ou dado
+  pessoal (`SegredoForaTest`). **Ampliada em 06/10/2026 (3.0.1):** seção
+  ATUALIZAÇÃO (versão, permissão de instalar, pendrive, versão encontrada,
+  último resultado — sem caminho, hash ou certificado) e três ações do
+  técnico: Verificar USB, Instalar atualização, Testar ligar tela (2 min).
+  Fora isso, continua só leitura.
 - **Provisionamento por JSON, pendrive, `BuildConfig` por tela ou extras de
   ADB.** A única forma é ID da tela + código de instalação digitados na TV.
 - **`baseUrl` variável, multi-host, rotação configurável ou

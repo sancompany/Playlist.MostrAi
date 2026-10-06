@@ -59,6 +59,17 @@ pendrive, ADB ou backend:
 3. Abrir o app de novo (ícone ou reboot) → operação normal e watchdog
    rearmado.
 
+**Atualização por pendrive (3.0.1 em diante, `docs/atualizacao-usb.md`):**
+1. O técnico conecta um pendrive com `MOSTRAI/update/` (pacote oficial).
+2. O Player percebe (aviso do Android, ou já conectado ao abrir, ou o vigia
+   de 30 s), copia o APK para a área privada e confere pacote, chave
+   definitiva, versão e SHA-256 — com o vídeo tocando.
+3. Modal "ATUALIZAÇÃO MOSTRAÍ — Nova versão encontrada — Atual / Nova —
+   [Atualizar agora] [Depois]".
+4. Atualizar agora → instalador do Android → Instalar → o Player volta
+   sozinho na versão nova, com o mesmo cadastro e as mesmas filas.
+5. Depois → não reaparece enquanto o mesmo pendrive estiver conectado.
+
 ## 3. Estados visuais
 
 | Estado | Quando | O que aparece | `estado` no heartbeat |
@@ -70,6 +81,7 @@ pendrive, ADB ou backend:
 | Cartão local | Item sem `url` (pelo tempo do item), tela em reparo/inativa (403), fora do horário | Degradê de marca, sem legenda | `IDLE` ou `OUT_OF_SCHEDULE` |
 | Sem conteúdo / erro | Playlist vazia, sem servidor e sem cache, ou uma volta inteira sem nenhuma exibição | Arte "Não foi possível carregar a programação" | `NO_PLAYLIST`, `DOWNLOAD_ERROR` ou `PLAYBACK_ERROR` |
 | Institucional de reserva | Programação comercial vencida (passou de `janelaFim`) sem playlist nova, ou relógio não confiável | Só os vídeos institucionais da Mostraí já guardados, em laço, sem comprovante; sem nenhum guardado, o cartão local | `IDLE` (a tela está no ar; 05/10/2026 — antes `NO_PLAYLIST`); `NO_PLAYLIST` só sem institucional guardado |
+| Atualização por pendrive | Pendrive com atualização válida e mais nova; ou falta liberar "instalar apps"/acesso ao pendrive | Sobreposição "ATUALIZAÇÃO MOSTRAÍ" com dois botões (Atualizar agora / Depois; Permitir atualizações / Depois; Permitir acesso / Agora não). Some sozinha depois de 2 min sem resposta, como "Depois" | o do vídeo que continua por trás |
 | Pedido de PIN | VOLTAR com o app operando e `pinSaida` recebido | Sobreposição "PIN PARA SAIR" com teclado numérico e, embaixo, o bloco técnico de suporte (só para quem está diante do PIN) | o do vídeo que continua por trás |
 
 O público **nunca** vê "sem internet": a falta de rede só aparece no bloco
@@ -232,6 +244,10 @@ coordenadas do layout — "cima" no controle já é "cima" para o instalador.
 | "PIN PARA SAIR" / "PIN incorreto" | Pedido de PIN | `strings.xml` |
 | "Atualizando conteúdo…" | Carregando (texto na arte) | `drawable-nodpi/institucional_carregando.png` |
 | "Não foi possível carregar a programação" | Sem conteúdo (texto na arte) | `drawable-nodpi/institucional_erro.png` |
+| "ATUALIZAÇÃO MOSTRAÍ", "Nova versão encontrada.", "Atual: … / Nova: …", "Atualizar agora", "Depois" | Modal do pendrive | `strings.xml` |
+| "Para atualizar o Mostraí pelo pendrive, permita instalações pelo Mostraí Player." / "Permitir atualizações" | Modal, sem "instalar apps" liberado | `strings.xml` |
+| "Pendrive conectado. Para procurar atualização do Mostraí, permita o acesso ao pendrive." / "Permitir acesso" / "Agora não" | Modal, sem acesso ao pendrive | `strings.xml` |
+| "Verificar USB", "Instalar atualização", "Testar ligar tela (2 min)" | Bloco técnico (tela do PIN) | `strings.xml` |
 
 ## 6. Quando dá errado
 
@@ -260,6 +276,16 @@ coordenadas do layout — "cima" no controle já é "cima" para o instalador.
   relógio confiável (nunca recomeça do zero), e o segmento operacional
   aberto fecha no último checkpoint. Em TV Android 10+, abrir sozinho
   depende de "Exibir sobre outros apps" (`docs/android-modernizacao.md`).
+
+- **Pendrive com APK errado** (outro app, outra chave, versão igual ou
+  anterior, `update.json` que não confere, arquivo corrompido): nenhum
+  modal; o motivo fica no bloco técnico e, menos "versão igual" e pendrive
+  sem pacote, no diário (`ATUALIZACAO_RECUSADA`).
+- **Pendrive arrancado durante a cópia, erro de leitura, pouco espaço**:
+  nada parcial fica no aparelho, nada é apagado para abrir espaço, a versão
+  atual segue tocando.
+- **Instalação cancelada ou recusada pelo Android**: o Player volta na
+  versão atual; bloco técnico "Instalação não concluída".
 
 ## 7. Direitos e obrigações que viram tela
 

@@ -90,15 +90,52 @@ class LigarTelaTest {
         assertTrue(aberto!!.getBooleanExtra(LigarTela.EXTRA_ACORDAR, false))
     }
 
+    private val energia get() = shadowOf(contexto.getSystemService(Context.POWER_SERVICE) as PowerManager)
+
+    private fun dispararTeste() {
+        LigarTela.agendarTeste(contexto)
+        LigarTela.Receptor().onReceive(contexto, shadowOf(alarmesDoTeste().single().operation).savedIntent)
+    }
+
     @Test
     fun `o Player aberto pelo teste registra o que o Android disse da tela`() {
-        shadowOf(contexto.getSystemService(Context.POWER_SERVICE) as PowerManager).setIsInteractive(true)
+        energia.setIsInteractive(false)
+        dispararTeste()
+        energia.setIsInteractive(true)
         val abrir = android.content.Intent(contexto, PlayerActivity::class.java).putExtra(LigarTela.EXTRA_ACORDAR, true)
 
         Robolectric.buildActivity(PlayerActivity::class.java, abrir).setup()
 
-        assertEquals("Android informou tela ligada após o teste", LigarTela.situacao(contexto))
+        val situacao = LigarTela.situacao(contexto)!!
+        assertTrue(situacao, situacao.startsWith("alarme na hora; tela estava desligada; Android informou tela ligada"))
         assertTrue(DiarioBordo(contexto).ultimos(20).any { it.codigo == DiarioBordo.Codigo.LIGAR_TELA_TESTE.name })
+    }
+
+    @Test
+    fun `tela que so acende muito depois do disparo nao conta como sucesso`() {
+        energia.setIsInteractive(false)
+        dispararTeste()
+        // Ninguém acendeu nada: a pessoa ligou a TV um minuto depois.
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(60))
+        energia.setIsInteractive(true)
+
+        LigarTela.registrarResultado(contexto, telaLigada = true)
+
+        val situacao = LigarTela.situacao(contexto)!!
+        assertTrue(situacao, situacao.contains("(pela pessoa?)"))
+    }
+
+    @Test
+    fun `alarme que so dispara quando a TV acorda aparece como atrasado`() {
+        energia.setIsInteractive(false)
+        LigarTela.agendarTeste(contexto, atrasoMs = -5 * 60_000L)
+        LigarTela.Receptor().onReceive(contexto, shadowOf(alarmesDoTeste().single().operation).savedIntent)
+
+        LigarTela.registrarResultado(contexto, telaLigada = false)
+
+        val situacao = LigarTela.situacao(contexto)!!
+        assertTrue(situacao, situacao.startsWith("alarme atrasou 5 min (aparelho dormia)"))
+        assertTrue(situacao, situacao.endsWith("Android informou tela ainda desligada"))
     }
 
     @Test

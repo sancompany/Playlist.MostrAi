@@ -1,14 +1,17 @@
 # Pendências — Mostraí Player
 
-## Estado (05/10/2026, 3.0.0 — V1 de produção)
+## Estado (06/10/2026, 3.0.1 — V1 de produção + atualização por pendrive)
 
 Código da V1 completo contra `sancompany/MostrAi` →
 `docs/player-mvp-contract.md` + rota de tempo operacional do Ponto Móvel
 (`POST /player/:id/operacao`, segmentos, mesclada no backend em
 [sancompany/MostrAi#114](https://github.com/sancompany/MostrAi/pull/114)).
 Matriz: `docs/player-mvp-matriz.md`. Target/compile 36, minSdk 26
-(`docs/adr/0001-target-sdk-moderno.md`). Estado: **PLAYER PRONTO PARA TESTE
-FÍSICO DE RELEASE** — o que falta é físico ou é do dono.
+(`docs/adr/0001-target-sdk-moderno.md`). 3.0.0 (`versionCode 4`) é a base;
+3.0.1 (`versionCode 6`) é o candidato, com a atualização oficial por
+pendrive (`docs/atualizacao-usb.md`) e a mesma chave. Estado: **PRONTO PARA
+TESTE FÍSICO** — o atualizador por pendrive **não** está aprovado até os
+itens 46–61 do checklist passarem na TCL.
 
 ## Backend
 
@@ -78,6 +81,18 @@ cheia descartando a exibição em andamento; (c) download consumindo a
 reserva de disco depois da checagem; (d) abrir/fechar do tempo operacional
 fora de ordem (agora um executor serial único).
 
+**Atualização por pendrive (3.0.1), riscos aceitos:** TV Android 11+ sem o
+seletor de pastas do Android (firmware sem DocumentsUI) não lê o pendrive —
+o bloco técnico diz isso e a atualização volta a ser pelo gerenciador de
+arquivos; decidir "Acesso a todos os arquivos" só se aparecer TV assim no
+parque (`docs/permissoes-especiais.md`). Se a TCL expõe o pendrive aos apps
+(`/storage/<UUID>` legível com a permissão de armazenamento) é o item
+físico mais incerto (`docs/hardware/tcl-32s6500s.md`). Uma pausa do
+watchdog deixada por um boot anterior pode valer até 10 min depois do
+reboot (o `BootReceiver` abre o Player e desfaz a pausa do mesmo jeito).
+"Ligar a tela" é só teste manual; efeito de `TURN_SCREEN_ON` no Android
+14+ não confirmado.
+
 ## Só o dono faz
 
 - **Custódia da chave definitiva** — gerada em 05/10/2026 por autorização
@@ -91,9 +106,15 @@ fora de ordem (agora um executor serial único).
 - **Guardar o `REGISTRO.txt`** do primeiro APK oficial (entregue junto com o
   APK) fora do Git.
 - **Teste físico nas duas TCLs** — `docs/checklist-fisico-producao.md`
-  (45 itens: TV A operação normal, TV B quedas temporárias, N → N+1 com a
-  mesma chave, vídeo em pé 1080×1920, soak em etapas 2–4 h → 24 h → 48–72 h). É o que fecha "a
-  versão inicial no ar" da estação 5.
+  (65 itens: TV A operação normal no 3.0.0, TV B quedas temporárias já no
+  3.0.1, 3.0.0 → 3.0.1 à mão com a mesma chave, atualização por pendrive
+  com o pacote de teste `versionCode 7`, vídeo em pé 1080×1920, soak em
+  etapas 2–4 h → 24 h → 48–72 h, teste de ligar a tela). É o que fecha "a
+  versão inicial no ar" da estação 5. Depois do teste do pendrive a TV de
+  teste fica no `versionCode 7`: desinstalar e reinstalar o 3.0.1 oficial
+  antes de uso real; a próxima versão oficial é `versionCode 8`+.
+- **Guardar** o `REGISTRO.txt` e o `Mostrai-USB-3.0.1.zip` (com o SHA-256)
+  do 3.0.1 junto com a chave.
 - **Se a imagem aparecer de ponta-cabeça**: registrar só
   `ROTATION_PHYSICAL_CORRECTION_REQUIRED = 270`.
 - **Definir o PIN de saída no admin** antes de gerar o primeiro código de

@@ -13,7 +13,9 @@ Projeto da San & Co. Segue as leis do plugin `san-co`.
 - `sancompany/MostrAi` → `docs/player-mvp-contract.md` — **o** protocolo com o backend (fonte da verdade); conferência em `docs/player-mvp-matriz.md`
 - `docs/android-modernizacao.md` e `docs/adr/0001-target-sdk-moderno.md` — target 36 com minSdk 26, o que muda por versão de Android
 - `docs/hardware/tcl-32s6500s.md` — o que se sabe (e o que não) da TV do parque
-- `docs/release-producao.md` — chave definitiva, candidato, registro, teste N → N+1
+- `docs/release-producao.md` — chave definitiva, candidato, registro, teste N → N+1, pacote de pendrive
+- `docs/atualizacao-usb.md` — atualização oficial por pendrive (3.0.1): detecção, validação, instalador
+- `docs/permissoes-especiais.md` — cada permissão e por quê; o que foi recusado
 - `docs/historico/` — V1/V2, OTA, Device Owner, painel, provisionamento por JSON/ADB: só histórico, nada disso existe mais
 
 ## Classificação (estação 2)
@@ -347,6 +349,27 @@ Fechadas:
   Estado: **APK assinado com a chave definitiva, pronto para teste físico
   nas TCLs.**
 
+- **Atualização oficial por pendrive — 3.0.1 (06/10/2026)** — pedido do
+  dono (39 seções), no mesmo PR #7, sem chave nova. O Player percebe o
+  pendrive (aviso do Android, já presente ao abrir, vigia de 30 s que só
+  lista volumes), procura só `MOSTRAI/update/Mostrai-Player.apk` (+
+  `update.json`) ou o APK na raiz, copia para `filesDir/atualizacao` com
+  SHA-256, confere pacote, chave definitiva (instalado **e** candidato,
+  impressão embutida no build a partir de `scripts/certificado-producao.sha256`),
+  versão e `update.json`, e mostra "ATUALIZAÇÃO MOSTRAÍ — Atualizar agora /
+  Depois" com o vídeo tocando. Instala o instalador do Android (`ACTION_VIEW`
+  + `FileProvider`, `REQUEST_INSTALL_PACKAGES` com tela de liberação),
+  watchdog em pausa (teto 10 min) durante telas do Android,
+  `MY_PACKAGE_REPLACED` limpa a cópia e traz o Player de volta. Acesso ao
+  pendrive sem "todos os arquivos": `READ_EXTERNAL_STORAGE` até o 10 (a
+  TCL), seletor de pastas no 11+. Seção ATUALIZAÇÃO e ações no bloco
+  técnico. "Ligar a tela" só como teste manual com resultado registrado.
+  Permissões 4 → 7, auditadas (`docs/permissoes-especiais.md`). Script
+  `scripts/preparar-usb-update.sh`. versionCode 6 (o 5 foi queimado pelo
+  teste do 3.0.0; o 7 é o pacote de teste do modal; próxima oficial 8+).
+  TESTES_PLACEHOLDER Checklist físico 45 → 65 itens. **Atualizador não
+  aprovado** até os itens 46–61 passarem na TCL.
+
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
 
@@ -363,7 +386,8 @@ que o dono confirmar o app rodando em aparelho real.
 - Configuração: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda credencial e config aplicada; `ConfigRemota` lê `GET /config`; `HorarioOperacional` é o horário do ponto, puro e testável)
 - Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer` = os 9 estados do contrato)
 - Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `kiosk/PoliticaDeRetorno.kt` (o que cada Android deixa), `BootReceiver.kt`
-- Release e CI: `scripts/release-candidato.sh`, `scripts/verificar-apk.sh`, `scripts/varrer-segredos.sh`, `.github/workflows/ci.yml`
+- Release e CI: `scripts/release-candidato.sh`, `scripts/verificar-apk.sh`, `scripts/varrer-segredos.sh`, `scripts/preparar-usb-update.sh`, `scripts/release-teste-n-mais-1.sh`, `.github/workflows/ci.yml`
+- Atualização por pendrive: `app/src/main/java/br/com/mostrai/player/atualizacao/` (`VolumesUsb` lista pendrives, `AcessoUsb` decide como ler, `OrigemPacote` acha o pacote, `VerificadorUsb` copia, `ValidacaoAtualizacao` decide, `InstaladorApk` entrega ao Android, `EstadoAtualizacao` lembra "Depois", `AtualizacaoConcluidaReceiver` = `MY_PACKAGE_REPLACED`) + `ui/TelaAtualizacao.kt`; teste de ligar a tela em `kiosk/LigarTela.kt`
 - Rotação: `ui/RotacaoTela.kt` (as setas do controle não se remapeiam — `docs/funcional.md`, seção 3)
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`; `GuardaMvpTest` falha se algo removido voltar
 - Variáveis/segredos: nenhum `.env` e nenhum caminho de provisionamento fora da TV. Keystore de release: `keystore.properties` fora do Git (`RUNBOOK.md`)
@@ -376,5 +400,5 @@ conformidade: ou corrige, ou vira exceção registrada no `CONSTRAINTS.md`.
 ## Pendências que bloqueiam a esteira
 
 - Custódia da chave definitiva (com o dono desde 05/10/2026; `docs/pendencias.md`)
-- Verificação "no ar" da estação 5 em hardware real — checklist de 45 itens do 3.0.0, só o dono faz (ver `docs/pendencias.md`)
+- Verificação "no ar" da estação 5 em hardware real — checklist de 65 itens (3.0.0 → 3.0.1, pendrive, ligar tela), só o dono faz (ver `docs/pendencias.md`)
 - CI (`.github/workflows/ci.yml`) pode precisar ser aplicado manualmente pelo dono se a ferramenta recusar o push do workflow (ver `docs/pendencias.md`)

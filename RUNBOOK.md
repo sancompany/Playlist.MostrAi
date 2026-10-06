@@ -68,13 +68,40 @@ hotspot antes da TV.
 
 ## Atualizar (N → N+1)
 
-Não há OTA. Atualizar é instalar o APK novo por cima, pelo pendrive, **sem
-desinstalar**, assinado com **a mesma chave** e `versionCode` maior.
-Credencial, config, cache, fila de comprovantes e segmentos operacionais
-sobrevivem. O teste N → N+1 está em `docs/release-producao.md` e no
-checklist (itens 34–38); fazer em bancada antes de cada versão nova. O
-N+1 de teste sai de `scripts/release-teste-n-mais-1.sh` (versionCode só na
-linha de comando, mesma chave, "NAO-DISTRIBUIR" no nome).
+Não há OTA pela rede. Atualizar é instalar o APK novo **sem desinstalar**,
+assinado com **a mesma chave** e `versionCode` maior. Credencial, config,
+cache, fila de comprovantes e segmentos operacionais sobrevivem.
+
+**Do 3.0.1 em diante — pelo pendrive, com o Player** (`docs/atualizacao-usb.md`):
+
+1. Gerar o candidato (`scripts/release-candidato.sh`) e o pacote
+   (`scripts/preparar-usb-update.sh <apk>` → `Mostrai-USB-<versão>.zip`).
+2. Copiar a pasta `MOSTRAI` do zip para a raiz de um pendrive (FAT32/exFAT).
+3. Na TV, com o Player tocando, conectar o pendrive → **Atualizar agora**
+   → confirmar no instalador do Android. O Player volta sozinho.
+4. Primeira vez em cada TV, o Android pede uma vez: acesso ao pendrive
+   ("Permitir acesso") e "instalar apps desconhecidos" para o Mostraí
+   Player ("Permitir atualizações" abre a tela certa; liberar e VOLTAR).
+5. Conferir no bloco técnico (VOLTAR): versão nova e "Última atualização".
+
+Se o modal não aparecer: VOLTAR → bloco técnico, seção ATUALIZAÇÃO, "Último
+resultado" diz o motivo (pendrive sem pacote, outra assinatura, versão igual
+ou anterior, sem espaço, Android sem acesso ao pendrive). **Verificar USB**
+lê de novo; **Instalar atualização** reabre o modal de uma cópia já
+validada. Durante o instalador e as telas de permissão o watchdog pausa o
+retorno rápido por até 10 min; voltar ao Player desfaz a pausa.
+
+Se o Android da TV não deixar ler o pendrive (bloco técnico: "este Android
+não deixa o Mostraí ler o pendrive"): instalar como no 3.0.0 — abrir
+`MOSTRAI/update/Mostrai-Player.apk` pelo gerenciador de arquivos da TV.
+
+**3.0.0 → 3.0.1**: o 3.0.0 não tem atualizador — abrir o APK do pacote pelo
+gerenciador de arquivos e instalar por cima (última vez à mão).
+
+O teste N → N+1 está em `docs/release-producao.md` e no checklist (itens
+34–37 e 46–61); fazer em bancada antes de cada versão nova. O N+1 de teste
+sai de `scripts/release-teste-n-mais-1.sh <versionCode>` (só na linha de
+comando, mesma chave, "NAO-DISTRIBUIR" no nome) e nunca vai a campo.
 
 ## Reverter
 
