@@ -32,7 +32,8 @@ compilesdk="$(sed -n "s/^package: .*compileSdkVersion='\([^']*\)'.*/\1/p" <<<"$b
 [ "$targetsdk" = "36" ] || falha "targetSdk $targetsdk (esperado 36 — ADR 0001)"
 [ "$compilesdk" = "36" ] || falha "compileSdk $compilesdk (esperado 36)"
 
-permissoes="$(sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" <<<"$badging" | sort | tr '\n' ' ')"
+# Também `uses-permission-sdk-23` (uma biblioteca poderia entrar por aí).
+permissoes="$(sed -n "s/^uses-permission\(-sdk-23\)\{0,1\}: name='\([^']*\)'.*/\2/p" <<<"$badging" | sort | tr '\n' ' ')"
 # As 4 decididas (ADR 0001) + a de assinatura que o androidx.core declara
 # para os próprios receivers (DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, do
 # próprio app — não dá acesso a nada de fora).

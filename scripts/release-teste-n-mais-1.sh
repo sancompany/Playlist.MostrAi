@@ -19,7 +19,7 @@ origem=app/build/outputs/apk/release/app-release.apk
 [ -f "$origem" ] || { echo "FALHOU: APK assinado não encontrado" >&2; exit 1; }
 scripts/verificar-apk.sh "$origem" --release >/dev/null
 
-impressao="$("$bt/apksigner" verify --print-certs "$origem" | sed -n 's/.*certificate SHA-256 digest: *//p' | head -1 | tr 'A-F' 'a-f')"
+impressao="$("$bt/apksigner" verify --print-certs "$origem" | sed -n 's/.*certificate SHA-256 digest: *//p' | tr 'A-F' 'a-f' | sort -u | paste -sd' ')"
 registrada="$(tr -d ' \n' < scripts/certificado-producao.sha256 | tr 'A-F' 'a-f')"
 [ "$impressao" = "$registrada" ] || { echo "FALHOU: N+1 assinado com outra chave" >&2; exit 1; }
 

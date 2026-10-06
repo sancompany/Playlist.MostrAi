@@ -21,10 +21,18 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-apk="${1:?uso: $0 <apk-release-assinado> [destino] [--teste]}"
-destino="${2:-app/build/usb}"
-modo="${3:-}"
-[ "$destino" = "--teste" ] && { modo="--teste"; destino="app/build/usb"; }
+uso="uso: $0 <apk-release-assinado> [destino] [--teste]"
+modo=""; posicionais=()
+for arg in "$@"; do
+  case "$arg" in
+    --teste) modo="--teste" ;;
+    -*) echo "opção desconhecida: $arg — $uso" >&2; exit 2 ;;
+    *) posicionais+=("$arg") ;;
+  esac
+done
+[ "${#posicionais[@]}" -ge 1 ] && [ "${#posicionais[@]}" -le 2 ] || { echo "$uso" >&2; exit 2; }
+apk="${posicionais[0]}"
+destino="${posicionais[1]:-app/build/usb}"
 [ -f "$apk" ] || { echo "APK não encontrado: $apk" >&2; exit 2; }
 
 sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
@@ -42,7 +50,8 @@ case "$versao" in
 esac
 
 "$bt/apksigner" verify --min-sdk-version 26 "$apk" >/dev/null || falha "assinatura inválida"
-impressao="$("$bt/apksigner" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: *//p' | head -1 | tr 'A-F' 'a-f')"
+# Todos os assinantes: dois (um deles o oficial) também é recusado — o Player recusaria.
+impressao="$("$bt/apksigner" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: *//p' | tr 'A-F' 'a-f' | sort -u | paste -sd' ')"
 oficial="$(tr -d ' \n' < scripts/certificado-producao.sha256 | tr 'A-F' 'a-f')"
 [ "$impressao" = "$oficial" ] || falha "APK não assinado com a chave definitiva ($impressao)"
 

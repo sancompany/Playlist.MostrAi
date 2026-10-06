@@ -106,9 +106,11 @@ class GuardaMvpTest {
             .forEach { ausente(it) }
         // O único campo de build é a impressão digital pública da chave
         // definitiva (updater por pendrive) — nada por tela, nada secreto.
-        val campos = Regex("buildConfigField\\(\"String\", \"(\\w+)\"").findAll(File("build.gradle.kts").readText())
-            .map { it.groupValues[1] }.toList()
+        val gradle = File("build.gradle.kts").readText()
+        assertEquals("um buildConfigField só, de qualquer tipo", 1, Regex("buildConfigField\\s*\\(").findAll(gradle).count())
+        val campos = Regex("buildConfigField\\(\"String\", \"(\\w+)\"").findAll(gradle).map { it.groupValues[1] }.toList()
         assertEquals(listOf("CERTIFICADO_OFICIAL_SHA256"), campos)
+        assertFalse("resValue por build", gradle.contains("resValue"))
         assertEquals(
             File("../scripts/certificado-producao.sha256").readText().trim(),
             BuildConfig.CERTIFICADO_OFICIAL_SHA256,

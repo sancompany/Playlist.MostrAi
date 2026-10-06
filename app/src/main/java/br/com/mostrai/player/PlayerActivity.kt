@@ -83,6 +83,7 @@ import java.io.File
 import java.time.ZoneId
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -1395,7 +1396,15 @@ class PlayerActivity : AppCompatActivity() {
                 val novos = EstadoAtualizacao.registrarMontados(volumes.map { it.id }.toSet())
                 for (volume in volumes.filter { it.id in novos }) {
                     if (!iniciada) break
-                    verificarPendrive(volume)
+                    try {
+                        verificarPendrive(volume)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Pendrive é coisa de fora: nada dele derruba o vídeo.
+                        Log.w(TAG, "falha ao verificar pendrive: ${e.javaClass.simpleName}")
+                        EstadoAtualizacao.ultimoResultado = "Não foi possível ler o pendrive."
+                    }
                 }
             } finally {
                 verificandoUsb.set(false)

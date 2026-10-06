@@ -51,6 +51,10 @@ class VerificadorUsb(
             if (texto == null) null to false else PacoteUsbJson.parse(texto).let { it to (it == null) }
         } catch (e: IOException) {
             return Resultado.FalhaLeitura(PENDRIVE_ILEGIVEL)
+        } catch (e: RuntimeException) {
+            // Pelo seletor do Android, pendrive que sumiu entre achar e abrir
+            // vira IllegalArgumentException/SecurityException, não E/S.
+            return Resultado.FalhaLeitura(PENDRIVE_ILEGIVEL)
         }
 
         dirPrivado.mkdirs()
@@ -69,6 +73,9 @@ class VerificadorUsb(
         } catch (e: SemEspacoNaCopia) {
             temporario.delete()
             return Resultado.SemEspaco
+        } catch (e: RuntimeException) {
+            temporario.delete()
+            return Resultado.FalhaLeitura(PENDRIVE_ILEGIVEL)
         }
 
         val veredito = ValidacaoAtualizacao.validar(

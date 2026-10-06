@@ -58,7 +58,9 @@ android {
 
         // A chave definitiva da frota (impressão digital pública, versionada):
         // o updater por pendrive só aceita APK assinado com ela.
-        val certificadoOficial = rootProject.file("scripts/certificado-producao.sha256").readText().trim().lowercase()
+        val arquivoCertificado = rootProject.file("scripts/certificado-producao.sha256")
+        require(arquivoCertificado.isFile) { "scripts/certificado-producao.sha256 ausente: é a impressão da chave definitiva (docs/release-producao.md)" }
+        val certificadoOficial = arquivoCertificado.readText().trim().lowercase()
         require(Regex("[0-9a-f]{64}").matches(certificadoOficial)) { "scripts/certificado-producao.sha256 inválido" }
         buildConfigField("String", "CERTIFICADO_OFICIAL_SHA256", "\"$certificadoOficial\"")
     }

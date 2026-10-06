@@ -52,7 +52,8 @@ if [ "$assinado" = 1 ]; then
   # "A mesma chave para sempre": a impressão digital da chave definitiva
   # fica versionada (é pública — identifica, não assina). Outra chave aqui
   # quebraria a atualização da frota inteira.
-  impressao="$(sed -n 's/.*certificate SHA-256 digest: *//p' <<<"$certificado" | head -1 | tr 'A-F' 'a-f')"
+  # Todos os assinantes (sort -u): um segundo assinante não passa por trás do primeiro.
+  impressao="$(sed -n 's/.*certificate SHA-256 digest: *//p' <<<"$certificado" | tr 'A-F' 'a-f' | sort -u | paste -sd' ')"
   registrada_arq=scripts/certificado-producao.sha256
   if [ -f "$registrada_arq" ]; then
     registrada="$(tr -d ' \n' < "$registrada_arq" | tr 'A-F' 'a-f')"
@@ -61,7 +62,9 @@ if [ "$assinado" = 1 ]; then
     fi
     situacao="PRODUCTION RELEASE SIGNING KEY — DEFINITIVE (assinado com a chave definitiva registrada)"
   else
-    situacao="CANDIDATO A RELEASE — PRIMEIRA ASSINATURA: gravar '$impressao' em $registrada_arq e commitar antes de instalar em cliente"
+    # A chave definitiva já existe (05/10/2026) e o build exige o arquivo
+    # (app/build.gradle.kts): sem ele não há candidato.
+    echo "FALHOU: $registrada_arq ausente — a impressão da chave definitiva é obrigatória" >&2; exit 1
   fi
 else
   certificado="(sem assinatura)"

@@ -90,11 +90,12 @@ O script:
    "todos os arquivos", sem `CATEGORY_HOME`, sem `debuggable`, sem texto
    puro, `networkSecurityConfig` e `dataExtractionRules` presentes;
 4. confere a assinatura (`apksigner verify`) e **falha se for a chave de
-   depuração** ou se a impressão digital SHA-256 do certificado não for a
-   registrada em `scripts/certificado-producao.sha256` (versionado — a
-   impressão é pública, identifica a chave sem dar acesso a ela). Na
-   primeira assinatura o arquivo ainda não existe: o registro pede para
-   gravá-lo e commitá-lo antes de instalar em cliente;
+   depuração**, se houver mais de um assinante, ou se a impressão digital
+   SHA-256 do certificado não for a registrada em
+   `scripts/certificado-producao.sha256` (versionado — a impressão é
+   pública, identifica a chave sem dar acesso a ela). Desde 05/10/2026 o
+   arquivo é obrigatório: o build o embute no APK (o updater por pendrive
+   confere contra ele) e falha sem ele;
 5. copia para `app/build/release-candidato/Mostrai-Player-<versão>-release.apk`
    e escreve `REGISTRO.txt` ao lado.
 

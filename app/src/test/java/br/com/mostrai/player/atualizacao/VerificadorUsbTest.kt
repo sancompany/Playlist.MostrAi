@@ -185,6 +185,40 @@ class VerificadorUsbTest {
     }
 
     @Test
+    fun `pendrive que some pelo seletor do Android (excecao que nao e de E-S) nao derruba o Player`() {
+        // Android 11+: o provedor de documentos lança IllegalArgumentException
+        // ("No root") ou SecurityException quando o volume some entre achar e abrir.
+        val apk = ApkFalso.bytes()
+        val semRaiz = object : OrigemPacote {
+            override fun localizar() = OrigemPacote.Localizado(apk.size.toLong(), { throw IllegalArgumentException("No root for ABCD-1234") }) { null }
+        }
+        assertTrue(verificar(semRaiz) is Resultado.FalhaLeitura)
+        assertTrue(nadaFicou())
+
+        val jsonSemPermissao = object : OrigemPacote {
+            override fun localizar() = OrigemPacote.Localizado(apk.size.toLong(), { ByteArrayInputStream(apk) }) { throw SecurityException("Permission Denial") }
+        }
+        assertTrue(verificar(jsonSemPermissao) is Resultado.FalhaLeitura)
+
+        val noMeio = object : OrigemPacote {
+            override fun localizar() = OrigemPacote.Localizado(apk.size.toLong() + 100_000, {
+                object : InputStream() {
+                    var lidos = 0
+                    override fun read(): Int = throw UnsupportedOperationException()
+                    override fun read(b: ByteArray, off: Int, len: Int): Int {
+                        if (lidos > 0) throw IllegalStateException("cursor fechado")
+                        lidos += apk.size
+                        apk.copyInto(b, off)
+                        return apk.size
+                    }
+                }
+            }) { null }
+        }
+        assertTrue(verificar(noMeio) is Resultado.FalhaLeitura)
+        assertTrue(nadaFicou())
+    }
+
+    @Test
     fun `pendrive removido que so encerra a leitura antes do fim tambem falha`() {
         val apk = ApkFalso.bytes()
         // O tamanho anunciado é maior que o que chega: a cópia ficou pela metade.
