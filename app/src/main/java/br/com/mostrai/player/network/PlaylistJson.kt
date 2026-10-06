@@ -20,6 +20,7 @@ object PlaylistJson {
             janelaId = janelaId,
             janelaInicio = json.texto("janelaInicio"),
             servidorAgora = json.texto("servidorAgora"),
+            janelaFim = json.texto("janelaFim"),
             itens = itens(itensJson),
         )
     }.getOrNull()
@@ -33,6 +34,7 @@ object PlaylistJson {
             url = item.texto("url"),
             contabiliza = item.optBoolean("contabiliza", false),
             contentHash = item.texto("contentHash")?.lowercase(),
+            institucional = item.optBoolean("institucional", false),
         )
     }
 

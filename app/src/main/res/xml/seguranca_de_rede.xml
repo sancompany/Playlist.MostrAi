@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Produção só fala HTTPS (Produto.BASE_URL e as URLs de mídia do backend).
+    Com target 28+ isto já é o padrão; fica explícito para ninguém relaxar
+    sem querer. Sem pinning de certificado: trocar o certificado do servidor
+    derrubaria a frota inteira, e não há necessidade operacional para isso.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

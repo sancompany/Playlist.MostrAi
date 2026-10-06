@@ -57,6 +57,24 @@ class SaidaCicloTest {
     }
 
     @Test
+    fun `voltar pelo despachante (Android 16, voltar preditivo) tambem pede o PIN`() {
+        // No Android 16 com target 36 o VOLTAR não chega a dispatchKeyEvent:
+        // vai direto ao OnBackPressedDispatcher.
+        comPin()
+        val atividade = h.subir().get()
+
+        atividade.onBackPressedDispatcher.onBackPressed()
+        h.idle()
+        assertEquals(View.VISIBLE, h.vista<View>(atividade, R.id.telaPin).visibility)
+        assertFalse(atividade.isFinishing)
+
+        atividade.onBackPressedDispatcher.onBackPressed()
+        h.idle()
+        assertEquals(View.GONE, h.vista<View>(atividade, R.id.telaPin).visibility)
+        assertFalse(atividade.isFinishing)
+    }
+
+    @Test
     fun `PIN errado continua o player`() {
         comPin()
         val atividade = h.subir().get()
@@ -130,5 +148,45 @@ class SaidaCicloTest {
         h.subir()
 
         assertFalse(Watchdog.saidaAutorizada(h.contexto))
+    }
+
+    @Test
+    fun `segurar VOLTAR nao fica abrindo e fechando o pedido de PIN`() {
+        comPin()
+        val atividade = h.subir().get()
+        val baixo = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK)
+        atividade.dispatchKeyEvent(baixo)
+        (1..6).forEach { atividade.dispatchKeyEvent(android.view.KeyEvent.changeTimeRepeat(baixo, 0L, it)) }
+        atividade.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
+        h.idle()
+
+        assertEquals(View.VISIBLE, h.vista<View>(atividade, R.id.telaPin).visibility)
+    }
+
+    @Test
+    fun `digito segurado no controle conta uma vez so`() {
+        comPin("4821")
+        val atividade = h.subir().get()
+        h.voltar(atividade)
+        val sete = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_7)
+        atividade.dispatchKeyEvent(sete)
+        (1..20).forEach { atividade.dispatchKeyEvent(android.view.KeyEvent.changeTimeRepeat(sete, 0L, it)) }
+
+        assertEquals("• · · ·", h.vista<TextView>(atividade, R.id.displayPin).text.toString())
+        assertFalse(Watchdog.saidaAutorizada(h.contexto))
+    }
+
+    @Test
+    fun `pedido de PIN mostra o bloco tecnico, so ali`() {
+        comPin()
+        val atividade = h.subir().get()
+        h.voltar(atividade)
+        val info = h.vista<TextView>(atividade, R.id.infoSuporte)
+
+        h.esperar { info.text.contains("OFFLINE") }
+
+        assertTrue(info.text.contains("Comprovantes aguardando envio"))
+        h.voltar(atividade)
+        assertEquals("", info.text.toString())
     }
 }

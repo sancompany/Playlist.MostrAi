@@ -61,16 +61,16 @@ class FilaPerdasTest {
         // comprovante. Nenhum dos dois pode somar de novo ao expirar.
         val rejeitado = fila.registrarInicio(item, playlist)!!
         fila.registrarFim(rejeitado)
-        api.resposta = ResultadoHttp.RespostaInvalida("HTTP 400")
-        fila.tentarEnviar()
-        assertEquals(1, fila.perdas())
+        ProofOfPlayDb(contexto).marcarQuarentena(rejeitado, "teste")
 
-        fila.registrarInicio(item, playlist) // órfão
+        // Órfão de um processo anterior (a exibição em andamento DESTE
+        // processo é protegida — FilaRelogioHostilTest).
+        FilaProofOfPlay(contexto, api).registrarInicio(item, playlist)
         envelhecerTudo()
 
         fila.tentarEnviar()
 
-        assertEquals(1, fila.perdas())
+        assertEquals(0, fila.perdas())
         assertEquals(0, fila.resumo().total)
     }
 
@@ -171,13 +171,54 @@ class FilaPerdasTest {
     }
 
     @Test
-    fun `comprovante terminado que expira sem envio conta como perda`() {
+    fun `comprovante terminado nunca expira por idade - espera o ACK`() {
+        // Ponto Móvel: dias sem internet não podem apagar evidência.
         val id = fila.registrarInicio(item, playlist)!!
         fila.registrarFim(id)
         envelhecerTudo()
+        api.resposta = ResultadoHttp.SemRede("offline")
 
         fila.tentarEnviar()
 
-        assertEquals(1, fila.perdas())
+        assertEquals(0, fila.perdas())
+        assertEquals(1, fila.resumo().aguardandoEnvio)
+    }
+
+    @Test
+    fun `rede voltou envia na hora o que estava esperando no backoff`() {
+        // Três horas sem internet: todo comprovante ficou com o reenvio a 30 min.
+        val ids = (1..3).map { fila.registrarInicio(item, playlist)!! }
+        ids.forEach { fila.registrarFim(it) }
+        repeat(6) {
+            fila.tentarEnviar()
+            ProofOfPlayDb(contexto).writableDatabase.execSQL("UPDATE ${ProofOfPlayDb.TABELA} SET proximo_envio_em = 0")
+        }
+        fila.tentarEnviar() // último degrau: agora + 30 min
+        api.resposta = ResultadoHttp.Ok(ids.associateWith { "contabilizado" })
+        val enviosAntes = api.envios
+
+        fila.redeVoltou()
+
+        assertEquals(enviosAntes + 1, api.envios)
+        assertEquals(0, fila.resumo().aguardandoEnvio)
+    }
+
+    @Test
+    fun `depois de dias offline a fila drena varios lotes em sequencia numa rodada`() {
+        val ids = (1..120).map { fila.registrarInicio(item, playlist)!! }
+        ids.forEach { fila.registrarFim(it) }
+        val aceitaTudo = object : MostraiApi(ConfigAparelho(contexto)) {
+            val lotes = mutableListOf<Int>()
+            override fun enviarLote(eventos: List<EventoExibicao>): ResultadoHttp<Map<String, String>> {
+                lotes += eventos.size
+                return ResultadoHttp.Ok(eventos.associate { it.execucaoId to "contabilizado" })
+            }
+        }
+        val filaDrena = FilaProofOfPlay(contexto, aceitaTudo)
+
+        filaDrena.tentarEnviar()
+
+        assertEquals(listOf(50, 50, 20), aceitaTudo.lotes)
+        assertEquals(0, filaDrena.resumo().aguardandoEnvio)
     }
 }

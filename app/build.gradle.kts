@@ -30,17 +30,39 @@ val propriedadesAssinatura = lerPropriedadesDeAssinatura()
 
 android {
     namespace = "br.com.mostrai.player"
-    compileSdk = 35
+    // API 36 (Android 16): o Android TV mais novo que existe (Android 16 for
+    // TV). O 37 é estável desde 06/2026, mas nenhuma TV roda 37 e ele exige
+    // AGP 9 — docs/adr/0001-target-sdk-moderno.md.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "br.com.mostrai.player"
+        // Piso: SEMP TCL 32S6500S (Android TV 8.0). O alvo é o Android atual —
+        // o app suporta a TCL sem se declarar feito para 2017.
         minSdk = 26
-        targetSdk = 26
+        targetSdk = 36
         // Atualização é manual (sideload). O Android só instala por cima de
         // uma versão com `versionCode` menor — subir a cada build de campo.
         // 3 / 2.0.0: Player MVP (contrato docs/player-mvp-contract.md).
-        versionCode = 3
-        versionName = "2.0.0"
+        // 4 / 3.0.0: V1 de produção — target 36, segmentos operacionais,
+        // offline endurecido, release assinado (docs/release-producao.md).
+        // Teste N → N+1 com a mesma chave (docs/release-producao.md): só pela
+        // linha de comando (`scripts/release-teste-n-mais-1.sh`), nunca
+        // commitado. O versionName marcado faz o candidato oficial recusar
+        // esse APK.
+        // 6 / 3.0.1: atualização oficial por pendrive. O 5 foi do APK de
+        // teste N+1 do 3.0.0 (NAO-DISTRIBUIR) e nunca é reutilizado.
+        val versionCodeTeste = (findProperty("mostrai.versionCodeTeste") as String?)?.toInt()
+        versionCode = versionCodeTeste ?: 6
+        versionName = if (versionCodeTeste != null) "3.0.1-teste-n$versionCodeTeste" else "3.0.1"
+
+        // A chave definitiva da frota (impressão digital pública, versionada):
+        // o updater por pendrive só aceita APK assinado com ela.
+        val arquivoCertificado = rootProject.file("scripts/certificado-producao.sha256")
+        require(arquivoCertificado.isFile) { "scripts/certificado-producao.sha256 ausente: é a impressão da chave definitiva (docs/release-producao.md)" }
+        val certificadoOficial = arquivoCertificado.readText().trim().lowercase()
+        require(Regex("[0-9a-f]{64}").matches(certificadoOficial)) { "scripts/certificado-producao.sha256 inválido" }
+        buildConfigField("String", "CERTIFICADO_OFICIAL_SHA256", "\"$certificadoOficial\"")
     }
 
     buildFeatures {
@@ -71,23 +93,26 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     lint {
-        // Regra de política da Play Store. Este app é sideload e nunca vai à
-        // loja; targetSdk 26 é decisão deliberada (README, "Alvo"): subir
-        // traria restrições de background e foreground service que só
-        // atrapalham um player de quiosque. Desligar só esta regra mantém o
-        // lint útil como sinal para todo o resto.
-        disable += "ExpiredTargetSdkVersion"
+        // Lint vale como portão (CI roda debug e release): erro quebra o build.
+        abortOnError = true
     }
 
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all {
+                // Robolectric guarda um sandbox por nível de SDK (RetornoPorApiTest
+                // roda em 26, 29, 31, 34 e 36): os 512 MB padrão estouram.
+                it.maxHeapSize = "2g"
+            }
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 

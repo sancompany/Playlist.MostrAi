@@ -107,7 +107,7 @@ class ProofOfPlayDb(context: Context) :
      * Tira o evento da fila de envio sem apagá-lo: o servidor rejeitou o
      * payload e nenhuma retentativa vai mudar isso, mas jogar fora em
      * silêncio esconderia a falha justamente de quem precisa investigá-la
-     * (R4). A linha some sozinha pelo horizonte de [removerExpirados].
+     * (R4). A linha some sozinha pelo horizonte de [removerSemValorAntesDe].
      */
     fun marcarQuarentena(execucaoId: String, motivo: String) {
         val valores = ContentValues().apply { put("quarentena_motivo", motivo) }
@@ -130,11 +130,18 @@ class ProofOfPlayDb(context: Context) :
         }
     }
 
-    fun elegiveisParaEnvio(agoraMs: Long, limite: Int): List<EventoExibicao> {
+    /**
+     * Comprovantes cuja vez já chegou. Uma espera marcada mais longe que
+     * [esperaMaximaMs] no futuro é impossível (o maior degrau do backoff e o
+     * teto do `Retry-After` são 30 min): foi marcada com o relógio de parede
+     * adiantado e depois corrigido (TV sem bateria no relógio, NTP chegando
+     * tarde). Sem isto, o comprovante ficaria anos esperando a vez.
+     */
+    fun elegiveisParaEnvio(agoraMs: Long, limite: Int, esperaMaximaMs: Long = ESPERA_IMPOSSIVEL_MS): List<EventoExibicao> {
         readableDatabase.query(
             TABELA, null,
-            "terminado_em IS NOT NULL AND quarentena_motivo IS NULL AND proximo_envio_em <= ?",
-            arrayOf(agoraMs.toString()),
+            "terminado_em IS NOT NULL AND quarentena_motivo IS NULL AND (proximo_envio_em <= ? OR proximo_envio_em > ?)",
+            arrayOf(agoraMs.toString(), (agoraMs + esperaMaximaMs).toString()),
             null, null,
             "criado_em_ms ASC",
             limite.toString(),
@@ -190,15 +197,16 @@ class ProofOfPlayDb(context: Context) :
      * 2. Quarentena — o servidor já rejeitou; fica só para diagnóstico.
      * 3. Terminado — comprovante legítimo aguardando envio.
      */
-    fun proximoADescartar(): String? {
+    fun proximoADescartar(protegidos: Collection<String> = emptyList()): String? {
         val ordens = listOf(
             "terminado_em IS NULL",
             "quarentena_motivo IS NOT NULL",
             null,
         )
         for (onde in ordens) {
+            val filtro = listOfNotNull(onde, foraDe(protegidos)).joinToString(" AND ").ifEmpty { null }
             readableDatabase.query(
-                TABELA, arrayOf("execucao_id"), onde, null, null, null, "criado_em_ms ASC", "1",
+                TABELA, arrayOf("execucao_id"), filtro, protegidos.toTypedArray(), null, null, "criado_em_ms ASC", "1",
             ).use {
                 if (it.moveToFirst()) return it.getString(0)
             }
@@ -206,13 +214,6 @@ class ProofOfPlayDb(context: Context) :
         return null
     }
 
-    /**
-     * Quantos comprovantes de verdade — terminados e fora da quarentena —
-     * existem antes de [limiteMs]. Órfão nunca foi comprovante, e quarentena
-     * já foi contada como perda ao entrar nela (BUG-017).
-     */
-    fun contarComprovantesAntesDe(limiteMs: Long): Int =
-        contar("criado_em_ms < $limiteMs AND $AGUARDANDO_ENVIO")
 
     fun aguardaEnvio(execucaoId: String): Boolean {
         readableDatabase.rawQuery(
@@ -220,9 +221,31 @@ class ProofOfPlayDb(context: Context) :
         ).use { return it.moveToFirst() }
     }
 
-    /** Horizonte local ([FilaProofOfPlay.HORIZONTE_EXPIRACAO_MS]) — contabilidade, não decisão de crédito. */
-    fun removerExpirados(limiteMs: Long): Int =
-        writableDatabase.delete(TABELA, "criado_em_ms < ?", arrayOf(limiteMs.toString()))
+    /**
+     * Só órfão e quarentena — o que nunca será comprovante. Comprovante
+     * terminado não tem prazo aqui: sai só com o ACK do servidor.
+     */
+    fun removerSemValorAntesDe(limiteMs: Long, protegidos: Collection<String> = emptyList()): Int = writableDatabase.delete(
+        TABELA,
+        listOfNotNull("criado_em_ms < ? AND (terminado_em IS NULL OR quarentena_motivo IS NOT NULL)", foraDe(protegidos))
+            .joinToString(" AND "),
+        arrayOf(limiteMs.toString()) + protegidos,
+    )
+
+    /**
+     * Exibições ainda no ar neste processo: parecem órfãs (sem
+     * `terminado_em`) e nunca podem sair — viram comprovante no fim.
+     */
+    private fun foraDe(protegidos: Collection<String>): String? =
+        if (protegidos.isEmpty()) null else "execucao_id NOT IN (${protegidos.joinToString(",") { "?" }})"
+
+    /** A rede voltou: todo comprovante fica elegível já, sem esperar o backoff. */
+    fun liberarParaEnvio(): Int = writableDatabase.update(
+        TABELA,
+        ContentValues().apply { put("proximo_envio_em", 0L) },
+        "$AGUARDANDO_ENVIO AND proximo_envio_em > 0",
+        null,
+    )
 
     private fun EventoExibicao.paraValores(): ContentValues = ContentValues().apply {
         put("execucao_id", execucaoId)
@@ -258,6 +281,9 @@ class ProofOfPlayDb(context: Context) :
     }
 
     companion object {
+        /** Espera de reenvio além disto é relógio de parede que voltou (ver [elegiveisParaEnvio]). */
+        const val ESPERA_IMPOSSIVEL_MS = 31L * 60 * 1000
+
         const val NOME_ARQUIVO = "mostrai_proof_of_play.db"
 
         /** 1 → 2: coluna `quarentena_motivo` (R4). */

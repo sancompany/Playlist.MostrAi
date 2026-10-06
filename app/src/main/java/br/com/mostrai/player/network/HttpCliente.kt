@@ -38,7 +38,7 @@ class HttpCliente(
         val conexao = try {
             URL(url).openConnection() as HttpURLConnection
         } catch (e: ClassCastException) {
-            throw IOException("URL não é http(s): $url", e)
+            throw IOException("URL não é http(s): esquema ${url.substringBefore(':').take(16)}", e)
         }
         try {
             conexao.requestMethod = metodo

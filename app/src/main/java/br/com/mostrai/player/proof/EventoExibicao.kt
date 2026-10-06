@@ -13,7 +13,7 @@ data class EventoExibicao(
     val janelaId: String?,
     val itemProgramacaoId: String?,
     val criativoId: String?,
-    /** ISO 8601 com offset, relógio do aparelho — auditoria apenas. */
+    /** ISO 8601 com offset, no relógio confiável (o do servidor, quando há) — auditoria apenas. */
     val iniciadoEm: String,
     val terminadoEm: String?,
     val tentativas: Int,

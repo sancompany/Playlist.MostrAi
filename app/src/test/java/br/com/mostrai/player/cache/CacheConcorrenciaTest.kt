@@ -21,6 +21,9 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class CacheConcorrenciaTest {
 
+    @get:org.junit.Rule
+    val disco = DiscoFolgado()
+
     private lateinit var contexto: Context
     private lateinit var cache: CacheMidia
     private lateinit var servidor: ServidorDeTeste
@@ -36,7 +39,7 @@ class CacheConcorrenciaTest {
     @Before
     fun preparar() {
         contexto = ApplicationProvider.getApplicationContext()
-        File(contexto.cacheDir, "midia").deleteRecursively()
+        File(contexto.filesDir, "midia").deleteRecursively()
         cache = CacheMidia(contexto)
         servidor = ServidorDeTeste()
     }

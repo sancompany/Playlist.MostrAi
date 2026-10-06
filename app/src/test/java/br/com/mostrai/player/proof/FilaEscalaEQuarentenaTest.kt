@@ -70,7 +70,8 @@ class FilaEscalaEQuarentenaTest {
             "teto precisa cobrir ao menos 24h de tela com criativos de 10s",
             FilaProofOfPlay.TAMANHO_MAXIMO_FILA > eventosPorDia,
         )
-        assertEquals(50_000, FilaProofOfPlay.TAMANHO_MAXIMO_FILA)
+        // Ponto Móvel: dias sem internet num evento. 150 mil cobre semanas.
+        assertTrue("teto precisa cobrir 14 dias", FilaProofOfPlay.TAMANHO_MAXIMO_FILA >= eventosPorDia * 14)
     }
 
     @Test
@@ -124,14 +125,35 @@ class FilaEscalaEQuarentenaTest {
 
     @Test
     fun `quarentena continua visivel no diagnostico`() {
-        val id = fila.registrarInicio(item, playlist)!!
-        fila.registrarFim(id)
-        api.idRuim = id
+        val ids = (1..3).map { fila.registrarInicio(item, playlist)!! }
+        ids.forEach { fila.registrarFim(it) }
+        api.idRuim = ids[1]
 
         fila.tentarEnviar()
 
         assertEquals(1, fila.resumo().quarentena)
         assertEquals(1, fila.perdas())
+    }
+
+    @Test
+    fun `400 em todo pedaco do lote e problema do servidor, nao dos comprovantes`() {
+        // Deploy com regressão ou proxy no caminho: todo envio volta 400. Sem
+        // nenhum irmão aceito não há prova de que o evento é o culpado — antes,
+        // a fila inteira ia para a quarentena, para sempre.
+        val sempre400 = object : MostraiApi(ConfigAparelho(contexto)) {
+            override fun enviarLote(eventos: List<EventoExibicao>): ResultadoHttp<Map<String, String>> =
+                ResultadoHttp.RespostaInvalida("HTTP 400")
+        }
+        val filaSistemica = FilaProofOfPlay(contexto, sempre400)
+        val ids = (1..8).map { filaSistemica.registrarInicio(item, playlist)!! }
+        ids.forEach { filaSistemica.registrarFim(it) }
+
+        filaSistemica.tentarEnviar()
+
+        val resumo = filaSistemica.resumo()
+        assertEquals(0, resumo.quarentena)
+        assertEquals(8, resumo.aguardandoEnvio)
+        assertEquals(0, filaSistemica.perdas())
     }
 
     // ------------------------------------------------------------------- R5

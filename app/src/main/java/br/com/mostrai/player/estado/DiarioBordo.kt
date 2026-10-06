@@ -165,6 +165,23 @@ class DiarioBordo(context: Context) {
         MIDIA_HASH_DIVERGENTE(Severidade.ERRO),
         PLAYBACK_FALHOU(Severidade.ERRO),
         FILA_LIMIAR(Severidade.ERRO),
+        FILA_CHEIA(Severidade.ERRO),
+        FILA_RECUSADA(Severidade.ERRO),
+        // Estado esperado offline (e por segundos na virada da hora), não
+        // defeito do Player: INFO, para não virar "erro" no heartbeat.
+        PROGRAMACAO_EXPIRADA(Severidade.INFO),
+        // Boot que terminou sem nunca falar com o servidor: o tempo dele não
+        // tem como ir ao relógio do servidor (contrato §8.5). Fato, não erro.
+        OPERACAO_SEM_ANCORA(Severidade.INFO),
+        // Android 10+ sem "Exibir sobre outros apps": o sistema não deixa o
+        // Player voltar sozinho à frente (boot, HOME, crash).
+        RETORNO_BLOQUEADO(Severidade.INFO),
+        // Atualização por pendrive: o Android trocou o APK (versão nova), ou
+        // o pendrive trouxe um APK recusado (assinatura, pacote, versão).
+        ATUALIZADO(Severidade.INFO),
+        ATUALIZACAO_RECUSADA(Severidade.INFO),
+        // Teste de "ligar a tela" disparado (o resultado é o que o técnico vê).
+        LIGAR_TELA_TESTE(Severidade.INFO),
         CONFIG_APLICADA(Severidade.INFO),
         CONFIG_FALHOU(Severidade.ERRO),
         FORA_DO_HORARIO(Severidade.INFO),

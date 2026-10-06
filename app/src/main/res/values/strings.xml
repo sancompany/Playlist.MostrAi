@@ -18,4 +18,19 @@
     <string name="pin_titulo">PIN PARA SAIR</string>
     <string name="pin_errado">PIN incorreto</string>
     <string name="pin_bloqueado">Muitas tentativas. Aguarde %1$d s.</string>
+
+    <string name="atualizacao_titulo">ATUALIZAÇÃO MOSTRAÍ</string>
+    <string name="atualizacao_nova">Nova versão encontrada.</string>
+    <string name="atualizacao_versoes">Atual: %1$s\nNova: %2$s</string>
+    <string name="atualizacao_agora">Atualizar agora</string>
+    <string name="atualizacao_depois">Depois</string>
+    <string name="atualizacao_permissao">Para atualizar o Mostraí pelo pendrive, permita instalações pelo Mostraí Player.</string>
+    <string name="atualizacao_permitir">Permitir atualizações</string>
+    <string name="atualizacao_acesso">Pendrive conectado. Para procurar atualização do Mostraí, permita o acesso ao pendrive.</string>
+    <string name="atualizacao_permitir_acesso">Permitir acesso</string>
+    <string name="atualizacao_agora_nao">Agora não</string>
+
+    <string name="suporte_verificar_usb">Verificar USB</string>
+    <string name="suporte_instalar">Instalar atualização</string>
+    <string name="suporte_ligar_tela">Testar ligar tela (2 min)</string>
 </resources>

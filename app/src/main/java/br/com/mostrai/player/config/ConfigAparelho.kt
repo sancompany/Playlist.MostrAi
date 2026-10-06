@@ -96,7 +96,9 @@ class ConfigAparelho(context: Context) {
      * s… até 5 min) e zera no acerto; nunca é permanente.
      */
     fun pinBloqueadoPorMs(agoraMs: Long = System.currentTimeMillis()): Long =
-        (prefs.getLong(CHAVE_PIN_BLOQUEIO_ATE, 0L) - agoraMs).coerceAtLeast(0L)
+        // Teto no restante: com o relógio da TV voltando dias para trás, o
+        // instante gravado ficaria no futuro distante e trancaria a saída.
+        (prefs.getLong(CHAVE_PIN_BLOQUEIO_ATE, 0L) - agoraMs).coerceIn(0L, BLOQUEIO_PIN_MAXIMO_MS)
 
     fun registrarPinErrado(agoraMs: Long = System.currentTimeMillis()) {
         val erros = prefs.getInt(CHAVE_PIN_ERROS, 0) + 1

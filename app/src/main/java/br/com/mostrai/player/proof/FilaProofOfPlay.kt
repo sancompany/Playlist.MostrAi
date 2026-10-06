@@ -3,22 +3,26 @@ package br.com.mostrai.player.proof
 import android.content.Context
 import android.database.sqlite.SQLiteException
 import android.util.Log
+import br.com.mostrai.player.estado.DiarioBordo
 import br.com.mostrai.player.network.MostraiApi
 import br.com.mostrai.player.network.ResultadoHttp
 import br.com.mostrai.player.playlist.ItemPlaylist
 import br.com.mostrai.player.playlist.Playlist
+import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 
 /**
  * Fila durável de proof-of-play: cria a linha antes do play(), envia em lote
- * quando o item termina de verdade, e só remove a linha quando o servidor
- * responde um dos 6 status finais (contrato §8) — ou nos outros dois casos:
- * lote recusado (400/413, isolado evento a evento até sobrar o culpado) e
- * expiração local depois do prazo em que o servidor ainda aceitaria. Nunca
- * por timeout, 5xx, 401/403, erro de socket ou reinício do app.
+ * quando o item termina de verdade, e só remove um comprovante quando o
+ * servidor responde um dos 6 status finais (contrato §8) — o ACK. Nunca por
+ * idade (Ponto Móvel, 02/10/2026: a tela pode passar dias sem internet; o
+ * servidor responde `janela_expirada` quando for tarde, pelo relógio DELE),
+ * nunca por timeout, 5xx, 401/403, erro de socket ou reinício do app. A
+ * única outra saída é a fila cheia — e essa fica registrada no diário.
  *
  * Chamar sempre de uma thread de fundo — faz E/S de disco e de rede.
  *
@@ -31,6 +35,15 @@ import kotlin.math.min
 class FilaProofOfPlay(
     context: Context,
     private val api: MostraiApi,
+    private val diario: DiarioBordo? = null,
+    /**
+     * Instante de `iniciadoEm`/`terminadoEm`: o relógio confiável (âncora do
+     * servidor + monotônico) quando há, o de parede só sem ele. Comercial só
+     * toca com relógio confiável, então na prática é sempre o do servidor —
+     * a TV que voltou do reboot com a hora errada não carimba o comprovante
+     * com ela.
+     */
+    private val relogio: () -> Long? = { null },
 ) {
     private val db = ProofOfPlayDb(context)
     private val prefsPerdas = context.applicationContext
@@ -47,6 +60,15 @@ class FilaProofOfPlay(
      * envios simultâneos de mandarem o mesmo evento.
      */
     private val enviando = AtomicBoolean(false)
+
+    /**
+     * Exibições no ar deste processo: a linha já existe e ainda não tem
+     * `terminado_em`, igual a um órfão. Nem a limpeza por idade (que usa o
+     * relógio de parede, e ele pode saltar dias para frente) nem a fila
+     * cheia (que descarta órfão primeiro) podem levá-la — no fim ela vira
+     * comprovante, e [registrarFim] não teria mais o que marcar.
+     */
+    private val emAndamento: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /** Fotografia da fila para o heartbeat e para o painel. */
     data class Resumo(val aguardandoEnvio: Int, val total: Int, val quarentena: Int, val maisAntigoMs: Long?)
@@ -80,20 +102,25 @@ class FilaProofOfPlay(
                 janelaId = playlist.janelaId,
                 itemProgramacaoId = item.itemProgramacaoId,
                 criativoId = item.criativoId,
-                iniciadoEm = OffsetDateTime.now().toString(),
+                iniciadoEm = agoraIso(),
                 terminadoEm = null,
                 tentativas = 0,
                 proximoEnvioElegivelEm = 0L,
                 criadoEmMs = System.currentTimeMillis(),
             )
         )
+        emAndamento += execucaoId
         execucaoId
     }
 
     /** Chamado só no STATE_ENDED — aqui a exibição vira comprovante elegível. */
     @Synchronized
     fun registrarFim(execucaoId: String) {
-        seguro(Unit) { db.marcarTerminado(execucaoId, OffsetDateTime.now().toString()) }
+        try {
+            seguro(Unit) { db.marcarTerminado(execucaoId, agoraIso()) }
+        } finally {
+            emAndamento -= execucaoId
+        }
     }
 
     /**
@@ -106,7 +133,16 @@ class FilaProofOfPlay(
      */
     @Synchronized
     fun registrarFalha(execucaoId: String) {
-        seguro(Unit) { db.remover(execucaoId) }
+        try {
+            seguro(Unit) { db.remover(execucaoId) }
+        } finally {
+            emAndamento -= execucaoId
+        }
+    }
+
+    private fun agoraIso(): String {
+        val ms = relogio() ?: System.currentTimeMillis()
+        return OffsetDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneId.systemDefault()).toString()
     }
 
     fun pendentes(): Int = seguro(0) { db.contarAguardandoEnvio() }
@@ -124,22 +160,43 @@ class FilaProofOfPlay(
         if (!enviando.compareAndSet(false, true)) return
         try {
             seguro(Unit) {
-                removerExpirados()
+                removerSemValor()
 
-                val agora = System.currentTimeMillis()
-                val elegiveis = db.elegiveisParaEnvio(agora, LIMITE_LOTE)
-                if (elegiveis.isEmpty()) return
-
-                enviarLote(elegiveis)
+                // Depois de dias offline a fila pode ter milhares de eventos:
+                // lotes em sequência, um por vez, enquanto o servidor aceita —
+                // nunca em paralelo (sem tempestade de requisições).
+                repeat(MAX_LOTES_POR_RODADA) {
+                    val elegiveis = db.elegiveisParaEnvio(System.currentTimeMillis(), LIMITE_LOTE)
+                    if (elegiveis.isEmpty()) return
+                    if (!enviarLote(elegiveis)) return
+                }
             }
         } finally {
             enviando.set(false)
         }
     }
 
-    private fun enviarLote(eventos: List<EventoExibicao>) {
+    /**
+     * A rede voltou: o que esperava a vez no backoff (até 30 min) sai agora.
+     * O backoff serve para não insistir com a rede fora; com ela de volta,
+     * segurar o comprovante só atrasa o admin.
+     */
+    fun redeVoltou() {
+        seguro(Unit) { db.liberarParaEnvio() }
+        tentarEnviar()
+    }
+
+    /** Acumula, ao longo de uma bisseção, se algum pedaço do lote foi aceito. */
+    private class Bissecao {
+        var algumAceito = false
+        val recusados = mutableListOf<EventoExibicao>()
+    }
+
+    /** `true` = o servidor aceitou o lote (e cabe tentar o próximo na mesma rodada). */
+    private fun enviarLote(eventos: List<EventoExibicao>, bissecao: Bissecao? = null): Boolean {
         when (val resposta = api.enviarLote(eventos)) {
             is ResultadoHttp.Ok -> {
+                bissecao?.algumAceito = true
                 val paraRemover = mutableListOf<String>()
                 for (evento in eventos) {
                     val status = resposta.valor[evento.execucaoId]
@@ -153,11 +210,12 @@ class FilaProofOfPlay(
                     }
                 }
                 db.removerLote(paraRemover)
+                return true
             }
             // 400: lote malformado; 413: corpo acima de 100 KB. Nos dois, dividir resolve.
             is ResultadoHttp.RespostaInvalida -> {
                 if (resposta.motivo == "HTTP 400" || resposta.motivo == "HTTP 413") {
-                    isolarLoteRecusado(eventos)
+                    isolarLoteRecusado(eventos, bissecao)
                 } else {
                     eventos.forEach { adiarComBackoff(it) }
                 }
@@ -171,33 +229,47 @@ class FilaProofOfPlay(
             // lote inteiro iria de novo ao fim de cada exibição.
             else -> eventos.forEach { adiarComBackoff(it) }
         }
+        return false
     }
 
     /**
      * Busca binária pelo evento que o servidor rejeita (R4).
      *
-     * Um 400 (ou 413) num lote não diz QUAL evento o servidor recusa. A versão anterior
-     * descartava os 50 de uma vez — jogava fora até 49 comprovantes bons por
-     * causa de um ruim, sem deixar rastro. Aqui o lote é partido ao meio e
-     * reenviado até sobrar um único evento; só esse vai para quarentena, e
-     * os irmãos saudáveis voltam pela porta normal.
-     *
-     * Custo: no pior caso ~2·log2(50) ≈ 12 requisições, uma vez, para salvar
-     * o resto do lote. Um lote de tamanho 1 que leva 400 é conclusivo: o
-     * problema é aquele evento.
+     * Um 400 (ou 413) num lote não diz QUAL evento o servidor recusa. O lote
+     * é partido ao meio e reenviado até sobrarem eventos sozinhos. Mas um
+     * evento só vai para a quarentena se algum irmão do MESMO lote passou:
+     * pelo contrato, evento ruim volta `item_invalido` e 400 só existe para
+     * lote malformado — que o Player não produz. Se nenhum pedaço passou, o
+     * problema é do servidor ou de quem está no caminho (deploy com
+     * regressão, proxy), não dos comprovantes: todos voltam para o backoff e
+     * o diário registra. Antes, um 400 sistêmico de dez minutos punha a fila
+     * inteira em quarentena, para sempre.
      */
-    private fun isolarLoteRecusado(eventos: List<EventoExibicao>) {
-        if (eventos.size == 1) {
-            val evento = eventos.first()
-            Log.e(TAG, "evento ${evento.execucaoId} recusado sozinho pelo servidor, em quarentena")
-            db.marcarQuarentena(evento.execucaoId, MOTIVO_QUARENTENA)
-            incrementarPerdas(1)
+    private fun isolarLoteRecusado(eventos: List<EventoExibicao>, bissecao: Bissecao?) {
+        if (eventos.size == 1 && bissecao != null) {
+            bissecao.recusados += eventos.first()
             return
         }
+        val raiz = bissecao ?: Bissecao()
+        if (eventos.size == 1) {
+            raiz.recusados += eventos.first()
+        } else {
+            val meio = eventos.size / 2
+            enviarLote(eventos.subList(0, meio), raiz)
+            enviarLote(eventos.subList(meio, eventos.size), raiz)
+        }
+        if (bissecao != null) return
 
-        val meio = eventos.size / 2
-        enviarLote(eventos.subList(0, meio))
-        enviarLote(eventos.subList(meio, eventos.size))
+        if (raiz.algumAceito) {
+            raiz.recusados.forEach {
+                Log.e(TAG, "evento ${it.execucaoId} recusado sozinho pelo servidor, em quarentena")
+                db.marcarQuarentena(it.execucaoId, MOTIVO_QUARENTENA)
+            }
+            incrementarPerdas(raiz.recusados.size)
+        } else {
+            raiz.recusados.forEach { adiarComBackoff(it) }
+            diario?.registrar(DiarioBordo.Codigo.FILA_RECUSADA, "servidor recusou o lote inteiro (400/413); comprovantes mantidos")
+        }
     }
 
     /**
@@ -219,25 +291,30 @@ class FilaProofOfPlay(
      * Fila limitada: no estouro, descarta na ordem de menor valor primeiro
      * (órfão → quarentena → comprovante), nunca o mais antigo cegamente (R2).
      *
-     * O teto de [TAMANHO_MAXIMO_FILA] cobre ~5,8 dias de tela 24h com
-     * criativos de 10s — o cenário real de "loja fechou no feriado com a
-     * internet caída". O teto anterior (5.000) saturava em menos de 14h.
+     * O teto de [TAMANHO_MAXIMO_FILA] cobre semanas de tela ligada 24 h
+     * (Ponto Móvel: dias sem internet num evento). Chegar nele já é
+     * incidente — por isso cada comprovante descartado vai para o diário.
      */
     private fun limitarTamanho() {
         if (db.contarPendentes() < TAMANHO_MAXIMO_FILA) return
-        db.proximoADescartar()?.let {
+        db.proximoADescartar(emAndamento.toList())?.let {
             val eraComprovante = db.aguardaEnvio(it)
             db.remover(it)
-            if (eraComprovante) incrementarPerdas(1)
+            if (eraComprovante) {
+                incrementarPerdas(1)
+                diario?.registrar(DiarioBordo.Codigo.FILA_CHEIA, "fila de comprovantes cheia: o mais antigo foi descartado")
+            }
         }
     }
 
-    /** Só comprovante conta como perda — ver [ProofOfPlayDb.contarComprovantesAntesDe]. */
-    private fun removerExpirados() {
-        val limite = System.currentTimeMillis() - HORIZONTE_EXPIRACAO_MS
-        val comprovantes = db.contarComprovantesAntesDe(limite)
-        db.removerExpirados(limite)
-        if (comprovantes > 0) incrementarPerdas(comprovantes)
+    /**
+     * Só o que nunca será comprovante sai por idade: linha órfã (exibição
+     * que começou e não terminou) e quarentena (já contada como perda).
+     * Comprovante terminado nunca sai daqui — só pelo ACK do servidor.
+     */
+    @Synchronized
+    private fun removerSemValor() {
+        db.removerSemValorAntesDe(System.currentTimeMillis() - HORIZONTE_SEM_VALOR_MS, emAndamento.toList())
     }
 
     private inline fun <T> seguro(padrao: T, bloco: () -> T): T = try {
@@ -259,19 +336,21 @@ class FilaProofOfPlay(
         const val LIMITE_LOTE = 50
 
         /**
-         * ~5,8 dias de tela 24h com criativos de 10s. Cada linha ocupa ~200
-         * bytes, então o teto inteiro é ~10 MB de SQLite — irrelevante para o
-         * aparelho, e é o que separa "ficou sem internet no feriado" de
-         * "perdeu a receita do feriado".
+         * ~26 dias de tela 24 h com criativos de 15 s. Cada linha ocupa uns
+         * 400 bytes com índice: ~60 MB no teto — a reserva de disco do cache
+         * de mídia ([br.com.mostrai.player.cache.CacheMidia.reservaBytes])
+         * existe para que o vídeo nunca dispute espaço com o comprovante.
          */
-        const val TAMANHO_MAXIMO_FILA = 50_000
+        const val TAMANHO_MAXIMO_FILA = 150_000
 
         /**
-         * O servidor aceita até 7 dias depois do FIM da janela (contrato §8);
-         * a janela dura 1 h e o evento nasce dentro dela. 7 dias + 1 h depois
-         * da criação nunca descarta o que o servidor ainda aceitaria.
+         * Órfão e quarentena — o que nunca vira comprovante — saem depois
+         * disto. Comprovante não tem prazo local (ver [removerSemValor]).
          */
-        const val HORIZONTE_EXPIRACAO_MS = (7L * 24 + 1) * 60 * 60 * 1000
+        const val HORIZONTE_SEM_VALOR_MS = (7L * 24 + 1) * 60 * 60 * 1000
+
+        /** Lotes em sequência por rodada de envio: 1.000 eventos, sem rajada. */
+        const val MAX_LOTES_POR_RODADA = 20
 
         /** Teto do `Retry-After` — igual ao maior degrau do backoff. */
         const val ESPERA_MAXIMA_SEGUNDOS = 30 * 60

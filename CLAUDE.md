@@ -11,6 +11,11 @@ Projeto da San & Co. Segue as leis do plugin `san-co`.
 - `RUNBOOK.md` — como operar, reverter e restaurar
 - `README.md` — como rodar e testar
 - `sancompany/MostrAi` → `docs/player-mvp-contract.md` — **o** protocolo com o backend (fonte da verdade); conferência em `docs/player-mvp-matriz.md`
+- `docs/android-modernizacao.md` e `docs/adr/0001-target-sdk-moderno.md` — target 36 com minSdk 26, o que muda por versão de Android
+- `docs/hardware/tcl-32s6500s.md` — o que se sabe (e o que não) da TV do parque
+- `docs/release-producao.md` — chave definitiva, candidato, registro, teste N → N+1, pacote de pendrive
+- `docs/atualizacao-usb.md` — atualização oficial por pendrive (3.0.1): detecção, validação, instalador
+- `docs/permissoes-especiais.md` — cada permissão e por quê; o que foi recusado
 - `docs/historico/` — V1/V2, OTA, Device Owner, painel, provisionamento por JSON/ADB: só histórico, nada disso existe mais
 
 ## Classificação (estação 2)
@@ -269,6 +274,117 @@ Fechadas:
   desarma; abrir o app rearma. `Watchdog.decidir(provisionado)`,
   `WatchdogInstalacaoTest` (os quatro estados). 275 → 280 testes.
 
+- **Revisão + watchdog rápido + offline prolongado para Ponto Móvel
+  (02/10/2026)** — pedidos do dono: skill `revisar` no app inteiro, watchdog
+  "só sai pelo PIN e volta o mais rápido possível" (sem `HOME`), e "Master
+  Player — cache e operação offline prolongada". Regra-mestra: **offline não
+  autoriza inventar veiculação** — o comercial só toca dentro de `janelaFim`,
+  medido por relógio confiável (`RelogioConfiavel`); depois, só o
+  institucional guardado (`InstitucionalLocal`), sem comprovante.
+  Proof-of-play fica até o ACK (não expira mais por idade); quarentena só
+  com prova; fila de 150.000. Cache em `filesDir` com chaves protegidas e
+  reserva. Sessões operacionais (`operacao/RegistroOperacional`, sexta rota
+  `/player/$id/operacao`). Watchdog: retorno exato em 5 s depois do HOME,
+  backstop de 90 s. Bloco técnico de suporte só atrás do PIN (exceção em
+  `CONSTRAINTS.md`). Decisões superadas marcadas em `docs/funcional.md`
+  (RN-06, RN-07, RN-10) e `CONSTRAINTS.md`. Revisão em 4 ciclos (o 4.º
+  limpo): 5 + 1 defeitos confirmados corrigidos, cada um com teste que mata a
+  mutação; plausíveis restantes em `docs/pendencias.md`. 280 → 328 testes. Backend:
+  [sancompany/MostrAi#113](https://github.com/sancompany/MostrAi/pull/113)
+  (conectividade ≠ operação + rota de sessões; fechado sem mesclar em
+  05/10). Proposta do pacote offline de vários dias — CANCELADA em 05/10:
+  `docs/historico/offline-prolongado-proposta-backend.md`. Erros:
+  `docs/erros/2026-10-02-*.md`.
+
+- **V1 de produção + modernização Android — 3.0.0 (05/10/2026)** — pedido
+  do dono (65 seções; decisões 1–9 aprovadas). Heartbeat: investigado o APK
+  de campo — 0.1.0/1.0.0 batiam a cada 5 min, 2.0.0+ a cada 15 s; 15 s é a
+  fonte única (`Produto.INTERVALO_HEARTBEAT_MS`), backend alinhado em
+  [sancompany/MostrAi#115](https://github.com/sancompany/MostrAi/pull/115)
+  (tolerância 2 min); #113 fechado. Toolchain: target/compile 36, minSdk 26,
+  AGP 8.13.2, Kotlin 2.3.21, Robolectric 4.16.1, CI em JDK 21. Android
+  moderno: VOLTAR por `OnBackPressedCallback` (voltar preditivo),
+  `SYSTEM_ALERT_WINDOW` só como exceção ao bloqueio de abertura do segundo
+  plano no 10+ (bloqueio visível no bloco técnico e no diário), alarme `set`
+  do 12 em diante, `networkSecurityConfig` só HTTPS, `dataExtractionRules`.
+  Tempo operacional reescrito para **segmentos** do contrato #114
+  (`{bootId, seq, inicio, fim}`, âncora do servidor por boot, boot sem
+  âncora descartado e contado), executor serial único. Institucional de
+  reserva = `IDLE`. Fila de comprovantes contra relógio hostil (espera
+  impossível liberada, exibição em andamento protegida, carimbo no relógio
+  confiável); reserva de disco conferida durante o download. Bloco técnico
+  ampliado, sem segredo (`SegredoForaTest`). CI: varredura de segredos,
+  release + `REGISTRO.txt` (`scripts/release-candidato.sh`), conferência do
+  APK, lint como portão. Testes por API (26/29/31/34/36). Revisão focal em
+  três frentes: 5 HIGH e 6 MEDIUM corrigidos (detalhe em
+  `docs/pendencias.md`), baixos aceitos registrados. Checklist físico
+  de 45 itens (TV A, TV B quedas temporárias, N → N+1, 1080×1920, soak). Produção
+  começa do zero no 3.0.0. versionCode 4. Estado: **PLAYER PRONTO PARA
+  TESTE FÍSICO DE RELEASE** — falta a chave definitiva e o teste nas TCLs.
+
+- **Rodada final de produção (05/10/2026)** — pedido do dono. Decisão
+  definitiva: **offline prolongado cancelado** — a Mostraí é *online-first*
+  (internet do estabelecimento ou dados móveis); offline é só tolerância a
+  queda temporária. Proposta antiga em
+  `docs/historico/offline-prolongado-proposta-backend.md` (CANCELADO).
+  Backend: [sancompany/MostrAi#115](https://github.com/sancompany/MostrAi/pull/115)
+  mesclado e publicado (produção `deafc7d`, heartbeat 15 s / "sem
+  comunicação" 2 min, `TELA_SEM_SINAL_MIN` ausente). Contrato reconferido
+  contra o `main` (só o #115 mudou desde o #114; o Player não depende de
+  "base"). Teste N → N+1 preparado sem editar arquivos
+  (`scripts/release-teste-n-mais-1.sh`, `-Pmostrai.versionCodeTeste`; o
+  candidato oficial recusa APK de teste). Soak em etapas (2–4 h → 24 h →
+  48–72 h). **Chave definitiva NÃO gerada**: a sessão roda em contêiner
+  efêmero, sem garantia de recuperar o `.jks` — fica com o dono
+  (`docs/release-producao.md`, "Primeira assinatura"). Estado: código e
+  backend prontos; falta assinar e testar nas TCLs.
+
+- **Assinatura definitiva (05/10/2026)** — por autorização explícita do
+  dono, chave da frota gerada nesta sessão (PKCS12, RSA 4096, alias
+  `mostrai`, válida até 2056) e entregue a ele para download junto com o
+  arquivo de custódia; nada disso no Git. Impressão digital registrada em
+  `scripts/certificado-producao.sha256`; `release-candidato.sh` recusa
+  qualquer outra chave e marca o registro "PRODUCTION RELEASE SIGNING KEY —
+  DEFINITIVE". Primeiro APK oficial: `Mostrai-Player-3.0.0-release.apk`.
+  Estado: **APK assinado com a chave definitiva, pronto para teste físico
+  nas TCLs.**
+
+- **Atualização oficial por pendrive — 3.0.1 (06/10/2026)** — pedido do
+  dono (39 seções), no mesmo PR #7, sem chave nova. O Player percebe o
+  pendrive (aviso do Android, já presente ao abrir, vigia de 30 s que só
+  lista volumes), procura só `MOSTRAI/update/Mostrai-Player.apk` (+
+  `update.json`) ou o APK na raiz, copia para `filesDir/atualizacao` com
+  SHA-256, confere pacote, chave definitiva (instalado **e** candidato,
+  impressão embutida no build a partir de `scripts/certificado-producao.sha256`),
+  versão e `update.json`, e mostra "ATUALIZAÇÃO MOSTRAÍ — Atualizar agora /
+  Depois" com o vídeo tocando. Instala o instalador do Android (`ACTION_VIEW`
+  + `FileProvider`, `REQUEST_INSTALL_PACKAGES` com tela de liberação),
+  watchdog em pausa (teto 10 min) durante telas do Android,
+  `MY_PACKAGE_REPLACED` limpa a cópia e traz o Player de volta. Acesso ao
+  pendrive sem "todos os arquivos": `READ_EXTERNAL_STORAGE` até o 10 (a
+  TCL), seletor de pastas no 11+. Seção ATUALIZAÇÃO e ações no bloco
+  técnico. "Ligar a tela" só como teste manual com resultado registrado.
+  Permissões 4 → 7, auditadas (`docs/permissoes-especiais.md`). Script
+  `scripts/preparar-usb-update.sh`. versionCode 6 (o 5 foi queimado pelo
+  teste do 3.0.0; o 7 é o pacote de teste do modal; próxima oficial 8+).
+  370 → 462 testes (validação, cópia, acesso, `FileProvider`, Intent, pausa
+  do watchdog, `MY_PACKAGE_REPLACED`, ciclo completo com pendrive simulado,
+  ligar tela), mutações das guardas do updater mortas. Checklist físico 45 → 65 itens. Revisão do delta
+  em duas frentes (Android/ciclo de vida; scripts/assinatura): 0 HIGH, 5
+  MEDIUM corrigidos com teste (exceção do seletor de pastas fora de E/S
+  derrubava o Player; cópia que terminava fora da frente virava "Depois";
+  "Depois" de pendrive já retirado sobrevivia à volta; `SecurityException`
+  de tela de firmware com o watchdog já em pausa; teste de ligar a tela
+  desligava o "turn screen on" antes de ele agir) e os baixos baratos
+  (todos os assinantes nos scripts, `uses-permission-sdk-23`, argumentos do
+  empacotador, guarda de `buildConfigField`, modal 30 s como o PIN, "Agora
+  não" do acesso persiste enquanto o pendrive não sai). 469 testes. APK
+  oficial `Mostrai-Player-3.0.1-release.apk` (commit `2f27aa1`, sha256
+  `f611d409…bb2b`, mesma chave `8c4ea2cc…6cbed`) e `Mostrai-USB-3.0.1.zip`
+  entregues ao dono, com o pacote de teste `versionCode 7`
+  (NAO-DISTRIBUIR). **Atualizador não aprovado** até os itens 46–61
+  passarem na TCL.
+
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois
 que o dono confirmar o app rodando em aparelho real.
 
@@ -277,13 +393,16 @@ que o dono confirmar o app rodando em aparelho real.
 - Entrada da aplicação (única Activity): `app/src/main/java/br/com/mostrai/player/PlayerActivity.kt`
 - Valores fixos do produto: `app/src/main/java/br/com/mostrai/player/Produto.kt` (`BASE_URL`, `ROTACAO_GRAUS`, intervalos); `HostDaApi` em `app/src/release/` (constante) e `app/src/debug/` (trocável só por teste)
 - Provisionamento: `app/src/main/java/br/com/mostrai/player/provisionamento/` (`Codigos` normaliza ID e código, `Provisionador` troca pela credencial) + `ui/TelaProvisionamento.kt`
-- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi` = as 5 rotas, `ResultadoHttp` separa as famílias de falha, `Sincronizacao` aplica os efeitos do heartbeat, `HeartbeatJson`/`PlaylistJson`/`PlayedJson` são os corpos)
+- Rede: `app/src/main/java/br/com/mostrai/player/network/` (`MostraiApi` = as 6 rotas, `OperacaoJson` = segmentos, `ResultadoHttp` separa as famílias de falha, `Sincronizacao` aplica os efeitos do heartbeat, `HeartbeatJson`/`PlaylistJson`/`PlayedJson` são os corpos)
 - Playlist e reposicionamento: `app/src/main/java/br/com/mostrai/player/playlist/`
 - Cache de mídia: `app/src/main/java/br/com/mostrai/player/cache/`
 - Proof-of-play (fila durável): `app/src/main/java/br/com/mostrai/player/proof/`
+- Sessões operacionais: `app/src/main/java/br/com/mostrai/player/operacao/` · relógio confiável e institucional de reserva: `playlist/RelogioConfiavel.kt`, `playlist/InstitucionalLocal.kt` · bloco de suporte: `ui/InfoSuporte.kt`
 - Configuração: `app/src/main/java/br/com/mostrai/player/config/` (`ConfigAparelho` guarda credencial e config aplicada; `ConfigRemota` lê `GET /config`; `HorarioOperacional` é o horário do ponto, puro e testável)
 - Estado e erro durável: `app/src/main/java/br/com/mostrai/player/estado/` (`DiarioBordo` em SQLite, `EstadoPlayer` = os 9 estados do contrato)
-- Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `BootReceiver.kt`
+- Saída e recuperação: `ui/TelaPinSaida.kt`, `kiosk/Watchdog.kt`, `kiosk/PoliticaDeRetorno.kt` (o que cada Android deixa), `BootReceiver.kt`
+- Release e CI: `scripts/release-candidato.sh`, `scripts/verificar-apk.sh`, `scripts/varrer-segredos.sh`, `scripts/preparar-usb-update.sh`, `scripts/release-teste-n-mais-1.sh`, `.github/workflows/ci.yml`
+- Atualização por pendrive: `app/src/main/java/br/com/mostrai/player/atualizacao/` (`VolumesUsb` lista pendrives, `AcessoUsb` decide como ler, `OrigemPacote` acha o pacote, `VerificadorUsb` copia, `ValidacaoAtualizacao` decide, `InstaladorApk` entrega ao Android, `EstadoAtualizacao` lembra "Depois", `AtualizacaoConcluidaReceiver` = `MY_PACKAGE_REPLACED`) + `ui/TelaAtualizacao.kt`; teste de ligar a tela em `kiosk/LigarTela.kt`
 - Rotação: `ui/RotacaoTela.kt` (as setas do controle não se remapeiam — `docs/funcional.md`, seção 3)
 - Testes: `app/src/test/java/br/com/mostrai/player/` — `./gradlew testDebugUnitTest`; `GuardaMvpTest` falha se algo removido voltar
 - Variáveis/segredos: nenhum `.env` e nenhum caminho de provisionamento fora da TV. Keystore de release: `keystore.properties` fora do Git (`RUNBOOK.md`)
@@ -295,5 +414,6 @@ conformidade: ou corrige, ou vira exceção registrada no `CONSTRAINTS.md`.
 
 ## Pendências que bloqueiam a esteira
 
-- Verificação "no ar" da estação 5 em hardware real — checklist de 36 itens, só o dono faz (ver `docs/pendencias.md`)
+- Custódia da chave definitiva (com o dono desde 05/10/2026; `docs/pendencias.md`)
+- Verificação "no ar" da estação 5 em hardware real — checklist de 65 itens (3.0.0 → 3.0.1, pendrive, ligar tela), só o dono faz (ver `docs/pendencias.md`)
 - CI (`.github/workflows/ci.yml`) pode precisar ser aplicado manualmente pelo dono se a ferramenta recusar o push do workflow (ver `docs/pendencias.md`)

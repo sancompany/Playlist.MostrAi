@@ -6,6 +6,7 @@ import br.com.mostrai.player.HostDaApi
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.ConfigRemota
 import br.com.mostrai.player.config.ConfigRemotaJson
+import br.com.mostrai.player.operacao.RegistroOperacional
 import br.com.mostrai.player.playlist.Playlist
 import br.com.mostrai.player.proof.EventoExibicao
 import java.io.IOException
@@ -107,6 +108,18 @@ open class MostraiApi(
         chamarAutenticado("heartbeat") { id, cabecalhos ->
             http.post("${base()}/player/$id/heartbeat", cabecalhos, HeartbeatJson.corpo(corpo))
         }.transformar { corpo -> HeartbeatJson.parseResposta(corpo)?.let { ResultadoHttp.Ok(it) } }
+
+    // ----------------------------------------------------------------- operação
+
+    /**
+     * `POST /player/:dispositivoId/operacao` — segmentos de tempo operacional
+     * (contrato §8.5). Devolve o status por `(bootId, seq)`. Qualquer falha
+     * (404 de um backend sem a rota, 5xx, rede) deixa os segmentos na TV.
+     */
+    open fun enviarOperacao(segmentos: List<RegistroOperacional.Segmento>): ResultadoHttp<Map<Pair<String, Int>, String>> =
+        chamarAutenticado("operacao") { id, cabecalhos ->
+            http.post("${base()}/player/$id/operacao", cabecalhos, OperacaoJson.corpo(segmentos))
+        }.transformar { corpo -> OperacaoJson.parseResultados(corpo)?.let { ResultadoHttp.Ok(it) } }
 
     // ------------------------------------------------------------------- config
 

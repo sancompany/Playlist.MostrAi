@@ -3,6 +3,7 @@ package br.com.mostrai.player.ciclo
 import android.view.View
 import android.widget.TextView
 import br.com.mostrai.player.R
+import br.com.mostrai.player.operacao.RegistroOperacional
 import br.com.mostrai.player.cache.ServidorDeTeste
 import br.com.mostrai.player.config.ConfigAparelho
 import org.json.JSONObject
@@ -62,7 +63,14 @@ class ProvisionamentoCicloTest {
 
         assertEquals("2", texto(um.focusSearch(View.FOCUS_RIGHT)))
         assertEquals(texto(teclado.getChildAt(teclado.columnCount)), texto(um.focusSearch(View.FOCUS_DOWN)))
-        assertEquals("CONECTAR", texto(um.focusSearch(View.FOCUS_UP)))
+        // Para cima sai do teclado para o que está acima dele na tela: o
+        // CONECTAR (FocusFinder do Android 8) ou o campo do código (o do
+        // Android 9+ pontua o feixe de outro jeito) — os dois "acima".
+        val acima = um.focusSearch(View.FOCUS_UP)
+        assertTrue(
+            "cima foi para ${acima?.id}",
+            acima?.id in setOf(R.id.botaoConectar, R.id.campoCodigo),
+        )
     }
 
     @Test
@@ -86,6 +94,36 @@ class ProvisionamentoCicloTest {
         assertEquals(chave, h.servidor.ultima("/playlist/")!!.cabecalhos["x-aparelho-key"])
         assertEquals(View.GONE, h.vista<View>(atividade, R.id.telaProvisionamento).visibility)
         assertTrue(ConfigAparelho(h.contexto).provisionado)
+    }
+
+    @Test
+    fun `tela instalada agora ja conta tempo operacional`() {
+        // Revisão focal B (05/10/2026): a troca NOT_PROVISIONED → IDLE abria o
+        // segmento e a arrumação do começo do ciclo o fechava logo em
+        // seguida — TV recém-instalada passava dias sem contar nada.
+        h.servidor.rotas["/player/provisionar"] =
+            ServidorDeTeste.Resposta(200, """{"dispositivoId":"M-0235","chaveAparelho":"$chave"}""")
+        h.servidor.rotas["/playlist/"] = ServidorDeTeste.Resposta(200, h.playlistComUmVideo(duracao = 600))
+        h.servidor.rotas["/player/M-0235/operacao"] = ServidorDeTeste.Resposta(404, "")
+        h.midiaNoAr()
+        val atividade = h.subir().get()
+        "235".forEach { h.tecla(atividade, R.id.tecladoProvisionamento, it.toString()) }
+        h.vista<TextView>(atividade, R.id.campoCodigo).performClick()
+        "7K4M9Q2W".forEach { h.tecla(atividade, R.id.tecladoProvisionamento, it.toString()) }
+        h.vista<TextView>(atividade, R.id.botaoConectar).performClick()
+        h.esperar { h.servidor.contar("/playlist/M-0235") > 0 }
+        // O pedido chegar ao servidor não quer dizer que a tela já está
+        // exibindo: avançar o relógio antes disso pularia o checkpoint
+        // (corrida que aparecia com a suíte inteira carregando a máquina).
+        // Abrir e estender vão pela mesma fila serial do registro.
+        h.esperar { h.campo<Boolean>(atividade, "exibindo") }
+
+        h.avancar(40_000L) // checkpoint do sinal de vida
+        h.esperar { RegistroOperacional(h.contexto).pendentes("M-0235").any { it.aberto && it.duracaoMs > 0 } }
+
+        // Nem o código de instalação nem a chave recebida vão ao log.
+        val log = org.robolectric.shadows.ShadowLog.getLogs().joinToString("\n") { "${it.msg} ${it.throwable}" }
+        listOf("7K4M", "9Q2W", chave).forEach { assertFalse("'$it' no log", log.contains(it)) }
     }
 
     @Test
