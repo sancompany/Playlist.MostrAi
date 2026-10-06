@@ -104,8 +104,16 @@ class LigarTelaTest {
         energia.setIsInteractive(true)
         val abrir = android.content.Intent(contexto, PlayerActivity::class.java).putExtra(LigarTela.EXTRA_ACORDAR, true)
 
-        Robolectric.buildActivity(PlayerActivity::class.java, abrir).setup()
+        val atividade = Robolectric.buildActivity(PlayerActivity::class.java, abrir).setup().get()
 
+        // O "turn screen on" só age quando a janela fica visível, depois do
+        // onResume: continua ligado, e nada é medido ainda.
+        assertTrue(shadowOf(atividade).turnScreenOn)
+        assertEquals("teste ainda sem resultado", null, LigarTela.situacao(contexto))
+
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(LigarTela.ESPERA_MEDICAO_MS))
+
+        assertFalse("depois de medir, a Activity não acende mais a tela", shadowOf(atividade).turnScreenOn)
         val situacao = LigarTela.situacao(contexto)!!
         assertTrue(situacao, situacao.startsWith("alarme na hora; tela estava desligada; Android informou tela ligada"))
         assertTrue(DiarioBordo(contexto).ultimos(20).any { it.codigo == DiarioBordo.Codigo.LIGAR_TELA_TESTE.name })
@@ -140,7 +148,21 @@ class LigarTelaTest {
 
     @Test
     fun `abrir o Player normalmente nao mexe na tela nem registra teste`() {
-        Robolectric.buildActivity(PlayerActivity::class.java).setup()
+        val atividade = Robolectric.buildActivity(PlayerActivity::class.java).setup().get()
+        assertFalse(shadowOf(atividade).turnScreenOn)
         assertNull(LigarTela.situacao(contexto))
+    }
+
+    @Test
+    fun `Player do teste que sai da frente antes da medicao registra na hora e desliga o pedido`() {
+        energia.setIsInteractive(false)
+        dispararTeste()
+        val abrir = android.content.Intent(contexto, PlayerActivity::class.java).putExtra(LigarTela.EXTRA_ACORDAR, true)
+        val controle = Robolectric.buildActivity(PlayerActivity::class.java, abrir).setup()
+
+        controle.pause().stop()
+
+        assertFalse(shadowOf(controle.get()).turnScreenOn)
+        assertTrue(LigarTela.situacao(contexto)!!.endsWith("Android informou tela ainda desligada"))
     }
 }

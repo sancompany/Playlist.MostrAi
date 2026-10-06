@@ -48,6 +48,9 @@ object LigarTela {
     const val ACAO = "br.com.mostrai.player.LIGAR_TELA_TESTE"
     const val EXTRA_ACORDAR = "br.com.mostrai.player.ACORDAR_TELA"
     const val ESPERA_TESTE_MS = 2 * 60_000L
+
+    /** Depois de a Activity do teste voltar à frente: tempo para a janela acender antes de medir. */
+    const val ESPERA_MEDICAO_MS = 5_000L
     private const val WAKE_LOCK_MS = 15_000L
 
     fun agendarTeste(context: Context, atrasoMs: Long = ESPERA_TESTE_MS) {

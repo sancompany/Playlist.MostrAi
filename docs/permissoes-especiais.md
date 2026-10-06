@@ -55,7 +55,9 @@ manter o processador e o relógio de despertar vivos. O Player 3.0.1:
   continuam sem acordar TV em standby);
 - tem um botão no bloco técnico, "Testar ligar tela (2 min)", que agenda
   um alarme `ELAPSED_REALTIME_WAKEUP`, pede a tela com wake lock
-  `ACQUIRE_CAUSES_WAKEUP` por 15 s e abre o Player com "turn screen on";
+  `ACQUIRE_CAUSES_WAKEUP` por 15 s e abre o Player com "turn screen on"
+  (mantido até a medição, 5 s depois de a Activity voltar à frente — só
+  então a janela teve chance de acender o painel);
 - registra o que o Android disse (alarme na hora ou atrasado, tela no
   disparo, tela depois) no bloco técnico e no diário (`LIGAR_TELA_TESTE`).
 

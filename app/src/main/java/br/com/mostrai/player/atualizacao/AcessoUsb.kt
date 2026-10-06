@@ -37,6 +37,7 @@ object AcessoUsb {
 
     private const val ARQUIVO = "mostrai_atualizacao_usb"
     private const val PREFIXO_ARVORE = "arvore_"
+    private const val PREFIXO_RECUSA = "recusa_"
 
     /** Leitura direta só faz sentido até o Android 10 (no 11+ o arquivo APK não é mídia). */
     fun leituraDiretaPossivel(sdk: Int = Build.VERSION.SDK_INT): Boolean = sdk <= Build.VERSION_CODES.Q
@@ -93,6 +94,27 @@ object AcessoUsb {
         val aindaVale = context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
         return uri.takeIf { aindaVale }
     }
+
+    /**
+     * "Agora não" ao pedido de acesso: um pendrive que fica espetado na TV
+     * (de outro uso) não volta a cobrir o anúncio a cada reboot. Vale até
+     * ele ser visto fora ([esquecerRecusasAusentes]) ou o técnico apertar
+     * Verificar USB ([esquecerRecusas]).
+     */
+    fun recusarAcesso(context: Context, volumeId: String) {
+        prefs(context).edit().putBoolean(PREFIXO_RECUSA + volumeId, true).apply()
+    }
+
+    fun acessoRecusado(context: Context, volumeId: String): Boolean =
+        prefs(context).getBoolean(PREFIXO_RECUSA + volumeId, false)
+
+    fun esquecerRecusasAusentes(context: Context, montados: Set<String>) {
+        val p = prefs(context)
+        val ausentes = p.all.keys.filter { it.startsWith(PREFIXO_RECUSA) && it.removePrefix(PREFIXO_RECUSA) !in montados }
+        if (ausentes.isNotEmpty()) p.edit().apply { ausentes.forEach(::remove) }.apply()
+    }
+
+    fun esquecerRecusas(context: Context) = esquecerRecusasAusentes(context, emptySet())
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)

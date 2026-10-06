@@ -137,12 +137,12 @@ pendrive). Para os itens de recusa, outros pendrives:
 
 | # | Passo | Esperado | PASS/FAIL |
 |---|---|---|---|
-| 46 | Com o vídeo tocando, conectar **P-comum** | Nada aparece para o público; vídeo **não** para. Primeira vez: pode aparecer "Pendrive conectado. Para procurar atualização do Mostraí, permita o acesso ao pendrive." — **Agora não**. Bloco técnico: "USB conectado: sim" e o resultado | |
+| 46 | Com o vídeo tocando, conectar **P-comum** | Nada aparece para o público; vídeo **não** para. Primeira vez: pode aparecer "Pendrive conectado. Para procurar atualização do Mostraí, permita o acesso ao pendrive." — **Agora não**; reiniciar a TV com o P-comum espetado: o pedido **não** volta. Bloco técnico: "USB conectado: sim" e o resultado | |
 | 47 | Retirar P-comum; conectar **P-teste** | Primeira vez: modal de acesso ao pendrive → **Permitir acesso** → diálogo do Android → Permitir. Anotar qual apareceu (permissão de armazenamento ou seletor de pastas) | |
 | 48 | (sequência do 47) | Em segundos: **ATUALIZAÇÃO MOSTRAÍ — Nova versão encontrada — Atual: 3.0.1 / Nova: 3.0.1-teste-n7 — [Atualizar agora] [Depois]**; vídeo segue por baixo. Se o bloco técnico disser "este Android não deixa o Mostraí ler o pendrive": **FAIL do caminho USB nesta TV** — anotar e pular para o 58 | |
 | 49 | **Depois** | Modal some; vídeo segue; esperar 5 min com o pendrive: **não** reaparece | |
 | 50 | Retirar e reconectar P-teste | Modal reaparece | |
-| 51 | VOLTAR com o modal | Equivale a Depois (não pede o PIN) | |
+| 51 | VOLTAR com o modal | Equivale a Depois (não pede o PIN). Reconectar; com o modal aberto, pôr a TV em standby e religar: o modal volta (standby não é "Depois"). Sem tocar em nada, o modal some sozinho em ~30 s | |
 | 52 | VOLTAR → bloco técnico | Seção ATUALIZAÇÃO: versão instalada 3.0.1, permissão para instalar, USB conectado, versão encontrada `3.0.1-teste-n7 (7)`, última verificação, último resultado; botões **Verificar USB** e **Instalar atualização**. Nenhum caminho, hash ou certificado | |
 | 53 | **Instalar atualização** (ou reconectar) → **Atualizar agora**, primeira vez | Modal "Para atualizar o Mostraí pelo pendrive, permita instalações pelo Mostraí Player." → **Permitir atualizações** abre a tela do Android; anotar o caminho na TCL (Fontes desconhecidas / Instalar apps desconhecidos) → liberar o Mostraí Player → VOLTAR | |
 | 54 | Ao voltar | Modal "Nova versão encontrada" de novo; durante a tela do Android o Player **não** pulou por cima (watchdog em pausa) | |

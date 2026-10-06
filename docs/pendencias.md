@@ -91,7 +91,14 @@ físico mais incerto (`docs/hardware/tcl-32s6500s.md`). Uma pausa do
 watchdog deixada por um boot anterior pode valer até 10 min depois do
 reboot (o `BootReceiver` abre o Player e desfaz a pausa do mesmo jeito).
 "Ligar a tela" é só teste manual; efeito de `TURN_SCREEN_ON` no Android
-14+ não confirmado.
+14+ não confirmado. Pacote de teste (`-teste-`, NAO-DISTRIBUIR) assinado
+com a chave oficial é aceito pelo Player se chegar a uma TV de cliente — a
+TV iria para um `versionCode` queimado; a guarda é só a marcação do pacote.
+
+**Revisão do delta da 3.0.1 (06/10/2026, duas frentes):** 0 HIGH; 5 MEDIUM
+corrigidos com teste (ver `CLAUDE.md`); baixos aceitos: mensagem "cópia
+incompleta" para arquivo de tamanho desconhecido acima do teto e "pendrive
+ilegível" para disco cheio durante a escrita (só texto).
 
 ## Só o dono faz
 

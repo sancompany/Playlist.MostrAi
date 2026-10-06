@@ -46,6 +46,20 @@ class EstadoAtualizacaoTest {
     }
 
     @Test
+    fun `Depois dado com o pendrive ja fora nao vale para a volta dele`() {
+        EstadoAtualizacao.registrarMontados(setOf("A"))
+        EstadoAtualizacao.marcarVerificado("A")
+        // O modal seguia aberto; o técnico tirou o pendrive e só então
+        // apertou Depois (ou o modal fechou sozinho).
+        EstadoAtualizacao.registrarMontados(emptySet())
+        EstadoAtualizacao.dispensar("A")
+        assertFalse(EstadoAtualizacao.foiDispensado("A"))
+
+        assertEquals(setOf("A"), EstadoAtualizacao.registrarMontados(setOf("A")))
+        assertFalse(EstadoAtualizacao.foiDispensado("A"))
+    }
+
+    @Test
     fun `Verificar USB do tecnico le e oferece de novo o que esta montado`() {
         EstadoAtualizacao.registrarMontados(setOf("A"))
         EstadoAtualizacao.marcarVerificado("A")

@@ -1,7 +1,6 @@
 package br.com.mostrai.player
 
 import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -461,25 +460,36 @@ class PlayerActivity : AppCompatActivity() {
         esconderInterfaceDoSistema()
         Watchdog.registrarSinalDeVida(this)
         voltouDeTelaDoAndroid()
-        if (aguardandoResultadoLigarTela) {
-            aguardandoResultadoLigarTela = false
-            val ligada = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: false
-            LigarTela.registrarResultado(this, ligada)
-            // A Activity não acende mais a tela por conta própria depois do teste.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setTurnScreenOn(false)
-            else @Suppress("DEPRECATION") window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
-        }
+        // O "turn screen on" só age quando a janela fica visível, depois do
+        // onResume: medir (e desligar) alguns segundos depois, não aqui.
+        if (aguardandoResultadoLigarTela) handler.postDelayed(concluirTesteLigarTela, LigarTela.ESPERA_MEDICAO_MS)
+    }
+
+    private val concluirTesteLigarTela = Runnable { concluirTesteLigarTela() }
+
+    private fun concluirTesteLigarTela() {
+        if (!aguardandoResultadoLigarTela) return
+        aguardandoResultadoLigarTela = false
+        handler.removeCallbacks(concluirTesteLigarTela)
+        val ligada = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: false
+        LigarTela.registrarResultado(this, ligada)
+        // A Activity não acende mais a tela por conta própria depois do teste.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setTurnScreenOn(false)
+        else @Suppress("DEPRECATION") window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
     }
 
     override fun onStop() {
         super.onStop()
         iniciada = false
+        // Saiu da frente no meio do teste de ligar a tela: registra agora.
+        concluirTesteLigarTela()
         handler.removeCallbacksAndMessages(null)
         // Saiu da frente sem PIN (HOME, outro app por cima): volta em segundos.
         // A saída por PIN já gravou a autorização, e o watchdog a respeita.
         if (!isChangingConfigurations) Watchdog.saiuDaFrente(this)
         pararCiclo()
         telaPin.esconder()
+        guardarOfertaAberta()
         telaAtualizacao.esconder()
         pararVigiaDePendrives()
         // Só libera — nunca chama encerrarIntroducao(), que iniciaria um
@@ -1392,7 +1402,14 @@ class PlayerActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             try {
-                val volumes = withContext(Dispatchers.IO) { FontesAtualizacao.volumes(this@PlayerActivity).volumes() }
+                val volumes = withContext(Dispatchers.IO) {
+                    // Cópia aprovada que nenhuma oferta deste processo conhece
+                    // (sobrou de antes de um reinício): fora.
+                    if (EstadoAtualizacao.candidato == null) verificadorUsb.limpar()
+                    FontesAtualizacao.volumes(this@PlayerActivity).volumes().also { v ->
+                        AcessoUsb.esquecerRecusasAusentes(this@PlayerActivity, v.map { it.id }.toSet())
+                    }
+                }
                 val novos = EstadoAtualizacao.registrarMontados(volumes.map { it.id }.toSet())
                 for (volume in volumes.filter { it.id in novos }) {
                     if (!iniciada) break
@@ -1419,6 +1436,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private suspend fun verificarPendrive(volume: VolumeUsb) {
         val acesso = withContext(Dispatchers.IO) { FontesAtualizacao.acesso(this@PlayerActivity, volume) }
+        // Saiu da frente enquanto decidia: não lê o pendrive nem o dá por
+        // verificado — ao voltar, ele é verificado de novo.
+        if (!iniciada) return
         val origem = when (acesso) {
             is AcessoUsb.Acesso.Direto -> OrigemArquivo(acesso.raiz)
             is AcessoUsb.Acesso.Documento -> OrigemDocumento(contentResolver, acesso.arvore)
@@ -1433,7 +1453,10 @@ class PlayerActivity : AppCompatActivity() {
                 else -> "Pendrive conectado, mas este Android não deixa o Mostraí ler o pendrive."
             }
             val pedivel = acesso == AcessoUsb.Acesso.PrecisaPermissaoLeitura || acesso == AcessoUsb.Acesso.PrecisaSeletor
-            if (pedivel && !EstadoAtualizacao.foiDispensado(volume.id) && !telaAtualizacao.visivel) {
+            if (pedivel && !EstadoAtualizacao.foiDispensado(volume.id) &&
+                !AcessoUsb.acessoRecusado(this, volume.id) && !telaAtualizacao.visivel
+            ) {
+                telaPin.esconder()
                 volumeAguardandoAcesso = volume
                 telaAtualizacao.mostrar(TelaAtualizacao.Modo.ACESSO_PENDRIVE, BuildConfig.VERSION_NAME, null)
             }
@@ -1468,7 +1491,15 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         if (!forcado && EstadoAtualizacao.foiDispensado(candidato.volumeId)) return
+        if (!iniciada) {
+            // A cópia terminou com o Player fora da frente: oferecer ao voltar
+            // (um modal invisível fecharia sozinho como "Depois").
+            EstadoAtualizacao.retomarAoVoltar = true
+            return
+        }
         if (telaAtualizacao.visivel) return
+        // Nada focável escondido debaixo do modal.
+        telaPin.esconder()
         val modo = if (InstaladorApk.podeInstalar(this)) TelaAtualizacao.Modo.DISPONIVEL else TelaAtualizacao.Modo.PERMISSAO_INSTALAR
         telaAtualizacao.mostrar(modo, BuildConfig.VERSION_NAME, candidato.versionName)
     }
@@ -1476,6 +1507,19 @@ class PlayerActivity : AppCompatActivity() {
     private fun adiarAtualizacao(modo: TelaAtualizacao.Modo) {
         val volume = if (modo == TelaAtualizacao.Modo.ACESSO_PENDRIVE) volumeAguardandoAcesso?.id else EstadoAtualizacao.candidato?.volumeId
         volume?.let(EstadoAtualizacao::dispensar)
+        if (modo == TelaAtualizacao.Modo.ACESSO_PENDRIVE) volume?.let { AcessoUsb.recusarAcesso(this, it) }
+    }
+
+    /**
+     * A Activity saiu da frente (standby, HOME) com o modal aberto e sem
+     * resposta: não é "Depois". A oferta volta quando o Player voltar.
+     */
+    private fun guardarOfertaAberta() {
+        when (telaAtualizacao.modo) {
+            TelaAtualizacao.Modo.DISPONIVEL, TelaAtualizacao.Modo.PERMISSAO_INSTALAR -> EstadoAtualizacao.retomarAoVoltar = true
+            TelaAtualizacao.Modo.ACESSO_PENDRIVE -> volumeAguardandoAcesso?.let { EstadoAtualizacao.reverificar(it.id) }
+            null -> Unit
+        }
     }
 
     private fun confirmarAtualizacao(modo: TelaAtualizacao.Modo) {
@@ -1504,9 +1548,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         Watchdog.pausarRetorno(this)
         EstadoAtualizacao.marcarInstalacaoIniciada(this, candidato.versionCode)
-        try {
-            startActivity(InstaladorApk.intentInstalar(this, candidato.arquivo))
-        } catch (e: ActivityNotFoundException) {
+        if (!InstaladorApk.abrirPrimeira(listOf(InstaladorApk.intentInstalar(this, candidato.arquivo)), ::startActivity)) {
             Watchdog.rearmar(this)
             EstadoAtualizacao.instalacaoNaoConcluida(this, BuildConfig.VERSION_CODE.toLong())
             EstadoAtualizacao.ultimoResultado = "Instalador do Android indisponível neste aparelho."
@@ -1517,14 +1559,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun abrirPermissaoDeInstalar() {
         Watchdog.pausarRetorno(this)
         EstadoAtualizacao.retomarAoVoltar = true
-        for (intent in InstaladorApk.intentsPermissao(this)) {
-            try {
-                startActivity(intent)
-                return
-            } catch (_: ActivityNotFoundException) {
-                // Próxima opção: cada firmware traz um conjunto de telas.
-            }
-        }
+        // Cada firmware traz um conjunto de telas: a primeira que abrir.
+        if (InstaladorApk.abrirPrimeira(InstaladorApk.intentsPermissao(this), ::startActivity)) return
         EstadoAtualizacao.retomarAoVoltar = false
         Watchdog.rearmar(this)
         EstadoAtualizacao.ultimoResultado = "Configurações do Android indisponíveis para liberar a instalação."
@@ -1538,9 +1574,7 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         Watchdog.pausarRetorno(this)
-        try {
-            pedirPastaUsb.launch(AcessoUsb.intentSeletor(volume))
-        } catch (_: ActivityNotFoundException) {
+        if (!InstaladorApk.abrirPrimeira(listOf(AcessoUsb.intentSeletor(volume))) { pedirPastaUsb.launch(it) }) {
             Watchdog.rearmar(this)
             EstadoAtualizacao.ultimoResultado = "Seletor de pastas indisponível neste Android."
         }

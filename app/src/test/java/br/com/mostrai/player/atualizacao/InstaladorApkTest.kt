@@ -66,6 +66,23 @@ class InstaladorApkTest {
     }
 
     @Test
+    fun `tela que o firmware nao tem ou nao deixa abrir passa para a proxima sem derrubar nada`() {
+        val tentadas = mutableListOf<String>()
+        val intents = listOf(Intent("a"), Intent("b"), Intent("c"))
+        val abriu = InstaladorApk.abrirPrimeira(intents) {
+            tentadas += it.action!!
+            when (it.action) {
+                "a" -> throw android.content.ActivityNotFoundException()
+                "b" -> throw SecurityException("Permission Denial: not exported")
+            }
+        }
+        assertTrue(abriu)
+        assertEquals(listOf("a", "b", "c"), tentadas)
+
+        assertFalse(InstaladorApk.abrirPrimeira(listOf(Intent("x"))) { throw SecurityException("x") })
+    }
+
+    @Test
     fun `liberar instalacoes abre primeiro a tela do proprio Mostrai`() {
         val intents = InstaladorApk.intentsPermissao(contexto)
         assertEquals(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, intents.first().action)

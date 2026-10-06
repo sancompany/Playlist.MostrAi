@@ -1,5 +1,6 @@
 package br.com.mostrai.player.atualizacao
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -38,6 +39,26 @@ object InstaladorApk {
      * mais direto ao mais genérico — cada firmware de TV traz um conjunto
      * diferente de telas. Tentar na ordem até um abrir.
      */
+    /**
+     * Tenta cada Intent até uma abrir. Firmware de TV pode não ter a tela
+     * (`ActivityNotFoundException`) ou resolvê-la para uma Activity que não
+     * deixa abrir (`SecurityException`, Android 8–12): nenhuma das duas pode
+     * derrubar o Player. `false` = nenhuma abriu.
+     */
+    fun abrirPrimeira(intents: List<Intent>, abrir: (Intent) -> Unit): Boolean {
+        for (intent in intents) {
+            try {
+                abrir(intent)
+                return true
+            } catch (_: ActivityNotFoundException) {
+                // próxima
+            } catch (_: SecurityException) {
+                // próxima
+            }
+        }
+        return false
+    }
+
     fun intentsPermissao(context: Context): List<Intent> = listOf(
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")),
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES),

@@ -369,7 +369,16 @@ Fechadas:
   teste do 3.0.0; o 7 é o pacote de teste do modal; próxima oficial 8+).
   370 → 462 testes (validação, cópia, acesso, `FileProvider`, Intent, pausa
   do watchdog, `MY_PACKAGE_REPLACED`, ciclo completo com pendrive simulado,
-  ligar tela), mutações das guardas do updater mortas. Checklist físico 45 → 65 itens. **Atualizador não
+  ligar tela), mutações das guardas do updater mortas. Checklist físico 45 → 65 itens. Revisão do delta
+  em duas frentes (Android/ciclo de vida; scripts/assinatura): 0 HIGH, 5
+  MEDIUM corrigidos com teste (exceção do seletor de pastas fora de E/S
+  derrubava o Player; cópia que terminava fora da frente virava "Depois";
+  "Depois" de pendrive já retirado sobrevivia à volta; `SecurityException`
+  de tela de firmware com o watchdog já em pausa; teste de ligar a tela
+  desligava o "turn screen on" antes de ele agir) e os baixos baratos
+  (todos os assinantes nos scripts, `uses-permission-sdk-23`, argumentos do
+  empacotador, guarda de `buildConfigField`, modal 30 s como o PIN, "Agora
+  não" do acesso persiste enquanto o pendrive não sai). **Atualizador não
   aprovado** até os itens 46–61 passarem na TCL.
 
 Próxima estação: 6 — Prontidão, pede Opus com esforço alto, e só abre depois

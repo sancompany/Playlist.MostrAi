@@ -34,6 +34,9 @@ object EstadoAtualizacao {
         val saiu = conectados - ids
         dispensados.removeAll(saiu)
         verificados.removeAll(saiu)
+        // Chegou agora: um "Depois" dado depois de ele sair (modal ainda
+        // aberto) não vale para a nova conexão.
+        dispensados.removeAll(ids - conectados)
         conectados = ids
         return ids - verificados
     }
@@ -60,9 +63,10 @@ object EstadoAtualizacao {
         dispensados.clear()
     }
 
+    /** "Depois" só vale para o pendrive que ainda está conectado. */
     @Synchronized
     fun dispensar(volumeId: String) {
-        dispensados += volumeId
+        if (volumeId in conectados) dispensados += volumeId
     }
 
     @Synchronized

@@ -91,6 +91,7 @@ class TelaAtualizacao(
     }
 
     companion object {
-        const val INATIVIDADE_MS = 2 * 60_000L
+        /** O mesmo do pedido de PIN: o anúncio por baixo continua contando (BUG-028). */
+        const val INATIVIDADE_MS = 30_000L
     }
 }

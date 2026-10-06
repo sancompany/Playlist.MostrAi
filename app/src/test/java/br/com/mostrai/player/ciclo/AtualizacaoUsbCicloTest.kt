@@ -251,6 +251,76 @@ class AtualizacaoUsbCicloTest {
         h.vista<View>(a, R.id.botaoVerificarUsb).performClick()
 
         h.esperar { modalVisivel(a) }
+        assertEquals("nada focável escondido debaixo do modal", View.GONE, h.vista<View>(a, R.id.telaPin).visibility)
+    }
+
+    // ------------------------------------------------------------ fora da frente
+
+    @Test
+    fun `copia que termina com o Player fora da frente nao vira Depois e e oferecida na volta`() {
+        gravarPacote()
+        val lendo = java.util.concurrent.CountDownLatch(1)
+        val liberar = java.util.concurrent.CountDownLatch(1)
+        FontesAtualizacao.leitor = {
+            br.com.mostrai.player.atualizacao.LeitorDeApk { f -> lendo.countDown(); liberar.await(); ApkFalso.LeitorFalso.ler(f) }
+        }
+        val controle = subirExibindo()
+        val a = controle.get()
+        conectar()
+        h.esperar { lendo.count == 0L }
+
+        // TV em standby / HOME no meio da cópia.
+        controle.pause().stop()
+        liberar.countDown()
+        h.esperar { EstadoAtualizacao.candidato != null }
+        h.avancar(br.com.mostrai.player.ui.TelaAtualizacao.INATIVIDADE_MS + 1_000)
+        assertFalse(modalVisivel(a))
+        assertFalse("ninguém disse Depois", EstadoAtualizacao.foiDispensado(volume.id))
+
+        controle.restart().start().resume()
+        h.idle()
+        assertTrue(modalVisivel(a))
+    }
+
+    @Test
+    fun `modal aberto quando a TV sai da frente volta quando ela volta`() {
+        gravarPacote()
+        val controle = subirExibindo()
+        val a = controle.get()
+        conectar()
+        h.esperar { modalVisivel(a) }
+
+        controle.pause().stop()
+        assertFalse(modalVisivel(a))
+        assertFalse(EstadoAtualizacao.foiDispensado(volume.id))
+        controle.restart().start().resume()
+        h.idle()
+
+        assertTrue(modalVisivel(a))
+    }
+
+    @Test
+    fun `Agora nao ao acesso vale depois do reboot enquanto o pendrive nao sai`() {
+        gravarPacote()
+        acesso = { AcessoUsb.Acesso.PrecisaSeletor }
+        conectar(avisar = false)
+        val primeiro = subirExibindo()
+        h.esperar { modalVisivel(primeiro.get()) }
+        h.vista<View>(primeiro.get(), R.id.botaoAtualizacaoDepois).performClick()
+        h.idle()
+        primeiro.pause().stop().destroy()
+
+        // Reboot: o estado do processo some; o pendrive continua espetado.
+        EstadoAtualizacao.reiniciar()
+        val segundo = subirExibindo()
+        val b = segundo.get()
+        h.deixarRodar(500)
+        assertFalse("pendrive de outro uso não cobre o anúncio a cada boot", modalVisivel(b))
+
+        // Saiu e voltou: pergunta de novo.
+        desconectar()
+        conectar()
+        h.esperar { modalVisivel(b) }
     }
 
     // ------------------------------------------------------------ instalar

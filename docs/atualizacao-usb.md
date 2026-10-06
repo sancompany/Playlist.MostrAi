@@ -119,11 +119,22 @@ nunca instalação silenciosa, root, `adb` ou Device Owner.
 
 ## Depois
 
-"Depois" (botão, VOLTAR ou 2 min sem resposta) não reoferece o mesmo
-pendrive enquanto ele estiver conectado. Volta a oferecer quando: o
-pendrive é retirado e reconectado; o processo reinicia (reboot); o
-técnico aperta **Verificar USB** ou **Instalar atualização** no bloco
-técnico (VOLTAR → tela do PIN).
+"Depois" (botão, VOLTAR ou 30 s sem resposta — o mesmo do pedido de PIN:
+o anúncio por baixo continua contando) não reoferece o mesmo pendrive
+enquanto ele estiver conectado. Volta a oferecer quando: o pendrive é
+retirado e reconectado; o processo reinicia (reboot); o técnico aperta
+**Verificar USB** ou **Instalar atualização** no bloco técnico (VOLTAR →
+tela do PIN). "Depois" dado com o pendrive já fora não vale para a volta
+dele.
+
+"Agora não" ao **pedido de acesso** ao pendrive vale também depois do
+reboot, enquanto aquele pendrive não for visto fora da TV — um pendrive de
+outro uso deixado espetado não cobre o anúncio a cada boot. Verificar USB
+desfaz.
+
+Se o Player sai da frente (standby, HOME) com o modal aberto, ou se a
+cópia termina com ele fora da frente, isso **não** é "Depois": a oferta
+volta quando o Player voltar.
 
 ## Bloco técnico — seção ATUALIZAÇÃO
 
