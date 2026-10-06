@@ -1,6 +1,11 @@
 package br.com.mostrai.player
 
+import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Network
@@ -9,14 +14,17 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -27,11 +35,22 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import br.com.mostrai.player.atualizacao.AcessoUsb
+import br.com.mostrai.player.atualizacao.AtualizacaoConcluidaReceiver
+import br.com.mostrai.player.atualizacao.EstadoAtualizacao
+import br.com.mostrai.player.atualizacao.FontesAtualizacao
+import br.com.mostrai.player.atualizacao.InstaladorApk
+import br.com.mostrai.player.atualizacao.OrigemArquivo
+import br.com.mostrai.player.atualizacao.OrigemDocumento
+import br.com.mostrai.player.atualizacao.ValidacaoAtualizacao
+import br.com.mostrai.player.atualizacao.VerificadorUsb
+import br.com.mostrai.player.atualizacao.VolumeUsb
 import br.com.mostrai.player.cache.CacheMidia
 import br.com.mostrai.player.config.ConfigAparelho
 import br.com.mostrai.player.config.MargensOverscan
 import br.com.mostrai.player.estado.DiarioBordo
 import br.com.mostrai.player.estado.EstadoPlayer
+import br.com.mostrai.player.kiosk.LigarTela
 import br.com.mostrai.player.kiosk.PoliticaDeRetorno
 import br.com.mostrai.player.kiosk.Watchdog
 import br.com.mostrai.player.network.HeartbeatJson
@@ -54,11 +73,13 @@ import br.com.mostrai.player.provisionamento.Provisionador
 import br.com.mostrai.player.ui.EstadoInstitucional
 import br.com.mostrai.player.ui.InfoSuporte
 import br.com.mostrai.player.ui.RotacaoTela
+import br.com.mostrai.player.ui.TelaAtualizacao
 import br.com.mostrai.player.ui.TelaInstitucional
 import br.com.mostrai.player.ui.TelaPinSaida
 import br.com.mostrai.player.ui.TelaProvisionamento
 import java.time.Instant
 import java.time.OffsetDateTime
+import java.io.File
 import java.time.ZoneId
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -98,6 +119,9 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var institucional: TelaInstitucional
     private lateinit var telaProvisionamento: TelaProvisionamento
     private lateinit var telaPin: TelaPinSaida
+    private lateinit var telaAtualizacao: TelaAtualizacao
+    private lateinit var verificadorUsb: VerificadorUsb
+    private lateinit var botaoInstalarAtualizacao: View
     private lateinit var raiz: View
 
     /** Carrega o conteúdo de verdade e gira — ver [aplicarRotacaoEMargem]. */
@@ -294,6 +318,55 @@ class PlayerActivity : AppCompatActivity() {
     }
     private var callbackRegistrado = false
 
+    // ------------------------------------------------ atualização por pendrive
+
+    /** Uma verificação de pendrive por vez; o pedido que chegar no meio é atendido ao fim. */
+    private val verificandoUsb = AtomicBoolean(false)
+    private var verificacaoUsbPendente = false
+
+    /** O pendrive cujo acesso o modal está pedindo (permissão de leitura ou seletor). */
+    private var volumeAguardandoAcesso: VolumeUsb? = null
+
+    /** Aberta pelo teste de "ligar a tela": registrar o que o Android diz da tela. */
+    private var aguardandoResultadoLigarTela = false
+
+    /** Pendrive conectado com o Player aberto (o Android avisa por broadcast). */
+    private val receptorMidia = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            handler.post { verificarPendrives() }
+        }
+    }
+    private var receptorMidiaRegistrado = false
+
+    /**
+     * Rede de segurança do broadcast: firmware que não avisa, montagem que
+     * aconteceu no standby. Só lista os volumes (barato); o pendrive só é
+     * lido quando aparece um novo.
+     */
+    private val vigiarPendrives = object : Runnable {
+        override fun run() {
+            verificarPendrives()
+            handler.postDelayed(this, INTERVALO_VIGIA_USB_MS)
+        }
+    }
+
+    private val pedirLeituraUsb = registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedida ->
+        val volume = volumeAguardandoAcesso
+        if (concedida && volume != null) EstadoAtualizacao.reverificar(volume.id)
+        if (!concedida) EstadoAtualizacao.ultimoResultado = "Acesso ao pendrive negado no Android."
+        verificarPendrives()
+    }
+
+    private val pedirPastaUsb = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
+        val volume = volumeAguardandoAcesso
+        val arvore = resultado.data?.data
+        if (volume != null && arvore != null) {
+            AcessoUsb.guardarArvore(this, volume.id, arvore)
+            EstadoAtualizacao.reverificar(volume.id)
+        }
+        verificarPendrives()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
@@ -325,6 +398,26 @@ class PlayerActivity : AppCompatActivity() {
         institucional = findViewById(R.id.institucional)
         telaProvisionamento = TelaProvisionamento(findViewById(R.id.telaProvisionamento), ::conectar)
         telaPin = TelaPinSaida(findViewById(R.id.telaPin), config, ::sairComAutorizacao)
+        telaAtualizacao = TelaAtualizacao(findViewById(R.id.telaAtualizacao), ::confirmarAtualizacao, ::adiarAtualizacao)
+        verificadorUsb = VerificadorUsb(
+            dirPrivado = File(filesDir, AtualizacaoConcluidaReceiver.DIRETORIO),
+            leitor = FontesAtualizacao.leitor(this),
+            instalado = { FontesAtualizacao.instalado(this) },
+            certificadoOficial = BuildConfig.CERTIFICADO_OFICIAL_SHA256,
+            espacoLivre = { cacheMidia.espacoLivre() },
+            reserva = { cacheMidia.reservaBytes() },
+        )
+        botaoInstalarAtualizacao = findViewById(R.id.botaoInstalarAtualizacao)
+        findViewById<View>(R.id.botaoVerificarUsb).setOnClickListener { verificarUsbAgora() }
+        botaoInstalarAtualizacao.setOnClickListener {
+            telaPin.esconder()
+            oferecerAtualizacao(forcado = true)
+        }
+        findViewById<View>(R.id.botaoLigarTela).setOnClickListener {
+            LigarTela.agendarTeste(this)
+            preencherInfoSuporte()
+        }
+        tratarPedidoDeLigarTela(intent)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         aplicarRotacaoEMargem()
@@ -353,12 +446,28 @@ class PlayerActivity : AppCompatActivity() {
         Watchdog.registrarSinalDeVida(this)
         handler.postDelayed(renovarSinalDeVida, INTERVALO_SINAL_DE_VIDA_MS)
         if (introJaTocou) entrarEmOperacao() else tocarIntroducao()
+        iniciarVigiaDePendrives()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        tratarPedidoDeLigarTela(intent)
     }
 
     override fun onResume() {
         super.onResume()
         esconderInterfaceDoSistema()
         Watchdog.registrarSinalDeVida(this)
+        voltouDeTelaDoAndroid()
+        if (aguardandoResultadoLigarTela) {
+            aguardandoResultadoLigarTela = false
+            val ligada = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: false
+            LigarTela.registrarResultado(this, ligada)
+            // A Activity não acende mais a tela por conta própria depois do teste.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setTurnScreenOn(false)
+            else @Suppress("DEPRECATION") window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        }
     }
 
     override fun onStop() {
@@ -370,6 +479,8 @@ class PlayerActivity : AppCompatActivity() {
         if (!isChangingConfigurations) Watchdog.saiuDaFrente(this)
         pararCiclo()
         telaPin.esconder()
+        telaAtualizacao.esconder()
+        pararVigiaDePendrives()
         // Só libera — nunca chama encerrarIntroducao(), que iniciaria um
         // ciclo novo bem no momento em que a Activity está parando.
         if (playerView.player === introPlayer) playerView.player = null
@@ -1133,6 +1244,10 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (telaPin.visivel) telaPin.registrarAtividade()
+        if (telaAtualizacao.visivel) {
+            telaAtualizacao.registrarAtividade()
+            return super.dispatchKeyEvent(event)
+        }
         if (telaProvisionamento.aoTeclar(event) || telaPin.aoTeclar(event)) return true
         // As setas não se remapeiam: o conteúdo gira junto com a TV montada de
         // lado, então o layout já está de pé para quem olha, e a ViewRootImpl
@@ -1150,6 +1265,7 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun aoVoltar() {
         when {
+            telaAtualizacao.visivel -> telaAtualizacao.adiar()
             telaPin.visivel -> telaPin.esconder()
             cicloAtivo -> if (telaPin.pedir()) preencherInfoSuporte()
         }
@@ -1189,10 +1305,245 @@ class PlayerActivity : AppCompatActivity() {
                     comprovantesPendentes = fila.resumo().aguardandoEnvio,
                     sessoesPendentes = sessoes,
                     tempoOperacionalPendenteMs = tempo,
+                    atualizacao = InfoSuporte.Atualizacao(
+                        podeInstalar = InstaladorApk.podeInstalar(this@PlayerActivity),
+                        pendrivesConectados = EstadoAtualizacao.conectados.size,
+                        acessoPendrive = if (AcessoUsb.leituraDiretaPossivel()) {
+                            "leitura ${if (AcessoUsb.temPermissaoLeitura(this@PlayerActivity)) "permitida" else "não permitida"}"
+                        } else {
+                            "seletor de pastas ${if (AcessoUsb.seletorDisponivel(this@PlayerActivity)) "disponível" else "indisponível"}"
+                        },
+                        versaoEncontrada = EstadoAtualizacao.versaoEncontrada,
+                        ultimaVerificacaoMs = EstadoAtualizacao.ultimaVerificacaoMs,
+                        ultimoResultado = EstadoAtualizacao.ultimoResultado,
+                        ultimaAtualizacao = EstadoAtualizacao.ultimaAtualizacao(this@PlayerActivity),
+                        ligarTela = LigarTela.situacao(this@PlayerActivity),
+                    ),
                 )
             }
+            botaoInstalarAtualizacao.visibility =
+                if (EstadoAtualizacao.candidato?.arquivo?.isFile == true) View.VISIBLE else View.GONE
             telaPin.mostrarInfo(InfoSuporte.texto(dados))
         }
+    }
+
+    // ------------------------------------------------ atualização por pendrive
+
+    private fun iniciarVigiaDePendrives() {
+        if (!receptorMidiaRegistrado) {
+            val filtro = IntentFilter().apply {
+                addAction(Intent.ACTION_MEDIA_MOUNTED)
+                addAction(Intent.ACTION_MEDIA_UNMOUNTED)
+                addAction(Intent.ACTION_MEDIA_REMOVED)
+                addAction(Intent.ACTION_MEDIA_EJECT)
+                addAction(Intent.ACTION_MEDIA_BAD_REMOVAL)
+                addDataScheme("file")
+            }
+            // Broadcasts protegidos: só o sistema envia.
+            ContextCompat.registerReceiver(this, receptorMidia, filtro, ContextCompat.RECEIVER_EXPORTED)
+            receptorMidiaRegistrado = true
+        }
+        // Já montado antes de o Player abrir (boot, volta do standby) e
+        // depois a cada intervalo.
+        handler.post(vigiarPendrives)
+    }
+
+    /**
+     * O Player voltou à frente depois de uma tela do Android aberta pela
+     * atualização. Em `onResume`, não `onStart`: o instalador ou a permissão
+     * podem ser um diálogo por cima do Player, que não para a Activity.
+     */
+    private fun voltouDeTelaDoAndroid() {
+        Watchdog.encerrarPausa(this)
+        // Instalação cancelada ou recusada: a versão atual continua.
+        if (EstadoAtualizacao.instalacaoNaoConcluida(this, BuildConfig.VERSION_CODE.toLong())) {
+            EstadoAtualizacao.ultimoResultado =
+                "Instalação não concluída (cancelada ou recusada pelo Android). Continua a ${BuildConfig.VERSION_NAME}."
+        }
+        if (EstadoAtualizacao.retomarAoVoltar) {
+            EstadoAtualizacao.retomarAoVoltar = false
+            oferecerAtualizacao(forcado = true)
+        }
+    }
+
+    private fun pararVigiaDePendrives() {
+        if (receptorMidiaRegistrado) {
+            runCatching { unregisterReceiver(receptorMidia) }
+            receptorMidiaRegistrado = false
+        }
+    }
+
+    /** "Verificar USB" do bloco técnico: tudo que está montado volta a ser lido e oferecido. */
+    private fun verificarUsbAgora() {
+        EstadoAtualizacao.esquecerVerificacoes()
+        verificarPendrives()
+    }
+
+    /**
+     * Lista os pendrives e lê só os que apareceram desde a última vez. Fora
+     * da thread principal: o vídeo continua tocando enquanto copia e confere.
+     */
+    private fun verificarPendrives() {
+        if (!iniciada) return
+        if (!verificandoUsb.compareAndSet(false, true)) {
+            verificacaoUsbPendente = true
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                val volumes = withContext(Dispatchers.IO) { FontesAtualizacao.volumes(this@PlayerActivity).volumes() }
+                val novos = EstadoAtualizacao.registrarMontados(volumes.map { it.id }.toSet())
+                for (volume in volumes.filter { it.id in novos }) {
+                    if (!iniciada) break
+                    verificarPendrive(volume)
+                }
+            } finally {
+                verificandoUsb.set(false)
+                if (verificacaoUsbPendente && iniciada) {
+                    verificacaoUsbPendente = false
+                    handler.post { verificarPendrives() }
+                }
+                if (telaPin.visivel) preencherInfoSuporte()
+            }
+        }
+    }
+
+    private suspend fun verificarPendrive(volume: VolumeUsb) {
+        val acesso = withContext(Dispatchers.IO) { FontesAtualizacao.acesso(this@PlayerActivity, volume) }
+        val origem = when (acesso) {
+            is AcessoUsb.Acesso.Direto -> OrigemArquivo(acesso.raiz)
+            is AcessoUsb.Acesso.Documento -> OrigemDocumento(contentResolver, acesso.arvore)
+            else -> null
+        }
+        EstadoAtualizacao.ultimaVerificacaoMs = System.currentTimeMillis()
+        EstadoAtualizacao.marcarVerificado(volume.id)
+        if (origem == null) {
+            EstadoAtualizacao.ultimoResultado = when (acesso) {
+                AcessoUsb.Acesso.PrecisaPermissaoLeitura -> "Pendrive conectado; falta permitir o acesso ao armazenamento."
+                AcessoUsb.Acesso.PrecisaSeletor -> "Pendrive conectado; falta autorizar a pasta do pendrive."
+                else -> "Pendrive conectado, mas este Android não deixa o Mostraí ler o pendrive."
+            }
+            val pedivel = acesso == AcessoUsb.Acesso.PrecisaPermissaoLeitura || acesso == AcessoUsb.Acesso.PrecisaSeletor
+            if (pedivel && !EstadoAtualizacao.foiDispensado(volume.id) && !telaAtualizacao.visivel) {
+                volumeAguardandoAcesso = volume
+                telaAtualizacao.mostrar(TelaAtualizacao.Modo.ACESSO_PENDRIVE, BuildConfig.VERSION_NAME, null)
+            }
+            return
+        }
+        val resultado = withContext(Dispatchers.IO) { verificadorUsb.verificar(origem) }
+        EstadoAtualizacao.ultimoResultado = resultado.mensagem
+        when (resultado) {
+            is VerificadorUsb.Resultado.Candidato -> {
+                EstadoAtualizacao.versaoEncontrada = "${resultado.apk.versionName} (${resultado.apk.versionCode})"
+                EstadoAtualizacao.candidato = EstadoAtualizacao.Candidato(
+                    resultado.apk.versionName, resultado.apk.versionCode, resultado.arquivo, volume.id,
+                )
+                oferecerAtualizacao(forcado = false)
+            }
+            is VerificadorUsb.Resultado.Recusado -> {
+                val v = resultado.veredito
+                // Pendrive comum ou a mesma versão: nada a registrar.
+                if (v !is ValidacaoAtualizacao.Veredito.MesmaVersao) {
+                    registrarNoDiario(DiarioBordo.Codigo.ATUALIZACAO_RECUSADA, v.mensagem)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    /** Mostra o modal da atualização validada — a menos que o técnico já tenha dito "Depois" a este pendrive. */
+    private fun oferecerAtualizacao(forcado: Boolean) {
+        val candidato = EstadoAtualizacao.candidato ?: return
+        if (!candidato.arquivo.isFile) {
+            EstadoAtualizacao.candidato = null
+            return
+        }
+        if (!forcado && EstadoAtualizacao.foiDispensado(candidato.volumeId)) return
+        if (telaAtualizacao.visivel) return
+        val modo = if (InstaladorApk.podeInstalar(this)) TelaAtualizacao.Modo.DISPONIVEL else TelaAtualizacao.Modo.PERMISSAO_INSTALAR
+        telaAtualizacao.mostrar(modo, BuildConfig.VERSION_NAME, candidato.versionName)
+    }
+
+    private fun adiarAtualizacao(modo: TelaAtualizacao.Modo) {
+        val volume = if (modo == TelaAtualizacao.Modo.ACESSO_PENDRIVE) volumeAguardandoAcesso?.id else EstadoAtualizacao.candidato?.volumeId
+        volume?.let(EstadoAtualizacao::dispensar)
+    }
+
+    private fun confirmarAtualizacao(modo: TelaAtualizacao.Modo) {
+        when (modo) {
+            TelaAtualizacao.Modo.DISPONIVEL -> instalarAtualizacao()
+            TelaAtualizacao.Modo.PERMISSAO_INSTALAR -> abrirPermissaoDeInstalar()
+            TelaAtualizacao.Modo.ACESSO_PENDRIVE -> pedirAcessoAoPendrive()
+        }
+    }
+
+    /**
+     * Entrega a cópia validada ao instalador do Android. O watchdog pausa
+     * para não puxar o Player por cima da confirmação; voltar ao Player
+     * (cancelou, falhou) desfaz a pausa e a versão atual continua.
+     */
+    private fun instalarAtualizacao() {
+        val candidato = EstadoAtualizacao.candidato ?: return
+        if (!candidato.arquivo.isFile) {
+            EstadoAtualizacao.candidato = null
+            EstadoAtualizacao.ultimoResultado = "A cópia da atualização sumiu; verifique o pendrive de novo."
+            return
+        }
+        if (!InstaladorApk.podeInstalar(this)) {
+            telaAtualizacao.mostrar(TelaAtualizacao.Modo.PERMISSAO_INSTALAR, BuildConfig.VERSION_NAME, candidato.versionName)
+            return
+        }
+        Watchdog.pausarRetorno(this)
+        EstadoAtualizacao.marcarInstalacaoIniciada(this, candidato.versionCode)
+        try {
+            startActivity(InstaladorApk.intentInstalar(this, candidato.arquivo))
+        } catch (e: ActivityNotFoundException) {
+            Watchdog.rearmar(this)
+            EstadoAtualizacao.instalacaoNaoConcluida(this, BuildConfig.VERSION_CODE.toLong())
+            EstadoAtualizacao.ultimoResultado = "Instalador do Android indisponível neste aparelho."
+        }
+    }
+
+    /** Abre a tela do Android onde se libera "instalar apps" para o Mostraí; ao voltar, a oferta reaparece. */
+    private fun abrirPermissaoDeInstalar() {
+        Watchdog.pausarRetorno(this)
+        EstadoAtualizacao.retomarAoVoltar = true
+        for (intent in InstaladorApk.intentsPermissao(this)) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: ActivityNotFoundException) {
+                // Próxima opção: cada firmware traz um conjunto de telas.
+            }
+        }
+        EstadoAtualizacao.retomarAoVoltar = false
+        Watchdog.rearmar(this)
+        EstadoAtualizacao.ultimoResultado = "Configurações do Android indisponíveis para liberar a instalação."
+    }
+
+    private fun pedirAcessoAoPendrive() {
+        val volume = volumeAguardandoAcesso ?: return
+        if (AcessoUsb.leituraDiretaPossivel() && !AcessoUsb.temPermissaoLeitura(this)) {
+            // Diálogo do sistema por cima do vídeo — a Activity não sai da frente.
+            pedirLeituraUsb.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            return
+        }
+        Watchdog.pausarRetorno(this)
+        try {
+            pedirPastaUsb.launch(AcessoUsb.intentSeletor(volume))
+        } catch (_: ActivityNotFoundException) {
+            Watchdog.rearmar(this)
+            EstadoAtualizacao.ultimoResultado = "Seletor de pastas indisponível neste Android."
+        }
+    }
+
+    /** Aberta pelo teste de "ligar a tela" (bloco técnico): acende o painel, se o aparelho deixar. */
+    private fun tratarPedidoDeLigarTela(intent: Intent?) {
+        if (intent?.getBooleanExtra(LigarTela.EXTRA_ACORDAR, false) != true) return
+        intent.removeExtra(LigarTela.EXTRA_ACORDAR)
+        aguardandoResultadoLigarTela = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setTurnScreenOn(true)
+        else @Suppress("DEPRECATION") window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
     }
 
     /** PIN certo: o watchdog não reabre, e o Player fecha normalmente (contrato §6). */
@@ -1212,6 +1563,9 @@ class PlayerActivity : AppCompatActivity() {
         var introJaTocou = false
 
         const val INTERVALO_HORARIO_MS = 60_000L
+
+        /** Rede de segurança do broadcast de pendrive: lista volumes, não lê nada. */
+        const val INTERVALO_VIGIA_USB_MS = 30_000L
 
         /** Bem abaixo de [Watchdog.TOLERANCIA_MS], com folga para atraso do looper. */
         const val INTERVALO_SINAL_DE_VIDA_MS = 30_000L

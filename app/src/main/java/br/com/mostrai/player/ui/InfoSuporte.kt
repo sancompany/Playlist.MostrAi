@@ -44,6 +44,19 @@ object InfoSuporte {
         val sessoesPendentes: Int,
         val tempoOperacionalPendenteMs: Long,
         val offsetLocal: ZoneOffset = ZoneOffset.ofHours(-3),
+        val atualizacao: Atualizacao? = null,
+    )
+
+    /** Seção ATUALIZAÇÃO (pendrive). Sem caminho, hash nem certificado. */
+    data class Atualizacao(
+        val podeInstalar: Boolean,
+        val pendrivesConectados: Int,
+        val acessoPendrive: String?,
+        val versaoEncontrada: String?,
+        val ultimaVerificacaoMs: Long?,
+        val ultimoResultado: String?,
+        val ultimaAtualizacao: String?,
+        val ligarTela: String?,
     )
 
     fun motivosNaoPronto(d: Dados): List<String> = buildList {
@@ -78,6 +91,20 @@ object InfoSuporte {
                 "Retorno automático BLOQUEADO pelo Android: permitir \"Exibir sobre outros apps\"",
             d.ultimoErro?.let { "Último erro: $it" },
             prontidao,
+            d.atualizacao?.let { a ->
+                listOfNotNull(
+                    "ATUALIZAÇÃO",
+                    "Versão instalada: ${d.versao}",
+                    "Permissão para instalar: ${if (a.podeInstalar) "concedida" else "não concedida"}",
+                    "USB conectado: ${if (a.pendrivesConectados > 0) "sim" else "não"}" +
+                        (a.acessoPendrive?.let { " · $it" } ?: ""),
+                    "Versão encontrada: ${a.versaoEncontrada ?: "—"}",
+                    "Última verificação: ${quando(a.ultimaVerificacaoMs)}",
+                    "Último resultado: ${a.ultimoResultado ?: "—"}",
+                    a.ultimaAtualizacao?.let { "Última atualização: $it" },
+                    a.ligarTela?.let { "Ligar tela: $it" },
+                ).joinToString("\n")
+            },
         ).joinToString("\n")
     }
 

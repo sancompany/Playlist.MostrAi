@@ -56,11 +56,15 @@ object Watchdog {
     private const val CHAVE_NA_FRENTE = "na_frente"
     private const val CHAVE_TENTATIVA_RETORNO = "tentativa_retorno"
     private const val CHAVE_RETORNO_BLOQUEADO_EM = "retorno_bloqueado_em"
+    private const val CHAVE_PAUSA_ATE = "pausa_ate"
 
     const val ACAO_RETORNO = "br.com.mostrai.player.RETORNO_RAPIDO"
 
     const val INTERVALO_BASE_MS = 60_000L
     const val INTERVALO_MAXIMO_MS = 16 * 60_000L
+
+    /** Teto da pausa para o técnico usar uma tela do Android (instalador, permissões). */
+    const val PAUSA_MANUTENCAO_MS = 10 * 60_000L
 
     /** Quanto tempo sem sinal antes de considerar o player ausente (sinal a cada 30 s). */
     const val TOLERANCIA_MS = 90_000L
@@ -80,9 +84,39 @@ object Watchdog {
 
     /** O player voltou à frente (abertura manual, boot): operação normal. */
     fun rearmar(context: Context) {
-        prefs(context).edit().putBoolean(CHAVE_SAIDA_AUTORIZADA, false).commit()
+        prefs(context).edit().putBoolean(CHAVE_SAIDA_AUTORIZADA, false).remove(CHAVE_PAUSA_ATE).commit()
         agendar(context)
     }
+
+    /**
+     * O Player saiu da frente **de propósito** para uma tela do Android que o
+     * técnico precisa usar (instalador de atualização, permissão de
+     * instalar, seletor do pendrive): o retorno rápido não puxa o Player por
+     * cima dela por [duracaoMs]. Voltar à frente ([rearmar]) desfaz a pausa;
+     * passado o prazo, o watchdog volta ao normal.
+     */
+    fun pausarRetorno(context: Context, duracaoMs: Long = PAUSA_MANUTENCAO_MS) {
+        prefs(context).edit()
+            .putLong(CHAVE_PAUSA_ATE, SystemClock.elapsedRealtime() + duracaoMs.coerceAtMost(PAUSA_MANUTENCAO_MS))
+            .commit()
+    }
+
+    /**
+     * O Player voltou à frente: a tela do Android que motivou a pausa já
+     * acabou (o instalador pode ser um diálogo por cima do Player — aí só
+     * `onResume` avisa, não `onStart`).
+     */
+    fun encerrarPausa(context: Context) {
+        val p = prefs(context)
+        if (p.contains(CHAVE_PAUSA_ATE)) p.edit().remove(CHAVE_PAUSA_ATE).commit()
+    }
+
+    /** A pausa vale agora? Pura, para teste. Pausa "maior que o teto" é resquício de outro boot. */
+    fun pausado(pausaAteMs: Long, agoraMs: Long): Boolean =
+        pausaAteMs > agoraMs && pausaAteMs - agoraMs <= PAUSA_MANUTENCAO_MS
+
+    private fun pausadoAgora(context: Context): Boolean =
+        pausado(prefs(context).getLong(CHAVE_PAUSA_ATE, 0L), SystemClock.elapsedRealtime())
 
     /** A Activity está na frente: nada a trazer de volta. */
     fun naFrente(context: Context) {
@@ -99,6 +133,7 @@ object Watchdog {
         val p = prefs(context)
         p.edit().putBoolean(CHAVE_NA_FRENTE, false).putInt(CHAVE_TENTATIVA_RETORNO, 0).commit()
         if (p.getBoolean(CHAVE_SAIDA_AUTORIZADA, false) || !ConfigAparelho(context).provisionado) return
+        if (pausadoAgora(context)) return
         agendarRetorno(context, ESPERAS_RETORNO_MS.first())
     }
 
@@ -257,7 +292,7 @@ object Watchdog {
             // o Player subir e cair a cada alarme a noite inteira. Segue
             // vigiando no ritmo base; quando a tela acender, o próximo alarme
             // reabre.
-            if (decisao.abrirPlayer && !telaLigada(context)) {
+            if (decisao.abrirPlayer && (!telaLigada(context) || pausadoAgora(context))) {
                 agendar(context, INTERVALO_BASE_MS)
                 return
             }
@@ -279,7 +314,7 @@ object Watchdog {
                 telaLigada = telaLigada(context),
                 tentativa = tentativa,
             )
-            if (!decisao.abrirPlayer) return
+            if (!decisao.abrirPlayer || pausadoAgora(context)) return
             prefs.edit().putInt(CHAVE_TENTATIVA_RETORNO, tentativa + 1).commit()
             abrirPlayer(context)
             decisao.proximoAtrasoMs?.let { agendarRetorno(context, it) }

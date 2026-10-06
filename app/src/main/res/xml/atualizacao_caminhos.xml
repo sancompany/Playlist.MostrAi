@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Só a pasta da cópia do APK validado (filesDir/atualizacao) é exposta, e só ao instalador. -->
+<paths>
+    <files-path
+        name="atualizacao"
+        path="atualizacao/" />
+</paths>

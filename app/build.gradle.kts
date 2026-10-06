@@ -50,9 +50,17 @@ android {
         // linha de comando (`scripts/release-teste-n-mais-1.sh`), nunca
         // commitado. O versionName marcado faz o candidato oficial recusar
         // esse APK.
+        // 6 / 3.0.1: atualização oficial por pendrive. O 5 foi do APK de
+        // teste N+1 do 3.0.0 (NAO-DISTRIBUIR) e nunca é reutilizado.
         val versionCodeTeste = (findProperty("mostrai.versionCodeTeste") as String?)?.toInt()
-        versionCode = versionCodeTeste ?: 4
-        versionName = if (versionCodeTeste != null) "3.0.0-teste-n$versionCodeTeste" else "3.0.0"
+        versionCode = versionCodeTeste ?: 6
+        versionName = if (versionCodeTeste != null) "3.0.1-teste-n$versionCodeTeste" else "3.0.1"
+
+        // A chave definitiva da frota (impressão digital pública, versionada):
+        // o updater por pendrive só aceita APK assinado com ela.
+        val certificadoOficial = rootProject.file("scripts/certificado-producao.sha256").readText().trim().lowercase()
+        require(Regex("[0-9a-f]{64}").matches(certificadoOficial)) { "scripts/certificado-producao.sha256 inválido" }
+        buildConfigField("String", "CERTIFICADO_OFICIAL_SHA256", "\"$certificadoOficial\"")
     }
 
     buildFeatures {

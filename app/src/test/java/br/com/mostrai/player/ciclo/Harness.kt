@@ -42,6 +42,7 @@ class Harness {
         listOf(
             ConfigAparelho.ARQUIVO, "mostrai_watchdog", "mostrai_cache_playlist", ProofOfPlayDb.PREFS_PERDAS,
             "mostrai_relogio", "mostrai_institucional",
+            "mostrai_atualizacao", "mostrai_atualizacao_usb", "mostrai_ligar_tela",
         ).forEach { contexto.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit() }
         contexto.deleteDatabase(ProofOfPlayDb.NOME_ARQUIVO)
         contexto.deleteDatabase(DiarioBordo.NOME_ARQUIVO)
@@ -49,6 +50,12 @@ class Harness {
         contexto.getSharedPreferences(br.com.mostrai.player.operacao.RegistroOperacional.ARQUIVO_BOOT, Context.MODE_PRIVATE).edit().clear().commit()
         File(contexto.cacheDir, "midia").deleteRecursively()
         File(contexto.filesDir, "midia").deleteRecursively()
+        File(contexto.filesDir, "atualizacao").deleteRecursively()
+        br.com.mostrai.player.atualizacao.EstadoAtualizacao.reiniciar()
+        br.com.mostrai.player.atualizacao.ApkFalso.esquecerFileProvider()
+        // Sem pendrive nenhum até o teste montar um (o Robolectric não tem USB).
+        br.com.mostrai.player.atualizacao.FontesAtualizacao.padrao()
+        br.com.mostrai.player.atualizacao.FontesAtualizacao.volumes = { br.com.mostrai.player.atualizacao.FonteVolumes { emptyList() } }
         pularIntroducao()
     }
 
@@ -176,6 +183,8 @@ class Harness {
 
     fun encerrar() {
         br.com.mostrai.player.cache.MedidorDeDisco.padrao()
+        br.com.mostrai.player.atualizacao.FontesAtualizacao.padrao()
+        br.com.mostrai.player.atualizacao.EstadoAtualizacao.reiniciar()
         servidor.encerrar()
         HostDaApi.base = br.com.mostrai.player.Produto.BASE_URL
     }

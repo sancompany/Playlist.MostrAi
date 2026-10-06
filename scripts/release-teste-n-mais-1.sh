@@ -3,11 +3,11 @@
 # mesmo código, versionCode maior só na linha de comando, assinado com a
 # MESMA chave definitiva. Nunca vai a cliente e nunca é commitado.
 #   app/build/release-teste-n1/Mostrai-Player-<versão>-NAO-DISTRIBUIR.apk
-# Uso: scripts/release-teste-n-mais-1.sh [versionCode]   (padrão: 5)
+# Uso: scripts/release-teste-n-mais-1.sh [versionCode]   (padrão: 7 — o 5 já foi usado no teste do 3.0.0)
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-codigo="${1:-5}"
+codigo="${1:-7}"
 sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 [ -n "$sdk" ] || { echo "ANDROID_HOME não definido" >&2; exit 2; }
 bt="$(ls -d "$sdk"/build-tools/*/ | sort -V | tail -1)"

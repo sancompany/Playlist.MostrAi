@@ -27,4 +27,18 @@
         <item name="android:textSize">28sp</item>
         <item name="android:letterSpacing">0.1</item>
     </style>
+    <!-- Botões do modal de atualização e do bloco técnico: mesmos da instalação. -->
+    <style name="BotaoAtualizacao">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/fundo_tecla</item>
+        <item name="android:focusable">true</item>
+        <item name="android:paddingStart">28dp</item>
+        <item name="android:paddingEnd">28dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:textColor">@color/cor_tecla</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
 </resources>

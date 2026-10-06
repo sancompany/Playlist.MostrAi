@@ -13,6 +13,29 @@
          Até o Android 9 (a TCL) não é usada. Ver kiosk/PoliticaDeRetorno.kt.
     -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!--
+         Atualização oficial por pendrive (3.0.1). Entregar o APK validado ao
+         instalador do Android — que pede a confirmação; nada silencioso. O
+         técnico libera "instalar apps" para o Mostraí uma vez.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!--
+         Ler o pendrive direto até o Android 10 (a TCL é Android 8). No 11+ o
+         APK não é "mídia": o acesso é pelo seletor do Android, sem
+         "Acesso a todos os arquivos" (essa permissão não é pedida).
+    -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <!-- Só para o TESTE de "ligar a tela" (kiosk/LigarTela.kt). Permissão comum. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Saber se o seletor de pastas do Android existe (Android 11+: visibilidade de pacotes). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+        </intent>
+    </queries>
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -21,6 +44,7 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/regras_de_extracao"
         android:networkSecurityConfig="@xml/seguranca_de_rede"
+        android:requestLegacyExternalStorage="true"
         android:label="@string/app_name"
         android:banner="@mipmap/ic_banner"
         android:icon="@mipmap/ic_banner"
@@ -63,6 +87,34 @@
         <receiver
             android:name=".kiosk.Watchdog$Receptor"
             android:exported="false" />
+
+        <!-- Teste de "ligar a tela", agendado pelo técnico no bloco técnico. -->
+        <receiver
+            android:name=".kiosk.LigarTela$Receptor"
+            android:exported="false" />
+
+        <!--
+             O Android trocou o APK (atualização por pendrive): limpa a cópia
+             e traz o Player de volta. Só o sistema envia este broadcast.
+        -->
+        <receiver
+            android:name=".atualizacao.AtualizacaoConcluidaReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- A cópia validada do APK chega ao instalador por content://, nunca file://. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.atualizacao"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/atualizacao_caminhos" />
+        </provider>
 
     </application>
 </manifest>

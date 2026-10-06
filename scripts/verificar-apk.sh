@@ -36,9 +36,16 @@ permissoes="$(sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" <<<"$badging"
 # As 4 decididas (ADR 0001) + a de assinatura que o androidx.core declara
 # para os próprios receivers (DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, do
 # próprio app — não dá acesso a nada de fora).
+# 3.0.1: + REQUEST_INSTALL_PACKAGES e READ_EXTERNAL_STORAGE (atualização por
+# pendrive) e WAKE_LOCK (teste de ligar a tela) — docs/permissoes-especiais.md.
 esperadas="$(printf '%s\n' "$pacote.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" android.permission.ACCESS_NETWORK_STATE \
-  android.permission.INTERNET android.permission.RECEIVE_BOOT_COMPLETED android.permission.SYSTEM_ALERT_WINDOW | sort | tr '\n' ' ')"
+  android.permission.INTERNET android.permission.RECEIVE_BOOT_COMPLETED android.permission.SYSTEM_ALERT_WINDOW \
+  android.permission.REQUEST_INSTALL_PACKAGES android.permission.READ_EXTERNAL_STORAGE android.permission.WAKE_LOCK \
+  | sort | tr '\n' ' ')"
 [ "$permissoes" = "$esperadas" ] || falha "permissões: $permissoes"
+grep -q "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='29'" <<<"$badging" \
+  || falha "READ_EXTERNAL_STORAGE sem maxSdkVersion 29"
+grep -q "MANAGE_EXTERNAL_STORAGE" <<<"$badging" && falha "MANAGE_EXTERNAL_STORAGE declarada"
 
 grep -q "android.intent.category.HOME" <<<"$manifesto" && falha "CATEGORY_HOME no manifesto"
 grep -q "android.intent.category.LEANBACK_LAUNCHER" <<<"$manifesto" || falha "sem LEANBACK_LAUNCHER"

@@ -38,5 +38,8 @@
         <include layout="@layout/tela_provisionamento" />
 
         <include layout="@layout/tela_pin_saida" />
+
+        <!-- Por cima de tudo: a atualização pode chegar com o PIN aberto. -->
+        <include layout="@layout/tela_atualizacao" />
     </FrameLayout>
 </FrameLayout>
